@@ -1,0 +1,11 @@
+plugins { id 'com.android.application' }
+android {
+    namespace 'cn.local.bullseye'
+    compileSdk 35
+    compileSdkExtension 15
+    buildToolsVersion '35.0.0'
+    defaultConfig { applicationId 'cn.local.bullseye'; minSdk 30; targetSdk 35; versionCode 2; versionName '1.0.1' }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    buildTypes { release { minifyEnabled false; signingConfig signingConfigs.debug } }
+}
+dependencies { implementation 'com.google.mlkit:text-recognition-chinese:16.0.1' }

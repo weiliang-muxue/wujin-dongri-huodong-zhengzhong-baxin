@@ -1,0 +1,8 @@
+<resources>
+    <string name="accessibility_description">仅在你点击开始后，读取当前屏幕图像并点击已识别的游戏位置。可随时用悬浮按钮暂停或停止。截图与识别结果仅保存在本机。</string>
+    <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item><item name="android:colorAccent">#167855</item>
+        <item name="android:windowLightStatusBar">true</item><item name="android:statusBarColor">#F4F6F5</item>
+        <item name="android:navigationBarColor">#F4F6F5</item><item name="android:windowLightNavigationBar">true</item>
+    </style>
+</resources>

@@ -1,0 +1,38 @@
+# Local runtimes, downloads and build output
+.venv/
+__pycache__/
+*.py[cod]
+dist/
+build/
+*.log
+tools/*
+!tools/bootstrap_android.py
+
+# Android machine configuration and signing material
+.gradle/
+.idea/
+android/local.properties
+android/app/build/
+*.apk
+*.aab
+*.exe
+*.jks
+*.keystore
+*.p12
+*.pem
+keystore.properties
+.env
+.env.*
+
+# User screenshots, videos, OCR captures and generated regression fixtures
+tests/
+*.png
+*.jpg
+*.jpeg
+*.mp4
+*.zip
+
+# Editor and OS metadata
+.vscode/
+Thumbs.db
+.DS_Store
