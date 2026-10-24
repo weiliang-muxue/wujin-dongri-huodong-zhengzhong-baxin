@@ -4,16 +4,16 @@ __pycache__/
 *.py[cod]
 dist/
 build/
+.build/
 *.log
-tools/*
-!tools/bootstrap_android.py
-!tools/verify_android_package.py
+**/tools/*
+!apk/源码/tools/bootstrap_android.py
+!apk/源码/tools/verify_android_package.py
 
 # Android machine configuration and signing material
 .gradle/
 .idea/
-android/local.properties
-android/app/build/
+local.properties
 *.apk
 *.aab
 *.exe

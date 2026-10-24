@@ -1,5 +1,8 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
+from pathlib import Path
+
+source_dir = Path(SPECPATH)
 
 datas = []
 binaries = []
@@ -13,8 +16,8 @@ datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 
 a = Analysis(
-    ['windows\\app.py'],
-    pathex=[],
+    [str(source_dir / 'app.py')],
+    pathex=[str(source_dir)],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
@@ -33,7 +36,8 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='Bullseye-Windows',
+    name='正中靶心-1.0.3',
+    version=str(source_dir / 'version_info.txt'),
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

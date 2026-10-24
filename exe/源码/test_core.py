@@ -5,7 +5,7 @@ from PIL import Image,ImageDraw
 from vision import Vision,auto_config
 from engine import Runner
 
-ROOT=Path(__file__).resolve().parent.parent
+ROOT=Path(__file__).resolve().parent
 USE_LOCAL_FIXTURES=os.environ.get('BULLSEYE_TEST_NO_PRIVATE_FIXTURES')!='1'
 HAS_HOME=USE_LOCAL_FIXTURES and (ROOT/'tests'/'fixtures'/'home-zero.png').is_file()
 HAS_VIDEO=USE_LOCAL_FIXTURES and all((ROOT/'tests'/'video-review'/f'frame-{i}.jpg').is_file() for i in (2,3,4,5))
