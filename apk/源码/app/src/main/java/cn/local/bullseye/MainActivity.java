@@ -12,7 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.*;
 
 public class MainActivity extends Activity {
-    Bitmap home,board;Config config;Vision vision;ImageView preview;TextView result,log;EditText count;Button start,first,second;RadioGroup multiples;
+    Bitmap home,board;Config config;Vision vision;ImageView preview;TextView result,log,count;Button start,first,second;
     final ExecutorService worker=Executors.newSingleThreadExecutor();boolean analyzing=false;int selected=1;
     int dp(float x){return Math.round(x*getResources().getDisplayMetrics().density);}
     TextView label(String s,int size){TextView t=new TextView(this);t.setText(s);t.setTextSize(size);t.setTextColor(Color.rgb(37,66,53));t.setPadding(0,dp(8),0,dp(8));return t;}
@@ -25,9 +25,8 @@ public class MainActivity extends Activity {
         first=button("1  上传首页全图");second=button("2  上传靶子全图");root.addView(first);root.addView(second);first.setOnClickListener(v->pick(1));second.setOnClickListener(v->pick(2));
         preview=new ImageView(this);preview.setScaleType(ImageView.ScaleType.FIT_CENTER);preview.setBackgroundColor(Color.rgb(230,237,232));preview.setContentDescription("截图预览与自动识别的靶子位置");root.addView(preview,new LinearLayout.LayoutParams(-1,dp(260)));
         result=label("等待两张截图，无需手动标记位置。",15);root.addView(result);
-        root.addView(label("本次使用券数（自动识别，可更正）",13));count=new EditText(this);count.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);count.setTextSize(18);count.setHint("等待识别");root.addView(count);
-        root.addView(label("每轮倍率（自己选择）",13));multiples=new RadioGroup(this);multiples.setOrientation(LinearLayout.HORIZONTAL);for(int n:new int[]{1,5}){RadioButton r=new RadioButton(this);r.setText(n+" 倍");r.setId(n==1?R.id.multiplier_one:R.id.multiplier_five);r.setMinHeight(dp(48));multiples.addView(r);}multiples.check(R.id.multiplier_one);root.addView(multiples);
-        root.addView(label("请先把游戏设为相同倍率。只读取总券数，不识别、不切换倍率；不足所选倍率时停止并提示。结算后自动返回首页。",13));
+        root.addView(label("首页实际余券",13));count=label("等待识别",22);root.addView(count);
+        root.addView(label("倍率在游戏里设置。每轮回首页读取实际余券；剩 1～4 张时自动切到 1 倍，用完停止。结算后自动返回首页。",13));
         start=button("开始运行");start.setTextColor(Color.WHITE);start.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.rgb(22,120,85)));start.setEnabled(false);root.addView(start);start.setOnClickListener(v->startRun());
         log=label("截图与识别均在手机本地处理。Android 11 及以上可用。",12);root.addView(log);
     }
@@ -44,10 +43,8 @@ public class MainActivity extends Activity {
     void finishAnalysis(){analyzing=false;first.setEnabled(true);second.setEnabled(true);}
     void saveBitmap(String name,Bitmap b)throws IOException{try(FileOutputStream out=openFileOutput(name,MODE_PRIVATE)){b.compress(Bitmap.CompressFormat.PNG,100,out);}}
     void startRun(){if(config==null)return;if(GameService.instance!=null&&GameService.instance.running){toast("运行中，请使用悬浮按钮控制");return;}
-        int n;try{n=Integer.parseInt(count.getText().toString());if(n<=0||n>99999)throw new NumberFormatException();}catch(Exception e){toast("券数需为 1～99999 的整数");return;}
         if(GameService.instance==null){new AlertDialog.Builder(this).setTitle("开启屏幕操作权限").setMessage("请在辅助功能中开启「靶心助手」。仅在你开始运行后读取屏幕和点击已识别位置；可随时暂停或停止。截图不会上传。").setPositiveButton("去设置",(d,w)->startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))).setNegativeButton("暂不",null).show();return;}
-        config.count=n;config.multiplier=multiples.getCheckedRadioButtonId()==R.id.multiplier_five?5:1;
-        new AlertDialog.Builder(this).setTitle("准备开始").setMessage("你选择了 "+config.multiplier+" 倍，请先把游戏内倍率也设为 "+config.multiplier+" 倍。程序不识别、不切换游戏倍率。\n\n请保持游戏位置与截图一致，停在首页或完整的 12 靶子页。开始后 5 秒执行，请切回游戏，不要手动操作游戏。可用悬浮按钮暂停 / 继续 / 停止。").setPositiveButton("5 秒后开始",(d,w)->{try{String data=config.json();try(FileOutputStream out=openFileOutput("config.json",MODE_PRIVATE)){out.write(data.getBytes(StandardCharsets.UTF_8));}GameService.instance.begin(config);moveTaskToBack(true);}catch(Exception e){toast(e.getMessage());}}).setNegativeButton("返回",null).show();
+        new AlertDialog.Builder(this).setTitle("准备开始").setMessage("倍率在游戏里设置，每轮回首页读取实际余券。剩 1～4 张时自动切到 1 倍，余券为 0 时停止。\n\n请保持游戏位置与截图一致，停在首页或完整的 12 靶子页。开始后 5 秒执行，请切回游戏，不要手动操作游戏。可用悬浮按钮暂停 / 继续 / 停止。").setPositiveButton("5 秒后开始",(d,w)->{try{String data=config.json();try(FileOutputStream out=openFileOutput("config.json",MODE_PRIVATE)){out.write(data.getBytes(StandardCharsets.UTF_8));}GameService.instance.begin(config);moveTaskToBack(true);}catch(Exception e){toast(e.getMessage());}}).setNegativeButton("返回",null).show();
     }
     void toast(String message){Toast.makeText(this,message,Toast.LENGTH_LONG).show();log.setText(message);}
     @Override protected void onDestroy(){super.onDestroy();worker.shutdown();if(!analyzing)vision.close();}

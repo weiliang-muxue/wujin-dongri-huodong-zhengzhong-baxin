@@ -15,10 +15,21 @@ public class Vision implements AutoCloseable {
     }
     public Integer number(Bitmap b)throws Exception {
         Bitmap big=Bitmap.createScaledBitmap(b,Math.max(160,b.getWidth()*3),Math.max(90,b.getHeight()*3),true);
-        try{for(Text.Line l:text(big)){String s=l.getText().replace("O","0").replace("o","0").replace(" ","");if(s.matches("\\d{1,5}"))return Integer.parseInt(s);}}finally{if(big!=b)big.recycle();}return null;
+        try{for(Text.Line l:text(big)){String s=l.getText().replace("O","0").replace("o","0").replace(" ","");if(s.matches("\\d{1,5}"))return Integer.parseInt(s);}}finally{if(big!=b)big.recycle();}
+        int w=b.getWidth(),h=b.getHeight();int[] pixels=new int[w*h];b.getPixels(pixels,0,w,0,0,w,h);return TicketDigits.single(pixels,w,h);
     }
     public static Bitmap crop(Bitmap b,float[] r){int x=Math.max(0,(int)(r[0]*b.getWidth())),y=Math.max(0,(int)(r[1]*b.getHeight()));int w=Math.max(1,Math.min(b.getWidth(),(int)(r[2]*b.getWidth()))-x),h=Math.max(1,Math.min(b.getHeight(),(int)(r[3]*b.getHeight()))-y);return Bitmap.createBitmap(b,x,y,w,h);}
     public static Bitmap patch(Bitmap b,PointF p,float radius){return crop(b,new float[]{Math.max(0,p.x-radius),Math.max(0,p.y-radius),Math.min(1,p.x+radius),Math.min(1,p.y+radius)});}
+    public static class MultiplierButton {
+        public final int value;public final PointF point;
+        MultiplierButton(int value,PointF point){this.value=value;this.point=point;}
+    }
+    /** Invoked only when the confirmed home balance is 1..4. */
+    public static MultiplierButton lowBalanceButton(Bitmap frame,Config c){
+        int w=frame.getWidth(),h=frame.getHeight();int[] pixels=new int[w*h];frame.getPixels(pixels,0,w,0,0,w,h);
+        LowBalanceControl.Hit hit=LowBalanceControl.find(pixels,w,h,c.start.x,c.start.y,c.targets.get(1).x-c.targets.get(0).x,c.targets.get(4).y-c.targets.get(0).y);
+        return hit==null?null:new MultiplierButton(hit.value,new PointF(hit.x,hit.y));
+    }
     public static float[] exitRegion(List<PointF> ps){float dx=ps.get(1).x-ps.get(0).x,dy=ps.get(4).y-ps.get(0).y,y=ps.get(8).y;return new float[]{Math.max(0,ps.get(0).x-.75f*dx),Math.max(0,y+.5f*dy),Math.min(1,ps.get(3).x+.75f*dx),Math.min(1,y+1.65f*dy)};}
     public PointF dismissPoint(Bitmap frame,float[] region)throws Exception {
         Bitmap clipped=crop(frame,region);float scale=Math.max(1,Math.min(3,1200f/clipped.getWidth()));Bitmap big=Bitmap.createScaledBitmap(clipped,Math.round(clipped.getWidth()*scale),Math.round(clipped.getHeight()*scale),true);

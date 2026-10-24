@@ -11,10 +11,12 @@ class Runner:
         self.gate=threading.Event();self.gate.set();self.stopped=threading.Event()
         self.lock=threading.RLock();self.thread=None
         self.remaining=int(config['count']);self.rounds=0;self.in_round=False
-        self.cost=1;self.pending=None;self.visited=set();self.last_known=time.monotonic()
+        self.pending=None;self.visited=set();self.last_known=time.monotonic()
         self.last_action=0;self.retries=0;self.start_retries=0
-        self.allow_initial_board=True;self.needs_count_sync=False
+        self.allow_initial_board=True
         self.exit_seen=0;self.exit_attempts=0
+        self.count_candidate=None;self.count_seen=0;self.count_misses=0
+        self.switch_attempts=0;self.button_misses=0
 
     def pause(self, reason='已暂停，可调整后继续'):
         with self.lock:self.gate.clear()
@@ -22,6 +24,8 @@ class Runner:
 
     def resume(self):
         if self.stopped.is_set():return
+        self.count_candidate=None;self.count_seen=0;self.count_misses=0
+        self.switch_attempts=0;self.button_misses=0
         self.last_known=time.monotonic();self.gate.set()
         self.report('running','继续前重新识别当前画面',self.remaining,self.rounds)
 
@@ -77,21 +81,46 @@ class Runner:
                     self.last_known=time.monotonic()
                     if self.in_round:
                         self.in_round=False;self.rounds+=1;self.visited.clear();self.pending=None
+                        self.count_candidate=None;self.count_seen=0;self.count_misses=0
+                        self.switch_attempts=0;self.button_misses=0
                     read=self.vision.number(Vision.crop(frame,self.c['count_region']))
-                    if self.needs_count_sync and read is None:
-                        self.pause('当前轮已完成，但最新券数未读清，请保持右上角券数可见后继续');continue
-                    if read is not None:self.remaining=min(self.remaining,read)
-                    self.needs_count_sync=False
+                    if read is None:
+                        self.count_candidate=None;self.count_seen=0;self.count_misses+=1
+                        if self.count_misses>=3:self.pause('首页券数暂时读不清，请保持右上角券数可见后继续')
+                        else:self.stopped.wait(.4)
+                        continue
+                    self.count_misses=0
+                    self.count_seen=self.count_seen+1 if read==self.count_candidate else 1
+                    self.count_candidate=read
+                    # Confirm twice, including zero, before spending or declaring done.
+                    if self.count_seen<2:self.stopped.wait(.4);continue
+                    self.remaining=read
                     self.report('running',f'活动页：剩余 {self.remaining} 张，已完成 {self.rounds} 轮',self.remaining,self.rounds)
                     if self.remaining<=0:break
-                    desired=int(self.c['multiplier'])
-                    if self.remaining<desired:
-                        self.report('stopped',f'剩余 {self.remaining} 张不足 {desired} 倍。请把游戏和助手都改为 1 倍，再开始。',self.remaining,self.rounds)
-                        return
+                    if self.remaining<5:
+                        button=self.vision.low_balance_button(frame,self.c)
+                        if button is None:
+                            self.button_misses+=1
+                            if self.button_misses>=3:self.pause('余券不足 5 张，右下角倍率按钮被遮挡或样式不匹配，请保持按钮可见后继续')
+                            else:self.stopped.wait(.4)
+                            continue
+                        self.button_misses=0
+                        value,point=button
+                        if value==5:
+                            if self.switch_attempts>=2:
+                                self.pause('切换 1 倍没有响应，请检查游戏后继续');continue
+                            if self.click(point):
+                                self.switch_attempts+=1
+                                self.report('running',f'剩余 {self.remaining} 张，正在切换 1 倍，等待画面确认',self.remaining,self.rounds)
+                            continue
+                        if self.switch_attempts:
+                            self.report('running','已确认切换为 1 倍，继续使用余券',self.remaining,self.rounds)
+                        self.switch_attempts=0
                     if self.pending=='start' and self.start_retries>=3:
                         self.pause('开始按钮没有响应，请检查游戏后继续');self.start_retries=0;continue
                     if self.click(start):
-                        self.cost=desired;self.pending='start';self.retries=0;self.start_retries+=1
+                        self.pending='start';self.retries=0;self.start_retries+=1
+                        self.count_candidate=None;self.count_seen=0
                     continue
                 available=[]
                 for i,p in enumerate(self.c['targets']):
@@ -99,10 +128,10 @@ class Runner:
                 if available:
                     self.last_known=time.monotonic()
                     if self.pending=='start':
-                        self.in_round=True;self.remaining=max(0,self.remaining-self.cost);self.pending=None;self.start_retries=0
+                        self.in_round=True;self.pending=None;self.start_retries=0
                     if not self.in_round:
                         if self.allow_initial_board and len(available)==12:
-                            self.in_round=True;self.allow_initial_board=False;self.needs_count_sync=True
+                            self.in_round=True;self.allow_initial_board=False
                             self.report('running','继续当前已开启的一轮，结束后读取最新券数',self.remaining,self.rounds)
                         else:
                             self.pause('当前靶子页不完整，请回到首页或完整的 12 靶子页再开始');continue
@@ -120,5 +149,5 @@ class Runner:
                 elif time.monotonic()-self.last_known>16:
                     self.pause('画面不属于已校准的活动，已暂停。请检查游戏窗口');continue
                 self.stopped.wait(.4)
-            self.report('stopped' if self.stopped.is_set() else 'done','已停止' if self.stopped.is_set() else '设定次数已用完',self.remaining,self.rounds)
+            self.report('stopped' if self.stopped.is_set() else 'done','已停止' if self.stopped.is_set() else '首页确认余券为 0，已全部用完',self.remaining,self.rounds)
         except Exception as e:self.report('error',str(e),self.remaining,self.rounds)

@@ -25,8 +25,8 @@ class Vision:
             if re.fullmatch(r'\d{1,5}', clean) and float(score) > .55:
                 hits.append((float(score), int(clean)))
         if hits:return max(hits)[1]
-        # A lone white zero is often discarded by the text detector. Accept only
-        # one closed oval with a central hole; a blank crop must never mean zero.
+        # A lone white 0/1 is often discarded by the text detector. Only accept
+        # a single digit-shaped component; a blank crop must never mean zero.
         rgb=np.asarray(image.convert('RGB'))
         mask=np.uint8((rgb.min(axis=2)>190)&(rgb.max(axis=2)-rgb.min(axis=2)<55))*255
         contours,hierarchy=cv2.findContours(mask,cv2.RETR_CCOMP,cv2.CHAIN_APPROX_SIMPLE)
@@ -34,6 +34,9 @@ class Vision:
         outer=[i for i,c in enumerate(contours) if hierarchy[0,i,3]<0 and cv2.boundingRect(c)[3]>image.height*.18 and cv2.contourArea(c)>8]
         if len(outer)!=1:return None
         i=outer[0];x,y,w,h=cv2.boundingRect(contours[i]);child=hierarchy[0,i,2]
+        if child<0 and .2<w/h<.55:
+            glyph=mask[y:y+h,x:x+w]>0
+            if glyph.sum(axis=0).max()/h>.85 and glyph.mean()>.35:return 1
         if child<0 or hierarchy[0,child,0]>=0 or not .4<w/h<1.05:return None
         hx,hy,hw,hh=cv2.boundingRect(contours[child])
         if .3<hh/h<.85 and abs((hy+hh/2)-(y+h/2))<h*.14 and abs((hx+hw/2)-(x+w/2))<w*.15:return 0
@@ -49,6 +52,42 @@ class Vision:
     def patch(image, point, radius=.018):
         x,y=point
         return Vision.crop(image,(x-radius,y-radius,x+radius,y+radius)).resize((40,40))
+
+    @staticmethod
+    def low_balance_button(image, config):
+        """Locate the green x1 / purple x5 disc beside Start, only at low balance.
+
+        No multiplier OCR or calibration requirement. Ambiguous/covered controls
+        return None; the runner must not click an assumed coordinate.
+        """
+        dx=config['targets'][1][0]-config['targets'][0][0]
+        dy=config['targets'][4][1]-config['targets'][0][1]
+        sx,sy=config['start'];w,h=image.size
+        area=(max(0,sx+.65*dx),max(0,sy-.38*dy),min(1,sx+1.9*dx),min(1,sy+.55*dy))
+        clipped=Vision.crop(image,area)
+        if clipped.width<1 or clipped.height<1:return None
+        hsv=cv2.cvtColor(np.asarray(clipped.convert('RGB')),cv2.COLOR_RGB2HSV)
+        found=[]
+        for value,lo,hi in ((1,(35,105,95),(90,255,255)),(5,(120,85,65),(160,255,255))):
+            mask=cv2.inRange(hsv,lo,hi)
+            contours,_=cv2.findContours(mask,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
+            for contour in contours:
+                x,y,bw,bh=cv2.boundingRect(contour);a=cv2.contourArea(contour)
+                perimeter=cv2.arcLength(contour,True)
+                if not (.25*dx*w<bw<.9*dx*w and .7<bw/max(1,bh)<1.4):continue
+                if perimeter==0 or 4*np.pi*a/perimeter**2<.55 or a/(bw*bh)<.5:continue
+                found.append((value,((int(area[0]*w)+x+bw/2)/w,(int(area[1]*h)+y+bh/2)/h)))
+        if len(found)!=1:return None
+        value,point=found[0]
+        # The cost beneath Start is red when unaffordable and white otherwise.
+        # Cross-check it with the disc so an OCR count error cannot cause a toggle.
+        cost=Vision.crop(image,(max(0,sx-.08*dx),max(0,sy+.10*dy),min(1,sx+.40*dx),min(1,sy+.38*dy)))
+        rgb=np.asarray(cost.convert('RGB'));hsv=cv2.cvtColor(rgb,cv2.COLOR_RGB2HSV)
+        red=((hsv[:,:,0]<15)|(hsv[:,:,0]>165))&(hsv[:,:,1]>110)&(hsv[:,:,2]>95)
+        white=(rgb.min(axis=2)>195)&(rgb.max(axis=2)-rgb.min(axis=2)<65)
+        if value==5 and red.mean()>.06:return (value,point)
+        if value==1 and red.mean()<.04 and white.mean()>.03:return (value,point)
+        return None
 
     @staticmethod
     def exit_region(points):

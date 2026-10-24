@@ -9,6 +9,7 @@ build/
 **/tools/*
 !apk/源码/tools/bootstrap_android.py
 !apk/源码/tools/verify_android_package.py
+!apk/源码/tools/CoreCheck.java
 
 # Android machine configuration and signing material
 .gradle/

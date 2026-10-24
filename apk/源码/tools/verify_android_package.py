@@ -15,14 +15,15 @@ def verify(apk: Path, version: str) -> dict:
         resources = archive.read('resources.arsc')
     if not dex:
         raise ValueError('APK contains no DEX bytecode')
-    forbidden = ('倍率未识别清楚', '请重传首页截图', '第一张图的倍率按钮不清楚')
+    forbidden = ('倍率未识别清楚', '请重传首页截图', '第一张图的倍率按钮不清楚',
+                 '每轮倍率（自己选择）', '程序不识别、不切换游戏倍率', '本次使用券数（自动识别，可更正）')
     for text in forbidden:
         if any(text.encode('utf-8') in blob for blob in dex):
             raise ValueError('APK still contains obsolete multiplier recognition: ' + text)
-    for text in ('程序不识别、不切换游戏倍率', '结算完成，自动返回首页'):
+    for text in ('首页实际余券', '正在切换 1 倍，等待画面确认', '首页确认余券为 0，已全部用完', '结算完成，自动返回首页'):
         if not any(text.encode('utf-8') in blob for blob in dex):
             raise ValueError('APK is missing expected behavior marker: ' + text)
-    label = f'靶心助手 {version} · 手动倍率'
+    label = f'靶心助手 {version} · 自动余券'
     if not any(label.encode(encoding) in resources for encoding in ('utf-8', 'utf-16-le')):
         raise ValueError('APK is missing the visible version label: ' + label)
     return {'apk': str(apk), 'version_label': label, 'legacy_multiplier_ocr': False,

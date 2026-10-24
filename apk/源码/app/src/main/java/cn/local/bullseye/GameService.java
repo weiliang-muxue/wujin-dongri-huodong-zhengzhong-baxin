@@ -16,8 +16,8 @@ public class GameService extends AccessibilityService {
     public volatile boolean running=false,paused=false;volatile boolean busy=false;
     final Handler main=new Handler(Looper.getMainLooper());final ExecutorService worker=Executors.newSingleThreadExecutor();final Object tapLock=new Object();
     Config config;Vision vision;Bitmap home,board;WindowManager wm;LinearLayout floating;TextView status;Button pauseButton;
-    int remaining,rounds,cost=1,pending=-1,retries=0,failures=0;boolean starting=false,inRound=false;long lastAction=0,lastKnown=0;Set<Integer> visited=new HashSet<>();
-    boolean allowInitialBoard=true,needsCountSync=false;
+    int remaining,rounds,pending=-1,retries=0,failures=0;boolean starting=false,inRound=false;long lastAction=0,lastKnown=0;Set<Integer> visited=new HashSet<>();
+    boolean allowInitialBoard=true;final TicketPolicy tickets=new TicketPolicy();
     int exitSeen=0,exitAttempts=0;
     @Override protected void onServiceConnected(){instance=this;vision=new Vision();wm=(WindowManager)getSystemService(WINDOW_SERVICE);}
     @Override public void onAccessibilityEvent(AccessibilityEvent e){}
@@ -25,17 +25,17 @@ public class GameService extends AccessibilityService {
     @Override public void onDestroy(){stopRun("服务已关闭");instance=null;worker.shutdownNow();if(vision!=null)vision.close();super.onDestroy();}
     int dp(int n){return Math.round(n*getResources().getDisplayMetrics().density);}
     public void begin(Config c){if(running||busy){Toast.makeText(this,"上次运行尚未结束，请稍后再开始",Toast.LENGTH_LONG).show();return;}config=c;if(home!=null)home.recycle();if(board!=null)board.recycle();home=BitmapFactory.decodeFile(new File(getFilesDir(),"home.png").toString());board=BitmapFactory.decodeFile(new File(getFilesDir(),"board.png").toString());if(home==null||board==null){Toast.makeText(this,"请重新上传两张截图",Toast.LENGTH_LONG).show();return;}
-        remaining=c.count;rounds=0;pending=-1;starting=false;inRound=false;allowInitialBoard=true;needsCountSync=false;exitSeen=0;exitAttempts=0;visited.clear();retries=0;failures=0;running=true;paused=false;lastKnown=SystemClock.uptimeMillis();lastAction=lastKnown;showFloating();update("5 秒后开始");main.postDelayed(this::tick,5000);
+        remaining=c.count;tickets.reset();rounds=0;pending=-1;starting=false;inRound=false;allowInitialBoard=true;exitSeen=0;exitAttempts=0;visited.clear();retries=0;failures=0;running=true;paused=false;lastKnown=SystemClock.uptimeMillis();lastAction=lastKnown;showFloating();update("5 秒后开始");main.postDelayed(this::tick,5000);
     }
     void showFloating(){
         floating=new LinearLayout(this);floating.setOrientation(LinearLayout.VERTICAL);floating.setPadding(dp(8),dp(4),dp(8),dp(4));floating.setBackgroundColor(Color.rgb(237,247,240));
         TextView version=new TextView(this);version.setText(R.string.app_version_label);version.setTextColor(Color.rgb(20,70,45));version.setTextSize(13);version.setTypeface(null,Typeface.BOLD);floating.addView(version);
         status=new TextView(this);status.setTextColor(Color.rgb(20,70,45));status.setTextSize(12);floating.addView(status);
-        LinearLayout buttons=new LinearLayout(this);pauseButton=new Button(this);pauseButton.setText("暂停");pauseButton.setAllCaps(false);pauseButton.setMinHeight(dp(48));pauseButton.setOnClickListener(v->{if(paused){paused=false;lastKnown=SystemClock.uptimeMillis();lastAction=lastKnown;update("继续识别");}else pause("已暂停");});buttons.addView(pauseButton);
+        LinearLayout buttons=new LinearLayout(this);pauseButton=new Button(this);pauseButton.setText("暂停");pauseButton.setAllCaps(false);pauseButton.setMinHeight(dp(48));pauseButton.setOnClickListener(v->{if(paused){worker.execute(()->{tickets.reset();lastKnown=SystemClock.uptimeMillis();lastAction=lastKnown;paused=false;update("继续识别");});}else pause("已暂停");});buttons.addView(pauseButton);
         Button stop=new Button(this);stop.setText("停止");stop.setAllCaps(false);stop.setMinHeight(dp(48));stop.setOnClickListener(v->stopRun("已停止"));buttons.addView(stop);floating.addView(buttons);
         WindowManager.LayoutParams p=new WindowManager.LayoutParams(-2,-2,WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,PixelFormat.TRANSLUCENT);p.gravity=Gravity.TOP|Gravity.END;p.y=dp(48);wm.addView(floating,p);
     }
-    void update(String message){getSharedPreferences("progress",0).edit().putInt("remaining",remaining).putInt("rounds",rounds).putString("state",message).apply();main.post(()->{if(status!=null)status.setText("剩余 "+remaining+" · "+message);if(pauseButton!=null)pauseButton.setText(paused?"继续":"暂停");});}
+    void update(String message){getSharedPreferences("progress",0).edit().putInt("remaining",remaining).putInt("rounds",rounds).putString("state",message).apply();main.post(()->{if(status!=null)status.setText("首页余券 "+remaining+" · "+message);if(pauseButton!=null)pauseButton.setText(paused?"继续":"暂停");});}
     void pause(String message){synchronized(tapLock){paused=true;}update(message);}
     public void stopRun(String message){synchronized(tapLock){running=false;paused=false;}main.removeCallbacksAndMessages(null);if(floating!=null){try{wm.removeView(floating);}catch(Exception ignored){}floating=null;status=null;pauseButton=null;}getSharedPreferences("progress",0).edit().putInt("remaining",remaining).putInt("rounds",rounds).putString("state",message).apply();Toast.makeText(this,message+"，剩余 "+remaining+" 张",Toast.LENGTH_LONG).show();}
     void next(){main.postDelayed(this::tick,700);}
@@ -57,18 +57,28 @@ public class GameService extends AccessibilityService {
         if(match(frame,home,config.start,.025f)>.68){
             exitAttempts=0;
             allowInitialBoard=false;
-            lastKnown=SystemClock.uptimeMillis();if(inRound){inRound=false;rounds++;pending=-1;visited.clear();}
-            Bitmap countImage=Vision.crop(frame,config.countRect);Integer actual;try{actual=vision.number(countImage);}finally{countImage.recycle();}if(needsCountSync&&actual==null){pause("当前轮已结束，但券数未读清，请保持券数可见后继续");return;}if(actual!=null)remaining=Math.min(remaining,actual);needsCountSync=false;
-            if(remaining<=0){main.post(()->stopRun("设定次数已用完"));return;}
-            cost=config.multiplier;
-            if(remaining<cost){main.post(()->stopRun("剩余券数不足所选倍率，请将游戏和助手都改为 1 倍后重新开始"));return;}
-            if(starting&&++retries>3){pause("开始按钮没有响应，请检查游戏");return;}
-            if(tap(config.start)){starting=true;update("按所选 "+cost+" 倍开始下一轮");}return;
+            lastKnown=SystemClock.uptimeMillis();if(inRound){inRound=false;rounds++;pending=-1;visited.clear();tickets.reset();}
+            Bitmap countImage=Vision.crop(frame,config.countRect);Integer actual;try{actual=vision.number(countImage);}finally{countImage.recycle();}
+            TicketPolicy.Action action=tickets.read(actual);
+            if(action==TicketPolicy.Action.WAIT){update("正在核对首页实际券数");return;}
+            if(action==TicketPolicy.Action.READ_ERROR){pause("首页券数暂时读不清，请保持右上角券数可见后继续");return;}
+            remaining=tickets.remaining;
+            if(action==TicketPolicy.Action.DONE){main.post(()->stopRun("首页确认余券为 0，已全部用完"));return;}
+            if(action==TicketPolicy.Action.CHECK_BUTTON){
+                Vision.MultiplierButton button=Vision.lowBalanceButton(frame,config);
+                action=tickets.button(button==null?0:button.value);
+                if(action==TicketPolicy.Action.WAIT){update("余券不足 5 张，正在确认右下角按钮");return;}
+                if(action==TicketPolicy.Action.BUTTON_ERROR){pause("右下角倍率按钮被遮挡或样式不匹配，请保持按钮可见后继续");return;}
+                if(action==TicketPolicy.Action.SWITCH_ERROR){pause("切换 1 倍没有响应，请检查游戏后继续");return;}
+                if(action==TicketPolicy.Action.SWITCH){if(tap(button.point)){tickets.switched();update("正在切换 1 倍，等待画面确认");}return;}
+            }
+            if(starting&&++retries>3){retries=0;pause("开始按钮没有响应，请检查游戏");return;}
+            if(tap(config.start)){starting=true;tickets.started();update("按游戏当前倍率开始，回首页后更新余券");}return;
         }
         List<Integer> available=new ArrayList<>();for(int i=0;i<config.targets.size();i++)if(match(frame,board,config.targets.get(i),.018f)>.72)available.add(i);
         if(!available.isEmpty()){
-            lastKnown=SystemClock.uptimeMillis();if(starting){starting=false;inRound=true;remaining=Math.max(0,remaining-cost);retries=0;}
-            if(!inRound){if(allowInitialBoard&&available.size()==12){inRound=true;allowInitialBoard=false;needsCountSync=true;update("继续已开启的一轮，结束后读取券数");}else{pause("请回到首页或完整的 12 靶子页再运行");return;}}
+            lastKnown=SystemClock.uptimeMillis();if(starting){starting=false;inRound=true;retries=0;}
+            if(!inRound){if(allowInitialBoard&&available.size()==12){inRound=true;allowInitialBoard=false;update("继续已开启的一轮，结束后读取券数");}else{pause("请回到首页或完整的 12 靶子页再运行");return;}}
             if(pending>=0){if(!available.contains(pending)){visited.add(pending);pending=-1;retries=0;}else if(retries++<2){tap(config.targets.get(pending));return;}else{pause("靶子没有响应，请检查画面");return;}}
             available.removeAll(visited);if(!available.isEmpty()){int i=available.get(new Random().nextInt(available.size()));if(tap(config.targets.get(i))){pending=i;update("第 "+(rounds+1)+" 轮 · 靶子 "+(i+1));}}
         }else if(SystemClock.uptimeMillis()-lastKnown>18000)pause("画面不匹配，已暂停");
