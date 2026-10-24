@@ -29,6 +29,7 @@ public class GameService extends AccessibilityService {
     }
     void showFloating(){
         floating=new LinearLayout(this);floating.setOrientation(LinearLayout.VERTICAL);floating.setPadding(dp(8),dp(4),dp(8),dp(4));floating.setBackgroundColor(Color.rgb(237,247,240));
+        TextView version=new TextView(this);version.setText(R.string.app_version_label);version.setTextColor(Color.rgb(20,70,45));version.setTextSize(13);version.setTypeface(null,Typeface.BOLD);floating.addView(version);
         status=new TextView(this);status.setTextColor(Color.rgb(20,70,45));status.setTextSize(12);floating.addView(status);
         LinearLayout buttons=new LinearLayout(this);pauseButton=new Button(this);pauseButton.setText("暂停");pauseButton.setAllCaps(false);pauseButton.setMinHeight(dp(48));pauseButton.setOnClickListener(v->{if(paused){paused=false;lastKnown=SystemClock.uptimeMillis();lastAction=lastKnown;update("继续识别");}else pause("已暂停");});buttons.addView(pauseButton);
         Button stop=new Button(this);stop.setText("停止");stop.setAllCaps(false);stop.setMinHeight(dp(48));stop.setOnClickListener(v->stopRun("已停止"));buttons.addView(stop);floating.addView(buttons);

@@ -1,6 +1,6 @@
 # 无尽冬日活动正中靶心
 
-“正中靶心”活动的本地截图识别与操作助手，当前版本 **1.0.1**。Windows EXE 和 Android APK 是两个独立程序。
+“正中靶心”活动的本地截图识别与操作助手，当前版本为 **Windows 1.0.1 / Android 1.0.2**。Windows EXE 和 Android APK 是两个独立程序。
 
 ## 功能
 
@@ -18,6 +18,8 @@
 Windows 直接操作电脑上的微信小程序或模拟器，不通过 ADB 连接手机。开始后不要操作鼠标或移动游戏窗口。**F8** 暂停/继续，**Esc** 停止。
 
 Android 直接安装到手机，要求 **Android 11 及以上**。用户在系统辅助功能中开启“靶心助手”，通过悬浮条暂停、继续或停止。截图与识别在本地完成。
+
+Android 1.0.2 的主界面和悬浮窗都会显示“靶心助手 1.0.2 · 手动倍率”。安装包使用带版本号的文件名，避免与旧版同名 APK 混淆。
 
 ## 源码结构
 
@@ -58,6 +60,12 @@ cd android
 ```
 
 输出：`android/app/build/outputs/apk/release/app-release.apk`。当前测试版本使用本机 Android debug 签名；继续更新已安装的测试版本需要保留同一签名密钥。签名文件不在仓库中。
+
+发包前检查 APK 内部不存在旧倍率识别提示，并确认可见版本标识：
+
+```powershell
+python tools/verify_android_package.py android/app/build/outputs/apk/release/app-release.apk --version 1.0.2
+```
 
 ## 验证与测试资料
 

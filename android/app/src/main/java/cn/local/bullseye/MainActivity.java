@@ -20,7 +20,7 @@ public class MainActivity extends Activity {
     @Override public void onCreate(Bundle state){super.onCreate(state);vision=new Vision();
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(22),dp(18),dp(22),dp(24));root.setBackgroundColor(Color.rgb(244,246,245));scroll.addView(root);setContentView(scroll);
         scroll.setOnApplyWindowInsetsListener((v,insets)->{android.graphics.Insets i=insets.getInsets(WindowInsets.Type.systemBars());scroll.setPadding(i.left,i.top,i.right,i.bottom);return insets;});
-        TextView title=label("靶心助手",28);title.setTypeface(null,Typeface.BOLD);root.addView(title);root.addView(label("ANDROID 1.0.1  ·  只需两张全屏截图",13));
+        TextView title=label("靶心助手",28);title.setTypeface(null,Typeface.BOLD);root.addView(title);root.addView(label(getString(R.string.app_version_label),14));
         root.addView(label("上传首页 → 上传 12 个靶子 → 自动识别 → 开始",14));
         first=button("1  上传首页全图");second=button("2  上传靶子全图");root.addView(first);root.addView(second);first.setOnClickListener(v->pick(1));second.setOnClickListener(v->pick(2));
         preview=new ImageView(this);preview.setScaleType(ImageView.ScaleType.FIT_CENTER);preview.setBackgroundColor(Color.rgb(230,237,232));preview.setContentDescription("截图预览与自动识别的靶子位置");root.addView(preview,new LinearLayout.LayoutParams(-1,dp(260)));
