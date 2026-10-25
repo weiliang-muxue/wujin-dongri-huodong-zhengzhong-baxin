@@ -11,22 +11,29 @@ class BearRunner:
         self.flow.maxMinutes=settings.get('minutes',30)
         presets=settings.get('calibration',{}).get('presets')
         if presets:self.flow.presetX=[p[0] for p in presets];self.flow.presetY=[p[1] for p in presets]
-    def start(self):self.thread=threading.Thread(target=self.run,daemon=True);self.thread.start()
+    def start(self):
+        with self.lock:
+            if self.stop_event.is_set() or self.thread is not None:return
+            self.flow.start(round(time.monotonic()*1000))
+            self.thread=threading.Thread(target=self.run,daemon=True);self.thread.start()
     def stop(self):
         with self.lock:self.stop_event.set();self.gate.set();self.flow.stop()
-    def pause(self):
+    def pause(self,reason='已暂停 · 点继续恢复'):
         with self.lock:self.gate.clear()
-        self.report('已暂停 · F8 继续')
+        self.report(reason)
     def resume(self):
         if self.stop_event.is_set():return
         with self.lock:
             # An interrupted batch must obtain a fresh map reading; preserve session deadline.
-            deadline=self.flow.deadline;self.flow.start(round(time.monotonic()*1000));self.flow.deadline=deadline;self.gate.set()
+            if self.thread is not None:
+                deadline=self.flow.deadline;self.flow.start(round(time.monotonic()*1000));self.flow.deadline=deadline
+            self.gate.set()
         self.report('继续前重新检查地图')
     def run(self):
-        vision=BearVision(calibration=self.settings.get('calibration'));self.flow.start(round(time.monotonic()*1000))
         last=''
         try:
+            if self.stop_event.is_set():return
+            vision=BearVision(calibration=self.settings.get('calibration'))
             while not self.stop_event.is_set():
                 if time.monotonic()*1000>=self.flow.deadline:self.report('已达到运行时长');break
                 if not self.gate.wait(.2):continue
@@ -42,6 +49,7 @@ class BearRunner:
                             self.io.action(d);self.flow.complete(True,round(time.monotonic()*1000));self.save(self.flow.nextPreset)
                         if d.kind=='PAUSE':break
                 except Exception as e:
-                    self.report(str(e));self.pause()
+                    self.pause('已暂停：'+str(e))
                 self.stop_event.wait(.65)
+        except Exception as e:self.report('无法开始：'+str(e))
         finally:self.stop();self.report('已停止；点击「开始」可新开一轮')

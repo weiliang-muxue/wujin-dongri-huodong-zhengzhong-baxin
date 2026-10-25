@@ -57,17 +57,18 @@ class WindowIO:
         if r!=self.last_rect:raise RuntimeError('窗口位置已改变，请重新开始')
         mouse=Controller()
         def point(x,y):return (r[0]+round(x*r[2]/1080),r[1]+round(y*r[3]/2400))
+        def check_point():
+            if not self.active():raise RuntimeError('游戏已离开前台')
+            at=u.WindowFromPoint(W.POINT(*mouse.position))
+            if u.GetAncestor(at,2)!=self.hwnd:raise RuntimeError('游戏画面被其他窗口遮挡，请移开后继续')
         if decision.kind=='SCROLL':
-            mouse.position=point(540,1820);mouse.press(Button.left)
+            mouse.position=point(540,1820);check_point();mouse.press(Button.left)
             try:
                 for i in range(1,9):
-                    if not self.active():raise RuntimeError('游戏已离开前台')
-                    mouse.position=point(540,1820-i*100);time.sleep(.025)
+                    mouse.position=point(540,1820-i*100);check_point();time.sleep(.025)
             finally:mouse.release(Button.left)
         else:
             if not (0<decision.x<1080 and 0<decision.y<2400):raise RuntimeError('点击位置无效')
             mouse.position=point(decision.x,decision.y)
-            if not self.active():raise RuntimeError('游戏已离开前台')
-            at=u.WindowFromPoint(W.POINT(*mouse.position))
-            if u.GetAncestor(at,2)!=self.hwnd:raise RuntimeError('游戏按钮被其他窗口遮挡，请移开后继续')
+            check_point()
             mouse.click(Button.left)

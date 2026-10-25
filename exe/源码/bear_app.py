@@ -12,7 +12,7 @@ DATA.mkdir(parents=True,exist_ok=True)
 
 class BearApp(ctk.CTk):
     def __init__(self):
-        super().__init__();self.title('无尽冬日助手 2.0.0 · 打熊');self.geometry('1000x800');self.minsize(900,680)
+        super().__init__();self.title('无尽冬日助手 2.0.1 · 打熊');self.geometry('1000x800');self.minsize(900,680)
         self.return_to_chooser=False;self.runner=None;self.panel=None;self.events=queue.Queue();self.preview=None;self.crop=(0,0,1,1);self.drag=None;self.listener=None
         try:self.settings=json.loads((DATA/'settings.json').read_text(encoding='utf-8'))
         except Exception:self.settings={}

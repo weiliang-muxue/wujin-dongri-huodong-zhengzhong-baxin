@@ -34,3 +34,6 @@ video-replay-results.json
 **/tools/android-sdk/
 **/tools/gradle-8.9/
 **/tests/*.png
+
+**/tests/fixtures/
+**/tests/video-review/

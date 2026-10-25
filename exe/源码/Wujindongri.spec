@@ -12,5 +12,5 @@ a=Analysis([str(root/'main.py')],pathex=[str(root)],
 # Live capture is MSS; no packaged VideoCapture/FFmpeg is used by either mode.
 a.binaries=[item for item in a.binaries if 'opencv_videoio_ffmpeg' not in item[0].lower()]
 pyz=PYZ(a.pure)
-exe=EXE(pyz,a.scripts,a.binaries,a.datas,[],name='无尽冬日助手-2.0.0',version=str(root/'version_info.txt'),
+exe=EXE(pyz,a.scripts,a.binaries,a.datas,[],name='无尽冬日助手-2.0.1',version=str(root/'version_info.txt'),
  debug=False,bootloader_ignore_signals=False,strip=False,upx=False,console=False)

@@ -16,7 +16,7 @@ DATA.mkdir(parents=True,exist_ok=True)
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.return_to_chooser=False;self.panel=None;self.game_hwnd=None;self.title('无尽冬日助手 2.0.0 · 正中靶心');self.geometry('1180x820');self.minsize(1000,700)
+        self.return_to_chooser=False;self.panel=None;self.game_hwnd=None;self.title('无尽冬日助手 2.0.1 · 正中靶心');self.geometry('1180x820');self.minsize(1000,700)
         self.configure(fg_color='#F4F6F5');self.images={};self.current='首页截图';self.analyzing=False
         self.config_data={'region':(0,0,1,1),'targets':[]};self.runner=None;self.events=queue.Queue();self.vision=Vision()
         self.anchor=None;self.scale=1;self.offset=(0,0);self.state_name='idle';self.listener=None;self.is_counting=False

@@ -4,9 +4,9 @@ JDK 17、Gradle 8.9、Android SDK 35 extension 15、Build Tools 35.0.0。设置 
 
 构建：`gradlew.bat :app:testEngine :app:assembleRelease :app:lintRelease`。
 
-将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.0.0.apk。
+将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.0.1.apk。
 
-检查成品：`python tools/verify_android_package.py ../无尽冬日助手-2.0.0.apk --version 2.0.0`。
+检查成品：`python tools/verify_android_package.py ../无尽冬日助手-2.0.1.apk --version 2.0.1`。
 
 一个 launcher：ModeActivity；一个无障碍服务：BearService。cn.local.bullseye.GameService 是该服务内的模块，不是第二个 Android Service。ModeGate、运行代次和输入前检查共同限制旧任务回调。返回活动选择会停止两个模块。
 

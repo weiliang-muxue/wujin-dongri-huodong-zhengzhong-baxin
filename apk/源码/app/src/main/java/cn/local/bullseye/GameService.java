@@ -40,7 +40,7 @@ public class GameService extends ContextWrapper {
         floating=new LinearLayout(this);floating.setOrientation(LinearLayout.VERTICAL);floating.setPadding(dp(8),dp(4),dp(8),dp(4));floating.setBackgroundColor(Color.rgb(237,247,240));
         TextView version=new TextView(this);version.setText("正中靶心  ⠿ 拖动");version.setMinHeight(dp(48));version.setTextColor(Color.rgb(20,70,45));version.setTextSize(13);version.setTypeface(null,Typeface.BOLD);floating.addView(version);
         status=new TextView(this);status.setTextColor(Color.rgb(20,70,45));status.setTextSize(12);floating.addView(status);
-        LinearLayout buttons=new LinearLayout(this);pauseButton=new Button(this);pauseButton.setText("暂停");pauseButton.setAllCaps(false);pauseButton.setMinHeight(dp(48));pauseButton.setOnClickListener(v->{if(paused){worker.execute(()->{tickets.reset();lastKnown=SystemClock.uptimeMillis();lastAction=lastKnown;paused=false;update("继续识别");});}else pause("已暂停");});buttons.addView(pauseButton);
+        LinearLayout buttons=new LinearLayout(this);pauseButton=new Button(this);pauseButton.setText("暂停");pauseButton.setAllCaps(false);pauseButton.setMinHeight(dp(48));pauseButton.setOnClickListener(v->{if(paused){final long resumeToken=generation;worker.execute(()->{synchronized(tapLock){if(!SessionGuard.canResume(resumeToken,generation,running,paused,host.modes.is(cn.local.winterbear.ModeGate.Mode.BULLSEYE)))return;tickets.reset();lastKnown=SystemClock.uptimeMillis();lastAction=lastKnown;paused=false;update("继续识别");}});}else pause("已暂停");});buttons.addView(pauseButton);
         Button stop=new Button(this);stop.setText("停止");stop.setAllCaps(false);stop.setMinHeight(dp(48));stop.setOnClickListener(v->stopRun("已停止"));buttons.addView(stop);floating.addView(buttons);
         WindowManager.LayoutParams p=new WindowManager.LayoutParams(-2,-2,WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,PixelFormat.TRANSLUCENT);p.gravity=Gravity.TOP|Gravity.LEFT;p.x=dp(12);p.y=dp(48);
         version.setOnTouchListener(new View.OnTouchListener(){float sx,sy;int x,y;public boolean onTouch(View v,MotionEvent e){
@@ -50,7 +50,7 @@ public class GameService extends ContextWrapper {
     }
     void update(String message){getSharedPreferences("progress",0).edit().putInt("remaining",remaining).putInt("rounds",rounds).putString("state",message).apply();main.post(()->{if(status!=null)status.setText("首页余券 "+remaining+" · "+message);if(pauseButton!=null)pauseButton.setText(paused?"继续":"暂停");});}
     void pause(String message){synchronized(tapLock){paused=true;}update(message);}
-    public void stopRun(String message){boolean wasRunning=running;generation++;synchronized(tapLock){running=false;paused=false;}main.removeCallbacksAndMessages(null);gestureInFlight=false;if(!captureInFlight)busy=false;if(floating!=null){try{wm.removeView(floating);}catch(Exception ignored){}floating=null;status=null;pauseButton=null;}getSharedPreferences("progress",0).edit().putInt("remaining",remaining).putInt("rounds",rounds).putString("state",message).apply();if(wasRunning)Toast.makeText(this,message+"，剩余 "+remaining+" 张",Toast.LENGTH_LONG).show();}
+    public void stopRun(String message){boolean wasRunning;synchronized(tapLock){wasRunning=running;generation++;running=false;paused=false;}main.removeCallbacksAndMessages(null);gestureInFlight=false;if(!captureInFlight)busy=false;if(floating!=null){try{wm.removeView(floating);}catch(Exception ignored){}floating=null;status=null;pauseButton=null;}getSharedPreferences("progress",0).edit().putInt("remaining",remaining).putInt("rounds",rounds).putString("state",message).apply();if(wasRunning)Toast.makeText(this,message+"，剩余 "+remaining+" 张",Toast.LENGTH_LONG).show();}
     void next(){main.postDelayed(this::tick,700);}
     void tick(){
         if(!running||!host.modes.is(cn.local.winterbear.ModeGate.Mode.BULLSEYE))return;if(paused||busy||SystemClock.uptimeMillis()-lastAction<2400){next();return;}
@@ -87,7 +87,7 @@ public class GameService extends ContextWrapper {
             if(action==TicketPolicy.Action.WAIT){update("正在核对首页实际券数");return;}
             if(action==TicketPolicy.Action.READ_ERROR){pause("首页券数暂时读不清，请保持右上角券数可见后继续");return;}
             remaining=tickets.remaining;
-            if(action==TicketPolicy.Action.DONE){main.post(()->stopRun("首页确认余券为 0，已全部用完"));return;}
+            if(action==TicketPolicy.Action.DONE){final long doneToken=generation;main.post(()->{if(doneToken==generation&&running)stopRun("首页确认余券为 0，已全部用完");});return;}
             if(action==TicketPolicy.Action.CHECK_BUTTON){
                 Vision.MultiplierButton button=Vision.lowBalanceButton(frame,config);
                 action=tickets.button(button==null?0:button.value);

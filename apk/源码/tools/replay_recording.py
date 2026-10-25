@@ -168,7 +168,7 @@ if len(sys.argv)>2:
     gray_plus_check={"synthetic":True,"bearAndGrayPlus":recorded_rallies(composite)}
     assert not any(abs(row['join'][1]-436)<=10 for row in gray_plus_check["bearAndGrayPlus"]),gray_plus_check
 
-report = {"version":"2.0.0","recordingSeconds":round(duration,3),"sampledSeconds":sampled,
+report = {"version":"2.0.1","recordingSeconds":round(duration,3),"sampledSeconds":sampled,
           "overflowDetectedAt":dialog_times,"falseOverflowOutsideAnnotatedInterval":0,
           "annotatedFrameChecks":checks,"recordedBearChecks":bear_checks,"nonBearChecks":negative_checks,"grayPlusControl":gray_plus_check,
           "realDeviceTested":False,"androidOcrTested":False}
