@@ -1,40 +1,36 @@
-# Local runtimes, downloads and build output
-.venv/
-__pycache__/
-*.py[cod]
-dist/
-build/
-.build/
-*.log
-**/tools/*
-!apk/源码/tools/bootstrap_android.py
-!apk/源码/tools/verify_android_package.py
-!apk/源码/tools/CoreCheck.java
-
-# Android machine configuration and signing material
-.gradle/
-.idea/
-local.properties
+# Packages stay local. Source, tests and small recognition assets are tracked.
+*.exe
 *.apk
 *.aab
-*.exe
+*.msi
+*.zip
+*.mp4
+*.log
+*.pyc
+__pycache__/
+.venv/
+.gradle/
+.idea/
+.build/
+build/
+dist/
+local.properties
 *.jks
 *.keystore
 *.p12
 *.pem
-keystore.properties
 .env
 .env.*
-
-# User screenshots, videos, OCR captures and generated regression fixtures
-tests/
-*.png
-*.jpg
-*.jpeg
-*.mp4
-*.zip
-
-# Editor and OS metadata
-.vscode/
+keystore.properties
+verification-local/
+tests/fixtures/
+tests/video-review/
 Thumbs.db
 .DS_Store
+
+tests/*.png
+video-replay-results.json
+
+**/tools/android-sdk/
+**/tools/gradle-8.9/
+**/tests/*.png

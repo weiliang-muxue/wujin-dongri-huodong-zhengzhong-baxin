@@ -16,17 +16,17 @@ DATA.mkdir(parents=True,exist_ok=True)
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title('靶心助手 · Windows 1.0.3 · 自动余券');self.geometry('1180x820');self.minsize(1000,700)
+        self.return_to_chooser=False;self.panel=None;self.game_hwnd=None;self.title('无尽冬日助手 2.0.0 · 正中靶心');self.geometry('1180x820');self.minsize(1000,700)
         self.configure(fg_color='#F4F6F5');self.images={};self.current='首页截图';self.analyzing=False
         self.config_data={'region':(0,0,1,1),'targets':[]};self.runner=None;self.events=queue.Queue();self.vision=Vision()
         self.anchor=None;self.scale=1;self.offset=(0,0);self.state_name='idle';self.listener=None;self.is_counting=False
         self.grid_columnconfigure(0,weight=1);self.grid_rowconfigure(2,weight=1)
         header=ctk.CTkFrame(self,fg_color='transparent');header.grid(row=0,column=0,sticky='ew',padx=28,pady=(24,12))
-        ctk.CTkLabel(header,text='靶心助手',font=('Microsoft YaHei UI',27,'bold'),text_color='#152E27').pack(side='left')
-        ctk.CTkLabel(header,text='WINDOWS  /  微信小程序 · 模拟器',font=('Microsoft YaHei UI',12),text_color='#5B6D65').pack(side='left',padx=20)
-        self.status=ctk.CTkLabel(header,text='等待截图',fg_color='#E3ECE7',corner_radius=16,width=150,height=32,text_color='#315548');self.status.pack(side='right')
+        ctk.CTkLabel(header,text='正中靶心',font=('Microsoft YaHei UI',27,'bold'),text_color='#152E27').pack(side='left')
+
+        self.status=ctk.CTkLabel(header,text='等待截图',fg_color='#E3ECE7',corner_radius=16,width=150,height=32,text_color='#315548');self.status.pack(side='right');ctk.CTkButton(header,text='返回活动选择',command=self.switch_mode,width=130).pack(side='right',padx=12)
         steps=ctk.CTkFrame(self,fg_color='#E8EFEB',corner_radius=12);steps.grid(row=1,column=0,sticky='ew',padx=28,pady=(0,16))
-        ctk.CTkLabel(steps,text='01 上传首页全图    →    02 上传 12 靶子全图    →    03 自动识别    →    04 开始',font=('Microsoft YaHei UI',14),height=48).pack()
+        ctk.CTkLabel(steps,text='① 选首页截图    →    ② 选靶子截图    →    ③ 开始',font=('Microsoft YaHei UI',14),height=48).pack()
         body=ctk.CTkFrame(self,fg_color='transparent');body.grid(row=2,column=0,sticky='nsew',padx=28)
         body.grid_columnconfigure(0,weight=1);body.grid_rowconfigure(0,weight=1)
         left=ctk.CTkFrame(body,fg_color='white',corner_radius=16);left.grid(row=0,column=0,sticky='nsew',padx=(0,18));left.grid_rowconfigure(2,weight=1);left.grid_columnconfigure(0,weight=1)
@@ -53,7 +53,7 @@ class App(ctk.CTk):
         self.label(right,'运行过程',16,True)
         self.logbox=ctk.CTkTextbox(right,width=280,height=155,font=('Microsoft YaHei UI',12),fg_color='#F3F6F4');self.logbox.pack(padx=12,pady=(0,12));self.logbox.configure(state='disabled')
         bottom=ctk.CTkFrame(self,fg_color='white',corner_radius=14);bottom.grid(row=3,column=0,sticky='ew',padx=28,pady=18)
-        self.warning=ctk.CTkLabel(bottom,text='运行时请勿操作鼠标或移动游戏窗口  ·  F8 暂停/继续  ·  Esc 停止',font=('Microsoft YaHei UI',13),text_color='#735626');self.warning.pack(side='left',padx=16,pady=20)
+        self.warning=ctk.CTkLabel(bottom,text='运行后用悬浮条暂停或停止',font=('Microsoft YaHei UI',13),text_color='#735626');self.warning.pack(side='left',padx=16,pady=20)
         self.stop_button=ctk.CTkButton(bottom,text='停止',width=75,fg_color='#EAECEB',text_color='#39473F',hover_color='#D9DEDA',command=self.stop,state='disabled');self.stop_button.pack(side='right',padx=(8,16))
         self.pause_button=ctk.CTkButton(bottom,text='暂停',width=75,command=self.toggle_pause,state='disabled');self.pause_button.pack(side='right',padx=8)
         self.start_button=ctk.CTkButton(bottom,text='开始运行',width=110,height=40,command=self.start);self.start_button.pack(side='right',padx=8)
@@ -62,7 +62,17 @@ class App(ctk.CTk):
             from pynput import keyboard
             self.listener=keyboard.Listener(on_press=lambda key:self.events.put(('hotkey',key)));self.listener.start()
         except Exception as e:self.log('快捷键不可用：'+str(e))
-        self.log('准备就绪。请先上传首页和靶子页的屏幕全图。')
+        self.log('请先选择首页和靶子截图。');self.restore_settings()
+
+    def restore_settings(self):
+        try:
+            c=json.loads((DATA/'config.json').read_text(encoding='utf-8'))
+            home=Image.open(DATA/'home.png').convert('RGB');board=Image.open(DATA/'board.png').convert('RGB')
+            if home.size!=board.size or len(c.get('targets',[]))!=12 or not any(home.size==(m['width'],m['height']) for m in self.monitors):return
+            self.images={'首页截图':home,'靶子截图':board};self.config_data=c
+            self.calibration.configure(text='已恢复上次截图，可直接开始');self.count.configure(text='运行时读取');self.status.configure(text='已准备好')
+            self.recognize_button.configure(state='normal');self.start_button.configure(state='normal');self.draw()
+        except Exception:pass
 
     def label(self,parent,text,size=12,bold=False):
         ctk.CTkLabel(parent,text=text,font=('Microsoft YaHei UI',size,'bold' if bold else 'normal'),text_color='#334C40',wraplength=280,anchor='w',justify='left').pack(anchor='w',padx=12,pady=(12,6))
@@ -125,13 +135,35 @@ class App(ctk.CTk):
         mon=next(m for m in self.monitors if (m['width'],m['height'])==self.images['首页截图'].size)
         c=dict(self.config_data)
         self.start_button.configure(state='disabled');self.pause_button.configure(state='normal');self.stop_button.configure(state='normal')
+        bound=[None]
+        def guard():
+            from window_io import foreground,u
+            current=foreground()
+            if not current:raise RuntimeError("未找到前台游戏窗口")
+            if bound[0] is None:
+                pid=ctypes.c_ulong();u.GetWindowThreadProcessId(current,ctypes.byref(pid))
+                if pid.value==os.getpid():raise RuntimeError("请先切回游戏")
+                bound[0]=current;self.game_hwnd=current
+            elif current!=bound[0]:raise RuntimeError("游戏已离开前台，停止操作")
         def capture():
+            guard()
             import mss
             with mss.MSS() as s:
                 shot=s.grab(mon);return Image.frombytes('RGB',shot.size,shot.rgb)
         def tap(p):
+            guard()
             from pynput.mouse import Controller,Button
-            mouse=Controller();mouse.position=(mon['left']+int(p[0]*mon['width']),mon['top']+int(p[1]*mon['height']));mouse.click(Button.left)
+            mouse=Controller();mouse.position=(mon['left']+int(p[0]*mon['width']),mon['top']+int(p[1]*mon['height']))
+            from window_io import u,W
+            at=u.WindowFromPoint(W.POINT(*mouse.position))
+            if u.GetAncestor(at,2)!=bound[0]:raise RuntimeError('游戏按钮被其他窗口挡住，已停止')
+            guard();mouse.click(Button.left)
+        from floating import FloatingControls
+        if self.panel:self.panel.close()
+        self.panel=FloatingControls(self,'正中靶心',self.toggle_pause,self.stop)
+        panel=self.panel;raw_capture=capture;raw_tap=tap
+        capture=lambda:panel.hidden_call(raw_capture)
+        tap=lambda p:panel.hidden_call(raw_tap,p)
         self.runner=Runner(c,self.images['首页截图'],self.images['靶子截图'],capture,tap,lambda *a:self.events.put(('report',a)))
         self.state_name='countdown';self.is_counting=True;self.countdown(5)
 
@@ -147,9 +179,15 @@ class App(ctk.CTk):
         if self.runner.gate.is_set():self.runner.pause()
         elif self.is_counting:self.runner.resume()
         else:
-            self.iconify();self.after(500,self.runner.resume)
+            self.iconify()
+            if self.game_hwnd:
+                from window_io import u
+                u.SetForegroundWindow(self.game_hwnd)
+            self.after(500,self.runner.resume)
     def stop(self):
         if self.runner:self.runner.stop()
+        if self.panel:self.panel.close();self.panel=None
+        self.deiconify()
         self.state_name='stopped';self.status.configure(text='正在停止');self.start_button.configure(state='disabled' if self.runner and self.runner.thread and self.runner.thread.is_alive() else 'normal');self.pause_button.configure(state='disabled');self.stop_button.configure(state='disabled')
     def poll(self):
         while not self.events.empty():
@@ -157,7 +195,11 @@ class App(ctk.CTk):
             if kind=='log':self.log(payload)
             elif kind=='configured':
                 self.analyzing=False
-                self.config_data=payload;self.count.configure(text=f'{payload["count"]} 张');self.draw()
+                self.config_data=payload
+                try:
+                    self.images['首页截图'].save(DATA/'home.png');self.images['靶子截图'].save(DATA/'board.png');(DATA/'config.json').write_text(json.dumps(payload),encoding='utf-8')
+                except Exception as e:self.log('保存截图失败：'+str(e))
+                self.count.configure(text=f'{payload["count"]} 张');self.draw()
                 im=self.images['首页截图'];self.screen_label.configure(text=f'全屏 {im.width} × {im.height} · 比例 {im.width/im.height:.3f}')
                 self.status.configure(text='可以开始');self.recognize_button.configure(state='normal');self.start_button.configure(state='normal')
                 self.log(f'识别完成：{payload["count"]} 张券，12 个靶子。可以开始。')
@@ -170,17 +212,24 @@ class App(ctk.CTk):
                 elif payload==Key.esc and self.runner:self.stop()
             elif kind=='report':
                 state,text,left,rounds=payload;self.state_name=state;self.log(text)
+                if self.panel:self.panel.state(state=='paused')
                 state_label={'running':'运行中','paused':'已暂停','done':'已完成','stopped':'已停止','error':'异常停止'}.get(state,state)
                 self.status.configure(text=f'首页余券 {left} · {state_label}');self.count.configure(text=f'{left} 张');self.pause_button.configure(text='继续' if state=='paused' else '暂停')
                 (DATA/'progress.json').write_text(json.dumps({'state':state,'remaining':left,'rounds':rounds},ensure_ascii=False),encoding='utf-8')
                 if state in ('done','stopped','error'):
+                    if self.panel:self.panel.close();self.panel=None
                     self.start_button.configure(state='normal');self.pause_button.configure(state='disabled');self.stop_button.configure(state='disabled');self.deiconify()
                 elif state=='paused':self.deiconify()
         self.after(100,self.poll)
+    def switch_mode(self):
+        self.return_to_chooser=True;self.close()
+
     def close(self):
         if self.runner:self.runner.stop()
         if self.listener:self.listener.stop()
-        self.destroy()
+        if self.panel:self.panel.close();self.panel=None
+        from ui_lifecycle import destroy_window
+        destroy_window(self,root=True)
 
 if __name__=='__main__':
     import multiprocessing

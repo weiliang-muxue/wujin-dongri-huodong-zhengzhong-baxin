@@ -1,17 +1,17 @@
 VSVersionInfo(
     ffi=FixedFileInfo(
-        filevers=(1, 0, 3, 0), prodvers=(1, 0, 3, 0),
+        filevers=(2, 0, 0, 0), prodvers=(2, 0, 0, 0),
         mask=0x3f, flags=0x0, OS=0x40004, fileType=0x1,
         subtype=0x0, date=(0, 0)
     ),
     kids=[
         StringFileInfo([StringTable('080404B0', [
-            StringStruct('FileDescription', '无尽冬日活动正中靶心 Windows 助手'),
-            StringStruct('FileVersion', '1.0.3'),
-            StringStruct('InternalName', 'Bullseye-Windows'),
-            StringStruct('OriginalFilename', '正中靶心-1.0.3.exe'),
-            StringStruct('ProductName', '无尽冬日活动正中靶心'),
-            StringStruct('ProductVersion', '1.0.3')
+            StringStruct('FileDescription', '无尽冬日助手：打熊与正中靶心'),
+            StringStruct('FileVersion', '2.0.0'),
+            StringStruct('InternalName', 'Wujindongri'),
+            StringStruct('OriginalFilename', '无尽冬日助手-2.0.0.exe'),
+            StringStruct('ProductName', '无尽冬日助手'),
+            StringStruct('ProductVersion', '2.0.0')
         ])]),
         VarFileInfo([VarStruct('Translation', [2052, 1200])])
     ]

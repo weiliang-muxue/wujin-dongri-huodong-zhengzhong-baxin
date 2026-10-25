@@ -1,0 +1,2 @@
+-keepclasseswithmembernames,includedescriptorclasses class * { native <methods>; }
+-keep class org.opencv.** { *; }

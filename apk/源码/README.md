@@ -1,48 +1,21 @@
-# 无尽冬日活动正中靶心 · Android 1.0.3
+# Android 源码
 
-本文件夹是独立 Android 工程。安装包在上一级：`../正中靶心-1.0.3.apk`。Windows 源码单独放在 `exe/源码/`。
+JDK 17、Gradle 8.9、Android SDK 35 extension 15、Build Tools 35.0.0。设置 JAVA_HOME 与 ANDROID_HOME，或在不提交的 local.properties 中配置 sdk.dir。
 
-## 使用
+构建：`gradlew.bat :app:testEngine :app:assembleRelease :app:lintRelease`。
 
-Android 11 及以上可用。用户在系统辅助功能中开启“靶心助手”，上传首页和完整 12 靶子页的两张全屏原图，无需在助手内选择倍率，直接开始执行；倍率在游戏中设置。截图及识别在手机本地完成，不需要电脑或 ADB。
+将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.0.0.apk。
 
-每轮回到首页后读取实际余券，不按估计倍率扣减。剩 1～4 张时，结合右侧按钮颜色和开始按钮下方的红 / 白费用字检查状态；5 倍不足时自动切到 1 倍，确认画面后再开始。宝箱打开后自动识别底部退出提示，返回首页并开始下一轮，不等待所有靶子打开。悬浮条可暂停、继续和停止；首页连续两次读到 0 时停止。读数不清、按钮被遮挡或切换失败时暂停，保留进度。
+检查成品：`python tools/verify_android_package.py ../无尽冬日助手-2.0.0.apk --version 2.0.0`。
 
-主界面和悬浮条显示 **靶心助手 1.0.3 · 自动余券**，安装版本为 1.0.3，versionCode 为 5（高于前一份 1.0.3，可覆盖更新）。
+一个 launcher：ModeActivity；一个无障碍服务：BearService。cn.local.bullseye.GameService 是该服务内的模块，不是第二个 Android Service。ModeGate、运行代次和输入前检查共同限制旧任务回调。返回活动选择会停止两个模块。
 
-## 构建
+打熊实际流程在 MarchFlow.java，与 Windows bear_flow.py 对照测试。BearFlow.java 只保留页面和动作数据类型。正中靶心保留实际券数、低券切换、结算退出；截屏和点击期间隐藏悬浮窗，防止自身遮挡。
 
-环境：JDK 17、Android SDK `platforms;android-35-ext15` 和 `build-tools;35.0.0`。Gradle Wrapper 使用 Gradle 8.9。
+Release 开启 R8 与资源裁剪，仅打包 ARM64 和 ARMv7，共用两套流程的 OpenCV / ML Kit。应用合并清单移除联网权限。
 
-在当前目录创建不提交到 Git 的 `local.properties`，填写本地 SDK 路径：
+本地输出使用当前开发机调试签名，便于覆盖同机此前构建的打熊助手；密钥不提交。发布到应用商店前应自行配置正式签名，不要把密码或 keystore 写进 Git。
 
-```properties
-sdk.dir=C:/Android/Sdk
-```
+纯 Java 的正中靶心补充检查：用 javac 编译 TicketPolicy.java、TicketDigits.java、LowBalanceControl.java 与 tools/CoreCheck.java，运行 CoreCheck。可传入本地一倍和五倍截图以启用图片检查。
 
-在当前“源码”文件夹执行：
-
-```powershell
-.\gradlew.bat :app:assembleRelease :app:lintRelease
-python tools/verify_android_package.py app/build/outputs/apk/release/app-release.apk --version 1.0.3
-Copy-Item app/build/outputs/apk/release/app-release.apk ../正中靶心-1.0.3.apk
-```
-
-签名验证可使用 Android SDK build-tools 中的 `apksigner.bat verify`。当前测试包采用本机 Android debug 签名；覆盖更新需要保留同一签名密钥，密钥不在仓库中。
-
-主要实现位于 `app/src/main/java/cn/local/bullseye/`。`MainActivity.java` 是界面，`Vision.java` 是识别，`GameService.java` 是屏幕截图、点击及运行控制。
-
-## 验证范围
-
-发包时检查编译、静态检查、APK 签名，以及 APK 内部不存在旧倍率识别提示。实际手机游戏整轮运行仍需要实机验证，不能用桌面回归测试代替。
-
-## 本地流程检查
-
-以下检查直接运行实际使用的券数决策和颜色检测代码，无需连接手机。
-
-```powershell
-javac -encoding UTF-8 -d .build/check app/src/main/java/cn/local/bullseye/TicketPolicy.java app/src/main/java/cn/local/bullseye/LowBalanceControl.java app/src/main/java/cn/local/bullseye/TicketDigits.java tools/CoreCheck.java
-java -cp .build/check CoreCheck
-```
-
-可在最后一条命令追加本地两张样本路径（1 倍白字、5 倍红字），验证控件颜色、遮挡和单数字识别；样本为当前 1080 × 2400 游戏布局，不上传仓库。其他尺寸和位置由运行时截图中的 12 靶子及开始按钮自动定位。运行条数字代表最近一次首页读数，回首页后更新。
+录屏验证：`python tools/replay_recording.py <录屏.mp4> [非巨熊截图.jpg]`。这验证图像线索与误识别控制，不能替代手机上的 ML Kit、权限、触控和服务器响应测试。

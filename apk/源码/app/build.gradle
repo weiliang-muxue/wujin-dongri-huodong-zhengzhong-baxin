@@ -1,18 +1,39 @@
 plugins { id 'com.android.application' }
 android {
-    namespace 'cn.local.bullseye'
+    namespace 'cn.local.winterbear'
     compileSdk 35
     compileSdkExtension 15
     buildToolsVersion '35.0.0'
     defaultConfig {
-        applicationId 'cn.local.bullseye'
+        applicationId 'cn.local.winterbear'
         minSdk 30
         targetSdk 35
-        versionCode 5
-        versionName '1.0.3'
-        resValue 'string', 'app_version_label', "靶心助手 ${versionName} · 自动余券"
+        versionCode 200
+        versionName '2.0.0'
+        ndk { abiFilters 'arm64-v8a', 'armeabi-v7a' }
     }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
-    buildTypes { release { minifyEnabled false; signingConfig signingConfigs.debug } }
+    packaging { jniLibs { useLegacyPackaging = true } }
+    buildTypes { release { minifyEnabled true; shrinkResources true; proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'),'proguard-rules.pro'; signingConfig signingConfigs.debug } }
 }
-dependencies { implementation 'com.google.mlkit:text-recognition-chinese:16.0.1' }
+dependencies {
+    implementation 'org.opencv:opencv:4.12.0'
+    implementation 'com.google.mlkit:text-recognition:16.0.1'
+    implementation 'com.google.mlkit:text-recognition-chinese:16.0.1'
+    testImplementation 'junit:junit:4.13.2'
+}
+
+// Run the Android-independent state machine without Gradle's test worker argfile.
+// JDK 17 on Windows can misread a UTF-8 worker classpath under a Chinese user path.
+configurations { engineTestRuntime }
+dependencies { engineTestRuntime 'junit:junit:4.13.2' }
+tasks.register('testEngine', JavaExec) {
+    dependsOn 'compileDebugUnitTestJavaWithJavac'
+    classpath = files(
+        layout.buildDirectory.dir('intermediates/javac/debug/compileDebugJavaWithJavac/classes'),
+        layout.buildDirectory.dir('intermediates/javac/debugUnitTest/compileDebugUnitTestJavaWithJavac/classes')
+    ) + configurations.engineTestRuntime
+    mainClass = 'org.junit.runner.JUnitCore'
+    args 'cn.local.winterbear.ModeGateTest', 'cn.local.winterbear.MarchCountTest', 'cn.local.winterbear.MarchFlowTest', 'cn.local.winterbear.RallyOrderTest', 'cn.local.winterbear.GestureGateTest', 'cn.local.winterbear.MarchSimulationTest', 'cn.local.winterbear.LiveMapCheckTest', 'cn.local.winterbear.TroopCountTest', 'cn.local.winterbear.ForegroundGateTest'
+    systemProperty 'simulationReportDir', layout.buildDirectory.dir('reports/simulation').get().asFile.absolutePath
+}
