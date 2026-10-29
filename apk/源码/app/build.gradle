@@ -8,8 +8,8 @@ android {
         applicationId 'cn.local.winterbear'
         minSdk 30
         targetSdk 35
-        versionCode 201
-        versionName '2.0.1'
+        versionCode 202
+        versionName '2.0.2'
         ndk { abiFilters 'arm64-v8a', 'armeabi-v7a' }
     }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
@@ -34,6 +34,6 @@ tasks.register('testEngine', JavaExec) {
         layout.buildDirectory.dir('intermediates/javac/debugUnitTest/compileDebugUnitTestJavaWithJavac/classes')
     ) + configurations.engineTestRuntime
     mainClass = 'org.junit.runner.JUnitCore'
-    args 'cn.local.bullseye.SessionGuardTest', 'cn.local.winterbear.ModeGateTest', 'cn.local.winterbear.MarchCountTest', 'cn.local.winterbear.MarchFlowTest', 'cn.local.winterbear.RallyOrderTest', 'cn.local.winterbear.GestureGateTest', 'cn.local.winterbear.MarchSimulationTest', 'cn.local.winterbear.LiveMapCheckTest', 'cn.local.winterbear.TroopCountTest', 'cn.local.winterbear.ForegroundGateTest'
+    args 'cn.local.bullseye.FloatingGuardTest', 'cn.local.bullseye.SessionGuardTest', 'cn.local.winterbear.ModeGateTest', 'cn.local.winterbear.MarchCountTest', 'cn.local.winterbear.MarchFlowTest', 'cn.local.winterbear.RallyOrderTest', 'cn.local.winterbear.GestureGateTest', 'cn.local.winterbear.MarchSimulationTest', 'cn.local.winterbear.LiveMapCheckTest', 'cn.local.winterbear.TroopCountTest', 'cn.local.winterbear.ForegroundGateTest'
     systemProperty 'simulationReportDir', layout.buildDirectory.dir('reports/simulation').get().asFile.absolutePath
 }

@@ -1,5 +1,5 @@
 <resources>
     <string name="app_name">无尽冬日助手</string>
-    <string name="app_version_label">无尽冬日助手 2.0.1 · 正中靶心</string>
+    <string name="app_version_label">无尽冬日助手 2.0.2 · 正中靶心</string>
     <string name="service_description">按你选择的活动，本地识别并操作打熊或正中靶心。两个任务不会同时运行，切换活动会停止当前操作。打熊按前六个预设连续跟车；正中靶心读取实际余券并识别靶子。截图不上传，可随时暂停或停止。</string>
 </resources>
