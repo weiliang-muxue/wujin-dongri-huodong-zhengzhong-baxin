@@ -27,6 +27,8 @@ final class Matcher implements AutoCloseable {
     private double scale;
     private final CounterOcr counter=new CounterOcr();
     private Bitmap currentBitmap;
+    private String stage="初始化";
+    String stage(){return stage;}
     private final FeedbackVision feedback;
     Matcher(Config config) {
         this.config=config;
@@ -34,6 +36,7 @@ final class Matcher implements AutoCloseable {
         feedback=new FeedbackVision(config);
     }
     void frame(Bitmap bitmap) {
+        stage="读取截图";
         currentBitmap=bitmap;
         if(gray!=null) gray.release();
         if(color!=null) color.release();
@@ -107,6 +110,7 @@ final class Matcher implements AutoCloseable {
         return hit;
     }
     BearFlow.Frame observe() {
+        stage="识别页面";
         BearFlow.Frame f=new BearFlow.Frame();
         feedback.observe(gray,f,config.width(),config.height());
         if(f.troopOverflow)return f;
@@ -124,12 +128,14 @@ final class Matcher implements AutoCloseable {
         boolean mapChrome=f.worldMapChrome||(nearConfigured("map_city")!=null&&nearConfigured("alliance")!=null);
         f.map=!f.header&&!f.formation&&!f.deploy&&(march!=null||mapChrome);
         if(f.map&&config.marchReady()){
+            stage="读取行军数量";
             // Read the number even if the word anchor missed: a clear 6/6 always means full.
             Rect count=config.counterRect();
             if(march!=null)count.offset(march.x-config.p.getInt("march_anchorX",0),march.y-config.p.getInt("march_anchorY",0));
             f.marchUsed=counter.read(currentBitmap,count);
         }
         f.marchHidden=f.map&&march==null&&mapChrome&&!MarchCount.valid(f.marchUsed);
+        stage="识别页面入口";
         Hit h=nearConfigured("back");if(h!=null){f.backX=h.x;f.backY=h.y;}
         h=nearConfigured("world");if(h!=null){f.worldX=h.x;f.worldY=h.y;}
         h=nearConfigured("war");if(h!=null){f.warX=h.x;f.warY=h.y;}
@@ -141,12 +147,15 @@ final class Matcher implements AutoCloseable {
             h=nearConfigured("alliance");if(h!=null&&config.has("war")&&config.has("rally_tab")){f.allianceX=h.x;f.allianceY=h.y;}
         }
         if(f.formation||f.deploy){
+            stage="识别预设编队";
             for(int i=0;i<6;i++)f.savedPreset[i]=near("preset_marker"+i,config.p.getInt("presetX"+i,0),config.p.getInt("presetY"+i,0))!=null;
             feedback.formation(gray,color,f,config.width(),config.height(),config);
             int w=config.width(),hgt=config.height();
+            stage="读取出征兵力";
             f.troops=counter.troops(currentBitmap,new Rect((int)(w*.10),(int)(hgt*.210),(int)(w*.38),(int)(hgt*.240)));
         }
         if(f.rallyList && !f.deploy && config.rallyReady() && !config.customRallyReady()) {
+            stage="识别巨熊集结";
             List<RallyOrder.Detection> detections=new ArrayList<>();
             Rect targetColumn=new Rect(0,(int)(config.height()*.20),(int)(config.width()*.37),(int)(config.height()*.91));
             for(String factor:new String[]{"0.85","0.90","0.95","1.00","1.05","1.10","1.15"}){
@@ -164,6 +173,7 @@ final class Matcher implements AutoCloseable {
             detections.addAll(recorded);
             f.rows.addAll(RallyOrder.rows(detections,distance));
         }else if(f.rallyList && !f.deploy && config.customRallyReady()) {
+            stage="识别取样的巨熊集结";
             List<RallyOrder.Detection> detections=new ArrayList<>();
             for(Hit bear:find("bear_row",null,20)) {
                 int jx=bear.x+config.p.getInt("rowJoinDx",0),jy=bear.y+config.p.getInt("rowJoinDy",0);

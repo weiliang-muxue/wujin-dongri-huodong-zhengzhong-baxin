@@ -12,7 +12,7 @@ DATA.mkdir(parents=True,exist_ok=True)
 
 class BearApp(ctk.CTk):
     def __init__(self):
-        super().__init__();self.title('无尽冬日助手 2.0.1 · 打熊');self.geometry('1000x800');self.minsize(900,680)
+        super().__init__();self.title('无尽冬日助手 2.0.3 · 打熊');self.geometry('1000x800');self.minsize(900,680)
         self.return_to_chooser=False;self.runner=None;self.panel=None;self.events=queue.Queue();self.preview=None;self.crop=(0,0,1,1);self.drag=None;self.listener=None
         try:self.settings=json.loads((DATA/'settings.json').read_text(encoding='utf-8'))
         except Exception:self.settings={}
@@ -110,8 +110,9 @@ class BearApp(ctk.CTk):
             if self.panel:self.panel.close()
             self.panel=FloatingControls(self,'打熊',self.toggle_pause,self.stop)
             io=WindowIO(hwnd,self.crop);capture=io.capture;action=io.action;panel=self.panel
-            io.capture=lambda:panel.hidden_call(capture)
-            io.action=lambda d:panel.hidden_call(action,d)
+            io.input_guard=panel.check_input_window
+            io.capture=lambda:panel.capture_call(capture,io.rect)
+            io.action=lambda d:panel.action_call(action,d)
             self.runner=BearRunner(io,dict(self.settings),lambda s:self.events.put(('log',s)),self.persist)
             self.iconify();u.SetForegroundWindow(hwnd);self.after(1500,self.runner.start)
         except Exception as e:messagebox.showerror('尚未准备好',str(e))
@@ -129,7 +130,10 @@ class BearApp(ctk.CTk):
             kind,value=self.events.get()
             if kind=='log':
                 self.status.configure(text=value)
-                if self.panel:self.panel.state(not self.runner.gate.is_set())
+                if self.panel:
+                    self.panel.state(not self.runner.gate.is_set())
+                    if value.startswith('等待悬浮条：'):self.panel.message(value.removeprefix('等待悬浮条：'))
+                    elif value.startswith(('已恢复：','已暂停','已停止','无法开始')):self.panel.message()
                 if value.startswith('已停止') and self.panel:self.panel.close();self.panel=None;self.deiconify()
             else:
                 from pynput.keyboard import Key

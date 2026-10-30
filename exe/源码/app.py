@@ -16,7 +16,7 @@ DATA.mkdir(parents=True,exist_ok=True)
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.return_to_chooser=False;self.panel=None;self.game_hwnd=None;self.title('无尽冬日助手 2.0.1 · 正中靶心');self.geometry('1180x820');self.minsize(1000,700)
+        self.return_to_chooser=False;self.panel=None;self.game_hwnd=None;self.title('无尽冬日助手 2.0.3 · 正中靶心');self.geometry('1180x820');self.minsize(1000,700)
         self.configure(fg_color='#F4F6F5');self.images={};self.current='首页截图';self.analyzing=False
         self.config_data={'region':(0,0,1,1),'targets':[]};self.runner=None;self.events=queue.Queue();self.vision=Vision()
         self.anchor=None;self.scale=1;self.offset=(0,0);self.state_name='idle';self.listener=None;self.is_counting=False
@@ -156,14 +156,17 @@ class App(ctk.CTk):
             mouse=Controller();mouse.position=(mon['left']+int(p[0]*mon['width']),mon['top']+int(p[1]*mon['height']))
             from window_io import u,W
             at=u.WindowFromPoint(W.POINT(*mouse.position))
-            if u.GetAncestor(at,2)!=bound[0]:raise RuntimeError('游戏按钮被其他窗口挡住，已停止')
-            guard();mouse.click(Button.left)
+            target=u.GetAncestor(at,2);panel.check_input_window(target)
+            if target!=bound[0]:raise RuntimeError('游戏按钮被其他窗口挡住，已停止')
+            guard();panel.check_frame();mouse.click(Button.left)
         from floating import FloatingControls
         if self.panel:self.panel.close()
         self.panel=FloatingControls(self,'正中靶心',self.toggle_pause,self.stop)
         panel=self.panel;raw_capture=capture;raw_tap=tap
-        capture=lambda:panel.hidden_call(raw_capture)
-        tap=lambda p:panel.hidden_call(raw_tap,p)
+        r=c['region'];e=c['exit_region'];left=min(r[0],e[0]);top=min(r[1],e[1]);right=max(r[2],e[2]);bottom=max(r[3],e[3])
+        game_region=(mon['left']+left*mon['width'],mon['top']+top*mon['height'],(right-left)*mon['width'],(bottom-top)*mon['height'])
+        capture=lambda:panel.capture_call(raw_capture,game_region)
+        tap=lambda p:panel.action_call(raw_tap,p)
         self.runner=Runner(c,self.images['首页截图'],self.images['靶子截图'],capture,tap,lambda *a:self.events.put(('report',a)))
         self.state_name='countdown';self.is_counting=True;self.countdown(5)
 
@@ -212,8 +215,11 @@ class App(ctk.CTk):
                 elif payload==Key.esc and self.runner:self.stop()
             elif kind=='report':
                 state,text,left,rounds=payload;self.state_name=state;self.log(text)
-                if self.panel:self.panel.state(state=='paused')
-                state_label={'running':'运行中','paused':'已暂停','done':'已完成','stopped':'已停止','error':'异常停止'}.get(state,state)
+                if self.panel:
+                    self.panel.state(state=='paused')
+                    if state=='waiting':self.panel.message(text)
+                    elif state!='running' or text=='已恢复，继续当前进度':self.panel.message()
+                state_label={'running':'运行中','waiting':'等待移开悬浮条','paused':'已暂停','done':'已完成','stopped':'已停止','error':'异常停止'}.get(state,state)
                 self.status.configure(text=f'首页余券 {left} · {state_label}');self.count.configure(text=f'{left} 张');self.pause_button.configure(text='继续' if state=='paused' else '暂停')
                 (DATA/'progress.json').write_text(json.dumps({'state':state,'remaining':left,'rounds':rounds},ensure_ascii=False),encoding='utf-8')
                 if state in ('done','stopped','error'):

@@ -3,6 +3,7 @@ import random
 import threading
 import time
 from vision import Vision
+from frame_guard import RetryFrame
 
 class Runner:
     def __init__(self, config, home, board, capture, tap, report):
@@ -17,9 +18,21 @@ class Runner:
         self.exit_seen=0;self.exit_attempts=0
         self.count_candidate=None;self.count_seen=0;self.count_misses=0
         self.switch_attempts=0;self.button_misses=0
+        self.wait_message='';self.wait_source=''
+
+    def wait_frame(self,error,source):
+        message=str(error)
+        if message!=self.wait_message:self.report('waiting',message,self.remaining,self.rounds)
+        self.wait_message=message;self.wait_source=source
+
+    def recovered_frame(self,source):
+        if self.wait_message and (source=='input' or self.wait_source=='capture'):
+            self.wait_message='';self.wait_source=''
+            self.report('running','已恢复，继续当前进度',self.remaining,self.rounds)
 
     def pause(self, reason='已暂停，可调整后继续'):
         with self.lock:self.gate.clear()
+        self.wait_message='';self.wait_source=''
         self.report('paused',reason,self.remaining,self.rounds)
 
     def resume(self):
@@ -35,7 +48,10 @@ class Runner:
     def click(self,p):
         with self.lock:
             if self.stopped.is_set() or not self.gate.is_set():return False
-            self.tap(p);self.last_action=time.monotonic()
+            try:self.tap(p)
+            except RetryFrame as e:self.wait_frame(e,'input');return False
+            self.last_action=time.monotonic()
+            self.recovered_frame('input')
         return True
 
     def start(self):
@@ -47,7 +63,11 @@ class Runner:
                 if not self.gate.wait(.2):continue
                 if time.monotonic()-self.last_action<2.3:
                     self.stopped.wait(.15);continue
-                frame=self.capture()
+                try:frame=self.capture()
+                except RetryFrame as e:
+                    self.wait_frame(e,'capture')
+                    self.stopped.wait(.05);continue
+                self.recovered_frame('capture')
                 if abs(frame.width/frame.height-self.home.width/self.home.height)>.015:
                     self.pause('屏幕比例已改变，请恢复原分辨率后继续');continue
                 exit_point=self.vision.dismiss_point(frame,self.c['exit_region'])
@@ -139,13 +159,15 @@ class Runner:
                         if self.pending not in available:
                             self.visited.add(self.pending);self.pending=None;self.retries=0
                         elif self.retries<2:
-                            self.click(self.c['targets'][self.pending]);self.retries+=1;continue
+                            if self.click(self.c['targets'][self.pending]):self.retries+=1
+                            continue
                         else:self.pause('靶子没有响应，请检查位置或游戏状态');continue
                     choices=[i for i in available if i not in self.visited]
                     if choices:
                         i=random.choice(choices)
-                        if self.click(self.c['targets'][i]):self.pending=i
-                        self.report('running',f'第 {self.rounds+1} 轮：射击 {i+1} 号靶子',self.remaining,self.rounds)
+                        if self.click(self.c['targets'][i]):
+                            self.pending=i
+                            self.report('running',f'第 {self.rounds+1} 轮：射击 {i+1} 号靶子',self.remaining,self.rounds)
                 elif time.monotonic()-self.last_known>16:
                     self.pause('画面不属于已校准的活动，已暂停。请检查游戏窗口');continue
                 self.stopped.wait(.4)

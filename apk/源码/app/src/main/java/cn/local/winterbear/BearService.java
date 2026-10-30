@@ -292,7 +292,13 @@ public final class BearService extends AccessibilityService {
             }
             worker.execute(()->{
                 BearFlow.Frame observed=null;String error=null;
-                try{current.frame(bitmap);observed=current.observe();}catch(Exception e){error=e.getClass().getSimpleName();}
+                try{current.frame(bitmap);observed=current.observe();}catch(Exception e){
+                    String stage=current==null?"初始化":current.stage();
+                    android.util.Log.e("WinterBear",stage+"失败",e);
+                    String detail=e.getMessage();
+                    if(detail!=null&&detail.length()>160)detail=detail.substring(0,160);
+                    error=stage+"："+e.getClass().getSimpleName()+(detail==null?"":" · "+detail);
+                }
                 finally{bitmap.recycle();}
                 final BearFlow.Frame result=observed;final String failure=error;
                 main.post(()->{

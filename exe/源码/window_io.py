@@ -3,6 +3,7 @@ import ctypes as C
 from ctypes import wintypes as W
 import os, time
 from PIL import Image
+from frame_guard import RetryFrame
 
 u=C.windll.user32
 u.GetForegroundWindow.restype=W.HWND
@@ -34,7 +35,7 @@ def windows():
 
 class WindowIO:
     def __init__(self,hwnd,crop=(0,0,1,1)):
-        self.hwnd=hwnd;self.crop=crop;self.last_rect=None
+        self.hwnd=hwnd;self.crop=crop;self.last_rect=None;self.input_guard=None
     def active(self):return bool(u.IsWindow(self.hwnd) and not u.IsIconic(self.hwnd) and foreground()==self.hwnd)
     def rect(self):
         if not self.active():raise RuntimeError('游戏不在前台，已停止操作；切回游戏后继续')
@@ -60,12 +61,20 @@ class WindowIO:
         def check_point():
             if not self.active():raise RuntimeError('游戏已离开前台')
             at=u.WindowFromPoint(W.POINT(*mouse.position))
-            if u.GetAncestor(at,2)!=self.hwnd:raise RuntimeError('游戏画面被其他窗口遮挡，请移开后继续')
+            target=u.GetAncestor(at,2)
+            if self.input_guard:self.input_guard(target)
+            if target!=self.hwnd:raise RuntimeError('游戏画面被其他窗口遮挡，请移开后继续')
         if decision.kind=='SCROLL':
             mouse.position=point(540,1820);check_point();mouse.press(Button.left)
             try:
                 for i in range(1,9):
-                    mouse.position=point(540,1820-i*100);check_point();time.sleep(.025)
+                    # Once pressed, end an interrupted gesture normally. Replaying it
+                    # as a rejected action could scroll a second page unexpectedly.
+                    try:
+                        if self.input_guard:self.input_guard(self.hwnd)
+                        mouse.position=point(540,1820-i*100);check_point()
+                    except RetryFrame:break
+                    time.sleep(.025)
             finally:mouse.release(Button.left)
         else:
             if not (0<decision.x<1080 and 0<decision.y<2400):raise RuntimeError('点击位置无效')

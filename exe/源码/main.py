@@ -6,7 +6,7 @@ def launch():
     import customtkinter as ctk
     ctk.set_appearance_mode('light');ctk.set_default_color_theme('green')
     while True:
-        root=ctk.CTk();root.title('无尽冬日助手 2.0.1');root.geometry('620x480');root.minsize(540,440);chosen=[]
+        root=ctk.CTk();root.title('无尽冬日助手 2.0.3');root.geometry('620x480');root.minsize(540,440);chosen=[]
         ctk.CTkLabel(root,text='无尽冬日助手',font=('Microsoft YaHei UI',30,'bold')).pack(pady=(42,8))
         ctk.CTkLabel(root,text='选择本次活动',font=('Microsoft YaHei UI',16)).pack(pady=(0,24))
         def pick(mode):

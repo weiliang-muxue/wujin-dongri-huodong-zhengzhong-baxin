@@ -8,19 +8,23 @@ android {
         applicationId 'cn.local.winterbear'
         minSdk 30
         targetSdk 35
-        versionCode 202
-        versionName '2.0.2'
-        ndk { abiFilters 'arm64-v8a', 'armeabi-v7a' }
+        versionCode 203
+        versionName '2.0.3'
+        testInstrumentationRunner 'cn.local.winterbear.RuntimeRegression'
+        // Opt in only for local emulator checks; delivered APKs keep the two ARM ABIs.
+        ndk { abiFilters.addAll(project.hasProperty('emulatorTest') ? ['x86_64'] : ['arm64-v8a', 'armeabi-v7a']) }
     }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
     packaging { jniLibs { useLegacyPackaging = true } }
     buildTypes { release { minifyEnabled true; shrinkResources true; proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'),'proguard-rules.pro'; signingConfig signingConfigs.debug } }
+    sourceSets { androidTest.java.srcDir 'src/test/java' }
 }
 dependencies {
     implementation 'org.opencv:opencv:4.12.0'
     implementation 'com.google.mlkit:text-recognition:16.0.1'
     implementation 'com.google.mlkit:text-recognition-chinese:16.0.1'
     testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'junit:junit:4.13.2'
 }
 
 // Run the Android-independent state machine without Gradle's test worker argfile.
