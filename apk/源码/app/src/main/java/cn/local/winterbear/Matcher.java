@@ -31,6 +31,7 @@ final class Matcher implements AutoCloseable {
     private String stage="初始化";
     String stage(){return stage;}
     private final FeedbackVision feedback;
+    private final CountdownVision countdown;
     Matcher(Config config) {
         this(config,new CounterOcr());
     }
@@ -39,6 +40,7 @@ final class Matcher implements AutoCloseable {
         this.counter=counter;
         if(!OpenCVLoader.initLocal()) throw new IllegalStateException("图像识别组件初始化失败");
         feedback=new FeedbackVision(config);
+        countdown=new CountdownVision(config::openAsset);
     }
     void frame(Bitmap bitmap) {
         stage="读取截图";
@@ -123,7 +125,7 @@ final class Matcher implements AutoCloseable {
         stage="识别页面";
         BearFlow.Frame f=new BearFlow.Frame();
         feedback.observe(gray,f,config.width(),config.height());
-        if(f.troopOverflow)return f;
+        if(f.troopOverflow||f.rallyTooLate)return f;
         f.header=near("header",config.p.getInt("headerX",0),config.p.getInt("headerY",0))!=null;
         Hit deploy=near("deploy",config.p.getInt("deployX",0),config.p.getInt("deployY",0));
         f.deploy=deploy!=null;
@@ -202,6 +204,14 @@ final class Matcher implements AutoCloseable {
             if(bearTemplate==null)throw new IllegalStateException("巨熊模板损坏，请重新取样");
             int duplicateDistance=Math.max(12,(int)Math.round(Math.min(bearTemplate.rows(),bearTemplate.cols())/scale*.75));
             f.rows.addAll(RallyOrder.rows(detections,duplicateDistance));
+        }
+        if(!f.rows.isEmpty()){
+            stage="读取每条集结倒计时";
+            for(int i=0;i<f.rows.size();i++){
+                BearFlow.Row row=f.rows.get(i);
+                int seconds=row.available&&row.x>0&&row.y>0?countdown.read(gray,config.width(),row.y,scale):-1;
+                f.rows.set(i,new BearFlow.Row(row.order,row.x,row.y,row.available,seconds));
+            }
         }
         return f;
     }

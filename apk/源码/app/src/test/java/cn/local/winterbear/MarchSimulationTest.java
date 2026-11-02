@@ -17,7 +17,7 @@ public class MarchSimulationTest {
             // Return at ANY page, including between deploy and list: the original recording did this.
             if(!permanentlyFull&&now>=releaseAt){used=Math.max(0,used-1-random.nextInt(3));releaseAt=now+20000+random.nextInt(60000);}
             BearFlow.Frame frame=screen==0?MarchFlowTest.map(used):screen==1?MarchFlowTest.list():MarchFlowTest.deploy();
-            if(screen==1){frame.rows.clear();frame.rows.add(new BearFlow.Row(0,800,500,false));frame.rows.add(new BearFlow.Row(1,800,900,true));}
+            if(screen==1){frame.rows.clear();frame.rows.add(new BearFlow.Row(0,800,500,false,60));frame.rows.add(new BearFlow.Row(1,800,900,true,60));}
             BearFlow.Decision action=flow.next(frame,now);
             if(now==end){assertEquals(BearFlow.Kind.PAUSE,action.kind);break;}
             assertNotEquals("Unexpected pause: "+action.message,BearFlow.Kind.PAUSE,action.kind);

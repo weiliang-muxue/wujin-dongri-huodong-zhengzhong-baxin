@@ -386,6 +386,7 @@ public final class BearService extends AccessibilityService {
                     if(!interactive()){pause("屏幕关闭，已暂停");return;}
                     if(!gameAvailable())return;
                     if(previewCheck.accept(config.target(),config.width(),config.height(),result.map,result.marchUsed,result.marchHidden,snapshotTime,SystemClock.elapsedRealtime()))config.markMapVerified(config.target(),config.width(),config.height(),result.marchUsed);
+                    result.ageMillis=SystemClock.elapsedRealtime()-snapshotTime;
                     BearFlow.Decision decision=flow.next(result,SystemClock.elapsedRealtime());setStatus(decision.message);
                     if(config.p.getInt("nextPreset",0)!=flow.nextPreset)config.p.edit().putInt("nextPreset",flow.nextPreset).apply();
                     if(decision.kind==BearFlow.Kind.PAUSE){pause(decision.message);return;}

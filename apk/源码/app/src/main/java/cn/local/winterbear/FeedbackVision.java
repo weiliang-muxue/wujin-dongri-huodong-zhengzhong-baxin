@@ -16,10 +16,11 @@ final class FeedbackVision implements AutoCloseable {
     private final Mat deploy,deployColor;
     private final Mat bodyV2,buttonV2;
     private final Mat formationLabel;
+    private final Mat lateBody,cancel;
     private final Mat[] preset=new Mat[6];
     interface Assets { InputStream open(String path) throws IOException; }
     FeedbackVision(Config config){this(config::openAsset);}
-    FeedbackVision(Assets assets){body=load(assets,"troop_overflow");title=load(assets,"confirm_title");button=load(assets,"confirm_ok");bodyV2=load(assets,"troop_overflow_v2");buttonV2=load(assets,"confirm_ok_v2");formationLabel=load(assets,"formation");city=load(assets,"map_city");search=load(assets,"map_search");bear=load(assets,"bear_label");plus=load(assets,"green_plus");plusColor=load(assets,"green_plus",true);bearTop=load(assets,"bear_label_top");plusTop=load(assets,"green_plus_top");plusTopColor=load(assets,"green_plus_top",true);deploy=load(assets,"deploy");deployColor=load(assets,"deploy",true);for(int i=0;i<6;i++)preset[i]=load(assets,"preset"+i);}
+    FeedbackVision(Assets assets){body=load(assets,"troop_overflow");title=load(assets,"confirm_title");button=load(assets,"confirm_ok");bodyV2=load(assets,"troop_overflow_v2");buttonV2=load(assets,"confirm_ok_v2");formationLabel=load(assets,"formation");lateBody=load(assets,"rally_too_late");cancel=load(assets,"rally_cancel");city=load(assets,"map_city");search=load(assets,"map_search");bear=load(assets,"bear_label");plus=load(assets,"green_plus");plusColor=load(assets,"green_plus",true);bearTop=load(assets,"bear_label_top");plusTop=load(assets,"green_plus_top");plusTopColor=load(assets,"green_plus_top",true);deploy=load(assets,"deploy");deployColor=load(assets,"deploy",true);for(int i=0;i<6;i++)preset[i]=load(assets,"preset"+i);}
     private Mat load(Assets assets,String key){
         return load(assets,key,false);
     }
@@ -44,6 +45,11 @@ final class FeedbackVision implements AutoCloseable {
         Mat small=new Mat();
         try{
             Imgproc.resize(fullGray,small,new Size(324,rows),0,0,Imgproc.INTER_AREA);
+            Point warning=hit(small,lateBody,new Rect(30,320+middle,270,110));
+            Point cancelButton=hit(small,cancel,new Rect(20,420+middle,150,100));
+            if(warning!=null&&cancelButton!=null&&warning.x-cancelButton.x>20&&warning.x-cancelButton.x<110&&cancelButton.y-warning.y>40&&cancelButton.y-warning.y<125){
+                frame.rallyTooLate=true;frame.cancelX=(int)Math.round(cancelButton.x*width/324);frame.cancelY=(int)Math.round(cancelButton.y*height/rows);return;
+            }
             frame.worldMapChrome=hit(small,city,new Rect(275,rows-25,47,25))!=null&&hit(small,search,new Rect(92,rows-120,38,42))!=null;
             if(hit(small,formationLabel,new Rect(29,179,58,24))!=null){
                 int markers=0;int[] xs={29,63,96,129,163,196};
@@ -122,5 +128,5 @@ final class FeedbackVision implements AutoCloseable {
             for(int i=0;i<6;i++)if(!frame.savedPreset[i]&&Math.abs(config.p.getInt("presetX"+i,0)*324.0/width-x[i])<6&&Math.abs(config.p.getInt("presetY"+i,0)*rows/(double)height-128)<6&&hit(gray,preset[i],new Rect(x[i]-10,117,20,21))!=null)frame.savedPreset[i]=true;
         }finally{gray.release();color.release();}
     }
-    public void close(){body.release();title.release();button.release();bodyV2.release();buttonV2.release();formationLabel.release();city.release();search.release();bear.release();plus.release();plusColor.release();bearTop.release();plusTop.release();plusTopColor.release();deploy.release();deployColor.release();for(Mat p:preset)p.release();}
+    public void close(){body.release();title.release();button.release();bodyV2.release();buttonV2.release();formationLabel.release();lateBody.release();cancel.release();city.release();search.release();bear.release();plus.release();plusColor.release();bearTop.release();plusTop.release();plusTopColor.release();deploy.release();deployColor.release();for(Mat p:preset)p.release();}
 }

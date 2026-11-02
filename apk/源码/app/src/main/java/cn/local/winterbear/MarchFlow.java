@@ -5,7 +5,7 @@ import static cn.local.winterbear.BearFlow.*;
 
 /** Reserves a bounded batch of march slots, then follows rallies without a map round trip per tap. */
 final class MarchFlow {
-    enum Phase { MAP, ENTER_LIST, FIND, FORMATION, SEND, VERIFY, DISMISS_OVERFLOW, RETURN_LIST, RETURN_MAP }
+    enum Phase { MAP, ENTER_LIST, FIND, FORMATION, SEND, VERIFY, DISMISS_OVERFLOW, DISMISS_LATE, RETURN_LIST, RETURN_MAP }
     static final long CAPACITY_MAX_AGE=90_000;
     final int[] presetX=new int[6],presetY=new int[6];
     final boolean[] enabled=new boolean[6];
@@ -18,12 +18,13 @@ final class MarchFlow {
     private int stableUsed=-9,stableReads,selected=-1,lastNav=-1,backAttempts,remaining,attemptedMask,failedRowY=-1,lastJoinY=-1,dialogAttempts;
     private long avoidRowUntil;
     private long dialogSince,markerMissingSince=-1;
+    private long rallyDeadline=-1;
     private boolean charged;
     void start(long now){
         running=true;pending=null;phase=Phase.MAP;phaseSince=now;waitUntil=now;lastScroll=now;
         deadline=now+Math.max(1,Math.min(30,maxMinutes))*60_000L;
         checkedAt=-1;unknownSince=-1;lastNav=-1;remaining=0;charged=false;attemptedMask=0;retryAt=0;
-        failedRowY=-1;lastJoinY=-1;dialogAttempts=0;avoidRowUntil=0;markerMissingSince=-1;resetEvidence();nextPreset=Math.floorMod(nextPreset,6);
+        failedRowY=-1;lastJoinY=-1;dialogAttempts=0;avoidRowUntil=0;markerMissingSince=-1;rallyDeadline=-1;resetEvidence();nextPreset=Math.floorMod(nextPreset,6);
     }
     void stop(){running=false;pending=null;checkedAt=-1;remaining=0;resetEvidence();}
     boolean pending(){return pending!=null;}
@@ -65,22 +66,28 @@ final class MarchFlow {
             return waitFor("等待游戏地图或集结列表 · 只识别");
         }
         // Native auto-join is not a stop condition: it handles other activities.
-        if(phase==Phase.DISMISS_OVERFLOW){
-            if(f.troopOverflow){
-                if(now-dialogSince>=8000)return pause("超编提示未关闭，请检查游戏响应");
-                if(now-dialogSince>=3000&&dialogAttempts<2&&f.dialogOkX>0){dialogAttempts++;return act(Kind.NAVIGATE,f.dialogOkX,f.dialogOkY,Phase.DISMISS_OVERFLOW,"再次关闭超编提示，不重复跳过预设");}
-                return waitFor("等待超编提示关闭");
+        if(phase==Phase.DISMISS_OVERFLOW||phase==Phase.DISMISS_LATE){
+            boolean late=phase==Phase.DISMISS_LATE;
+            if(late?f.rallyTooLate:f.troopOverflow){
+                if(now-dialogSince>=8000)return pause("提示未关闭，请检查游戏响应");
+                int x=late?f.cancelX:f.dialogOkX,y=late?f.cancelY:f.dialogOkY;
+                if(now-dialogSince>=3000&&dialogAttempts<2&&x>0){dialogAttempts++;return act(Kind.NAVIGATE,x,y,phase,late?"再次取消超时派兵":"再次关闭超编提示，不重复跳过预设");}
+                return waitFor(late?"等待取消派兵":"等待超编提示关闭");
             }
             if(f.formation||f.deploy||f.header){returnToList(now);}
             else if(f.map){phase=Phase.MAP;checkedAt=-1;remaining=0;resetEvidence();}
-            else return unrecognized(now,"等待超编提示关闭后的页面");
+            else return unrecognized(now,"等待提示关闭后的页面");
         }
-        if(f.troopOverflow&&f.dialogOkX>0){
+        if((f.rallyTooLate&&f.cancelX>0)||(f.troopOverflow&&f.dialogOkX>0)){
             if(charged){remaining++;charged=false;}
             // Explicit rejection did not send this preset. Retry it only after a fresh green +.
             if(selected>=0){nextPreset=selected;attemptedMask&=~(1<<selected);}
             markerMissingSince=-1;
             dialogSince=now;dialogAttempts=1;
+            if(f.rallyTooLate){
+                avoidLastRow(now);rallyDeadline=-1;
+                return act(Kind.NAVIGATE,f.cancelX,f.cancelY,Phase.DISMISS_LATE,"来不及抵达，取消派兵后返回列表换一队");
+            }
             return act(Kind.NAVIGATE,f.dialogOkX,f.dialogOkY,Phase.DISMISS_OVERFLOW,"士兵超出上限，关闭提示后返回列表重新加入");
         }
         if(phase==Phase.RETURN_MAP){
@@ -113,6 +120,10 @@ final class MarchFlow {
             phase=Phase.MAP;checkedAt=-1;remaining=0;resetEvidence();unknownSince=-1;
             return waitFor("游戏已回地图，重新检查空位继续");
         }
+        if((phase==Phase.FORMATION||phase==Phase.SEND)&&rallyDeadline>=0&&rallyDeadline-now<10000){
+            avoidLastRow(now);returnToList(now);
+            return waitFor("集结剩余不足 10 秒，返回列表换一队");
+        }
         if(phase==Phase.ENTER_LIST||phase==Phase.FIND||phase==Phase.FORMATION||phase==Phase.SEND||phase==Phase.RETURN_LIST){
             if(checkedAt<0||now-checkedAt>CAPACITY_MAX_AGE||remaining<=0){returnToMap(now);return waitFor("本批空位已用完或需更新，回地图检查");}
         }
@@ -138,17 +149,17 @@ final class MarchFlow {
         if(phase==Phase.FIND){
             if(!f.header||!f.rallyList||f.deploy)return unrecognized(now,"等待集结列表");
             unknownSince=-1;
-            Row row=f.rows.stream().filter(r->r.order>=0&&r.available&&r.x>0&&r.y>0&&(now>=avoidRowUntil||Math.abs(r.y-failedRowY)>60))
+            Row row=f.rows.stream().filter(r->r.order>=0&&r.available&&r.x>0&&r.y>0&&CountdownDigits.canJoin(r.secondsLeft,f.ageMillis)&&(now>=avoidRowUntil||Math.abs(r.y-failedRowY)>60))
                 .min(Comparator.comparingInt(r->r.order)).orElse(null);
             if(row!=null){
                 if(remainingMillis(now)<8000)return waitFor("本轮即将结束，停止新上车");
                 selected=choosePreset();
                 if(selected<0){retryAt=now+8000;returnToMap(now);return waitFor("本轮已检查全部预设，稍后重查");}
-                lastJoinY=row.y;charged=false;markerMissingSince=-1;
+                lastJoinY=row.y;charged=false;markerMissingSince=-1;rallyDeadline=now+row.secondsLeft*1000L-f.ageMillis;
                 return act(Kind.JOIN,row.x,row.y,Phase.FORMATION,"点击绿色＋ · 预设 "+(selected+1)+" · 本批余 "+remaining+" 次");
             }
             if(now-lastScroll>=5000){lastScroll=now;return act(Kind.SCROLL,0,0,Phase.FIND,"暂时没有可加入的巨熊，翻看下一屏");}
-            return waitFor("等待可加入的绿色＋");
+            return waitFor("等待倒计时至少 10 秒、可加入的巨熊");
         }
         if(phase==Phase.FORMATION){
             if(selected<0){retryAt=now+8000;returnToMap(now);return waitFor("预设暂时不可用，稍后重查");}

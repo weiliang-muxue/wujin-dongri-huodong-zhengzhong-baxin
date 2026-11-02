@@ -21,14 +21,14 @@ with zipfile.ZipFile(main) as z:
     for name in z.namelist():
         if name.startswith(('assets/feedback/','assets/reference/')) and name.endswith(('.png','.json')):
             (bundle/name).write_bytes(z.read(name))
-for name in ['reported-overflow.png','huawei-map.png','xiaomi-list.png']+[f'video-{s}.png' for s in (170,250,270,315,358,411,691,718,751,771,780,816,820)]:
+for name in ['reported-overflow.png','huawei-map.png','xiaomi-list.png','countdown-list.png','too-late.png']+[f'video-{s}.png' for s in (170,250,270,315,358,411,691,718,751,771,780,816,820)]:
     (bundle/'fixtures'/name).write_bytes((a.fixtures/name).read_bytes())
 (bundle/'app.apk').write_bytes(main.read_bytes());(bundle/'tests.apk').write_bytes(tests.read_bytes())
 def adb(*args,timeout=180):
     r=subprocess.run([a.adb,'-s',a.serial,*args],capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=timeout)
     if r.returncode:raise RuntimeError(r.stdout+r.stderr)
     return r.stdout
-remote='/data/local/tmp/wujin-feedback-205'
+remote='/data/local/tmp/wujin-feedback-206'
 print(adb('shell','mkdir','-p',remote),flush=True)
 print(adb('push',str(bundle)+'/.',remote,timeout=300),flush=True)
 with (a.output/'android-feedback-runtime.txt').open('w',encoding='utf-8') as log:
@@ -48,5 +48,7 @@ with (a.output/'android-feedback-runtime.txt').open('w',encoding='utf-8') as log
     if '0 failures' not in core:raise RuntimeError('ART test result missing')
     result=run('FeedbackRuntimeCheck',f'{remote}/lib {remote}/fixtures {remote}/assets')
     if 'ANDROID OPENCV PASS: 17 image cases;' not in result:raise RuntimeError('Native image test result missing')
+    result=run('CountdownRuntimeCheck',f'{remote}/lib {remote}/fixtures {remote}/assets')
+    if 'ANDROID COUNTDOWN PASS: 21 cases;' not in result:raise RuntimeError('Countdown/cancel image test result missing')
     result=run('CompatibilityRuntimeCheck',f'{remote}/lib {remote}/fixtures {remote}/assets {remote}/calibration')
     if 'ANDROID COMPAT PASS: 16 real image cases;' not in result:raise RuntimeError('Compatibility image test result missing')

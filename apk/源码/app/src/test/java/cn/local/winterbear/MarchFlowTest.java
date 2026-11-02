@@ -4,6 +4,53 @@ import static org.junit.Assert.*;
 import static cn.local.winterbear.BearFlow.Kind;
 
 public class MarchFlowTest {
+    static BearFlow.Frame timed(int... seconds){
+        BearFlow.Frame f=list();f.rows.clear();
+        for(int i=0;i<seconds.length;i++)f.rows.add(new BearFlow.Row(i,900,700+i*600,true,seconds[i]));return f;
+    }
+    static BearFlow.Frame late(){BearFlow.Frame f=new BearFlow.Frame();f.rallyTooLate=true;f.cancelX=310;f.cancelY=1540;return f;}
+    @Test public void countdownBoundaryAndUnknownSkipToNextRally(){
+        for(int seconds:new int[]{-1,0,1,8,9}){MarchFlow f=flow();enter(f,4);assertEquals(1300,f.next(timed(seconds,33),3000).y);}
+        MarchFlow f=flow();enter(f,4);assertEquals(700,f.next(timed(10,33),3000).y);
+    }
+    @Test public void countdownDeductsCaptureAgeBeforeJoining(){
+        MarchFlow f=flow();enter(f,4);BearFlow.Frame frame=timed(10,33);frame.ageMillis=1;
+        assertEquals(1300,f.next(frame,3000).y);
+        assertFalse(CountdownDigits.canJoin(11,1001));assertTrue(CountdownDigits.canJoin(11,1000));
+        assertFalse(CountdownDigits.canJoin(60,4001));assertFalse(CountdownDigits.canJoin(60,-1));
+    }
+    @Test public void countdownExpiresBeforeDeployAndReturnsWithoutSending(){
+        MarchFlow f=flow();enter(f,5);assertEquals(Kind.JOIN,f.next(timed(13),3000).kind);f.complete(true,3100);
+        assertEquals(Kind.PRESET,f.next(deploy(),4400).kind);f.complete(true,4500);
+        assertEquals(Kind.WAIT,f.next(deploy(),6100).kind);assertEquals(MarchFlow.Phase.RETURN_LIST,f.phase);
+        assertEquals(Kind.BACK,f.next(deploy(),7200).kind);assertEquals(0,f.submitted);assertEquals(0,f.nextPreset);
+    }
+    @Test public void latePopupCancelsReturnsAndUsesSameUnsentPresetOnDifferentRally(){
+        MarchFlow f=flow();enter(f,5);f.next(list(),3000);f.complete(true,3100);f.next(deploy(),4400);f.complete(true,4500);f.next(deploy(),5300);f.complete(true,5400);
+        BearFlow.Decision cancel=f.next(late(),6700);assertEquals(Kind.NAVIGATE,cancel.kind);assertEquals(310,cancel.x);f.complete(true,6800);
+        assertEquals(Kind.WAIT,f.next(late(),8100).kind);
+        assertEquals(Kind.BACK,f.next(deploy(),9200).kind);f.complete(true,9300);
+        assertEquals(1300,f.next(timed(33,57),10600).y);assertEquals(0,f.nextPreset);assertEquals(0,f.submitted);
+        f.complete(true,10700);assertEquals(100,f.next(deploy(),12000).x);f.complete(true,12100);
+        assertEquals(Kind.DEPLOY,f.next(deploy(),13000).kind);f.complete(true,13100);f.next(timed(33,57),14400);
+        assertEquals(1,f.submitted);assertEquals(MarchFlow.Phase.RETURN_MAP,f.phase);
+    }
+    @Test public void stuckLatePopupOnlyRetriesCancelOnceAndStops(){
+        MarchFlow f=flow();atVerify(f);f.next(late(),6700);f.complete(true,6800);
+        assertEquals(310,f.next(late(),9800).x);f.complete(true,9900);
+        assertEquals(Kind.PAUSE,f.next(late(),14700).kind);assertEquals(0,f.submitted);assertEquals(0,f.nextPreset);
+    }
+    @Test public void dryModeNeverCancelsAWarning(){
+        MarchFlow f=flow();f.dry=true;assertEquals(Kind.WAIT,f.next(late(),1000).kind);
+    }
+    @Test public void timerFormatRejectsInvalidMinutesSecondsAndUnknownGlyphs(){
+        assertEquals(9,CountdownDigits.seconds(new int[]{0,0,0,0,0,9}));
+        assertEquals(10,CountdownDigits.seconds(new int[]{0,0,0,0,1,0}));
+        assertEquals(61,CountdownDigits.seconds(new int[]{0,0,0,1,0,1}));
+        assertEquals(-1,CountdownDigits.seconds(new int[]{0,0,6,0,0,0}));
+        assertEquals(-1,CountdownDigits.seconds(new int[]{0,0,0,0,6,0}));
+        assertEquals(-1,CountdownDigits.seconds(new int[]{0,0,0,0,-1,0}));
+    }
     static void atVerify(MarchFlow f){enter(f,3);f.next(list(),3000);f.complete(true,3100);f.next(deploy(),4400);f.complete(true,4500);f.next(deploy(),5300);f.complete(true,5400);}
     static BearFlow.Frame overflow(){BearFlow.Frame e=new BearFlow.Frame();e.troopOverflow=true;e.dialogOkX=550;e.dialogOkY=1500;return e;}
     @Test public void persistentOverflowDoesNotSkipSeveralPresets(){MarchFlow f=flow();atVerify(f);assertEquals(Kind.NAVIGATE,f.next(overflow(),6700).kind);f.complete(true,6800);assertEquals(Kind.WAIT,f.next(overflow(),8100).kind);assertEquals(Kind.BACK,f.next(deploy(),9200).kind);f.complete(true,9300);assertEquals(Kind.JOIN,f.next(list(),10700).kind);f.complete(true,10800);assertEquals(100,f.next(deploy(),12100).x);assertEquals(0,f.submitted);}
@@ -11,12 +58,12 @@ public class MarchFlowTest {
     @Test public void returningFromDetailHasBoundedBackAttempts(){MarchFlow f=flow();enter(f,3);f.next(list(),3000);f.complete(true,3100);BearFlow.Frame detail=list();detail.rallyList=false;f.next(detail,4400);for(int i=0;i<6;i++){assertEquals(Kind.BACK,f.next(detail,5500+i*1200).kind);f.complete(true,5600+i*1200);}assertEquals(Kind.PAUSE,f.next(detail,14000).kind);}
     @Test public void stuckOverflowRetriesOnceThenStops(){MarchFlow f=flow();atVerify(f);f.next(overflow(),6700);f.complete(true,6800);assertEquals(Kind.NAVIGATE,f.next(overflow(),9800).kind);f.complete(true,9900);assertEquals(Kind.WAIT,f.next(overflow(),11000).kind);assertEquals(Kind.PAUSE,f.next(overflow(),14700).kind);assertEquals(0,f.nextPreset);}
     @Test public void failedDeployGestureDoesNotReserveNextPreset(){MarchFlow f=flow();enter(f,3);f.next(list(),3000);f.complete(true,3100);f.next(deploy(),4400);f.complete(true,4500);assertEquals(Kind.DEPLOY,f.next(deploy(),5300).kind);f.complete(false,5400);assertFalse(f.running);assertEquals(0,f.nextPreset);}
-    @Test public void failedRowStaysExcludedAfterAnotherJoin(){MarchFlow f=flow();enter(f,3);f.next(list(),3000);f.complete(true,3100);f.next(list(),9200);BearFlow.Frame other=list();other.rows.add(new BearFlow.Row(1,900,1400));assertEquals(1400,f.next(other,10000).y);f.complete(true,10100);f.next(deploy(),11200);f.complete(true,11300);f.next(deploy(),12200);f.complete(true,12300);f.next(other,13400);assertEquals(1400,f.next(other,14500).y);}
+    @Test public void failedRowStaysExcludedAfterAnotherJoin(){MarchFlow f=flow();enter(f,3);f.next(list(),3000);f.complete(true,3100);f.next(list(),9200);BearFlow.Frame other=list();other.rows.add(new BearFlow.Row(1,900,1400,true,60));assertEquals(1400,f.next(other,10000).y);f.complete(true,10100);f.next(deploy(),11200);f.complete(true,11300);f.next(deploy(),12200);f.complete(true,12300);f.next(other,13400);assertEquals(1400,f.next(other,14500).y);}
     @Test public void unexpectedMapRechecksBeforeContinuing(){for(MarchFlow.Phase p:new MarchFlow.Phase[]{MarchFlow.Phase.FIND,MarchFlow.Phase.FORMATION,MarchFlow.Phase.SEND}){MarchFlow f=flow();enter(f,3);f.phase=p;assertEquals(Kind.WAIT,f.next(map(6),3000).kind);assertEquals(MarchFlow.Phase.MAP,f.phase);assertEquals(Kind.WAIT,f.next(map(6),4000).kind);assertEquals(Kind.WAIT,f.next(map(6),5000).kind);}}
     static MarchFlow flow(){MarchFlow f=new MarchFlow();f.dry=false;for(int i=0;i<6;i++){f.enabled[i]=true;f.presetX[i]=100+i*100;f.presetY[i]=150;}f.start(1000);return f;}
     static BearFlow.Frame map(int used){BearFlow.Frame f=new BearFlow.Frame();f.map=true;f.marchUsed=used;f.shortcutX=950;f.shortcutY=800;return f;}
     static BearFlow.Frame hidden(){BearFlow.Frame f=map(-1);f.marchHidden=true;return f;}
-    static BearFlow.Frame list(){BearFlow.Frame f=new BearFlow.Frame();f.header=true;f.rallyList=true;f.backX=60;f.backY=300;f.rows.add(new BearFlow.Row(0,900,700));return f;}
+    static BearFlow.Frame list(){BearFlow.Frame f=new BearFlow.Frame();f.header=true;f.rallyList=true;f.backX=60;f.backY=300;f.rows.add(new BearFlow.Row(0,900,700,true,60));return f;}
     static BearFlow.Frame deploy(){BearFlow.Frame f=new BearFlow.Frame();f.formation=true;f.deploy=true;f.deployX=800;f.deployY=2200;f.backX=60;f.backY=300;f.troops=new TroopCount(152810,152810);java.util.Arrays.fill(f.savedPreset,true);return f;}
     static void enter(MarchFlow f,int used){assertEquals(Kind.WAIT,f.next(map(used),1000).kind);assertEquals(Kind.NAVIGATE,f.next(map(used),1600).kind);f.complete(true,1700);}
     static void sendFromList(MarchFlow f,long t,int preset){
@@ -42,7 +89,7 @@ public class MarchFlowTest {
     @Test public void transientMissingPresetDoesNotStopTheSession(){MarchFlow f=flow();enter(f,5);f.next(list(),3000);f.complete(true,3100);BearFlow.Frame d=deploy();d.savedPreset[0]=false;assertEquals(Kind.WAIT,f.next(d,4400).kind);assertEquals(Kind.PRESET,f.next(deploy(),5500).kind);assertTrue(f.running);}
     @Test public void readableFullCounterOverridesMissingAnchor(){MarchFlow f=flow();BearFlow.Frame m=hidden();m.marchUsed=6;for(int t=1000;t<10000;t+=1000)assertEquals(Kind.WAIT,f.next(m,t).kind);assertEquals(MarchFlow.Phase.MAP,f.phase);}
     @Test public void readableCounterLimitsBatchEvenWhenAnchorMissing(){MarchFlow f=flow();BearFlow.Frame m=hidden();m.marchUsed=5;f.next(m,1000);assertEquals(Kind.NAVIGATE,f.next(m,1600).kind);f.complete(true,1700);sendFromList(f,3000,0);assertEquals(MarchFlow.Phase.RETURN_MAP,f.phase);}
-    @Test public void canJoinEighthOtherRally(){MarchFlow f=flow();enter(f,5);BearFlow.Frame s=list();s.rows.clear();for(int i=0;i<8;i++)s.rows.add(new BearFlow.Row(i,800,400+i*100,i==7));assertEquals(1100,f.next(s,3000).y);}
+    @Test public void canJoinEighthOtherRally(){MarchFlow f=flow();enter(f,5);BearFlow.Frame s=list();s.rows.clear();for(int i=0;i<8;i++)s.rows.add(new BearFlow.Row(i,800,400+i*100,i==7,60));assertEquals(1100,f.next(s,3000).y);}
     @Test public void staleCapacityReturnsBeforeNewJoin(){MarchFlow f=flow();enter(f,5);assertEquals(Kind.WAIT,f.next(list(),92000).kind);assertEquals(Kind.BACK,f.next(list(),93300).kind);}
     @Test public void capacityBecomingFullCancelsNavigation(){MarchFlow f=flow();enter(f,5);assertEquals(Kind.WAIT,f.next(map(6),3000).kind);assertEquals(MarchFlow.Phase.MAP,f.phase);}
     @Test public void absentShortcutWaits(){MarchFlow f=flow();BearFlow.Frame m=map(5);m.shortcutX=0;f.next(m,1000);assertEquals(Kind.WAIT,f.next(m,1600).kind);assertTrue(f.running);}
@@ -55,8 +102,8 @@ public class MarchFlowTest {
     @Test public void conflictingAnchorsStop(){MarchFlow f=flow();BearFlow.Frame s=map(5);s.header=true;assertEquals(Kind.PAUSE,f.next(s,1000).kind);}
     @Test public void deadlineStopsEveryPhase(){for(MarchFlow.Phase p:MarchFlow.Phase.values()){MarchFlow f=flow();f.phase=p;assertEquals(Kind.PAUSE,f.next(map(5),1801000).kind);assertFalse(f.running);}}
     @Test public void startsInListByCheckingMapOnce(){MarchFlow f=flow();assertEquals(Kind.WAIT,f.next(list(),1000).kind);assertEquals(Kind.BACK,f.next(list(),2200).kind);}
-    @Test public void departingRallyDetailReturnsToListInsteadOfPausing(){MarchFlow f=flow();enter(f,4);f.next(list(),3000);f.complete(true,3100);BearFlow.Frame d=list();d.rallyList=false;assertEquals(Kind.WAIT,f.next(d,4400).kind);assertEquals(Kind.BACK,f.next(d,5500).kind);f.complete(true,5600);BearFlow.Frame s=list();s.rows.add(new BearFlow.Row(1,900,1400));assertEquals(1400,f.next(s,7000).y);}
-    @Test public void fullRaceSkipsRowWithoutAdvancingPreset(){MarchFlow f=flow();enter(f,4);f.next(list(),3000);f.complete(true,3100);assertEquals(Kind.WAIT,f.next(list(),9200).kind);BearFlow.Frame s=list();s.rows.add(new BearFlow.Row(1,900,1400));assertEquals(1400,f.next(s,10000).y);assertEquals(0,f.nextPreset);}
+    @Test public void departingRallyDetailReturnsToListInsteadOfPausing(){MarchFlow f=flow();enter(f,4);f.next(list(),3000);f.complete(true,3100);BearFlow.Frame d=list();d.rallyList=false;assertEquals(Kind.WAIT,f.next(d,4400).kind);assertEquals(Kind.BACK,f.next(d,5500).kind);f.complete(true,5600);BearFlow.Frame s=list();s.rows.add(new BearFlow.Row(1,900,1400,true,60));assertEquals(1400,f.next(s,7000).y);}
+    @Test public void fullRaceSkipsRowWithoutAdvancingPreset(){MarchFlow f=flow();enter(f,4);f.next(list(),3000);f.complete(true,3100);assertEquals(Kind.WAIT,f.next(list(),9200).kind);BearFlow.Frame s=list();s.rows.add(new BearFlow.Row(1,900,1400,true,60));assertEquals(1400,f.next(s,10000).y);assertEquals(0,f.nextPreset);}
     @Test public void zeroTroopsUsesNextPresetWithoutDeploy(){MarchFlow f=flow();enter(f,4);f.next(list(),3000);f.complete(true,3100);f.next(deploy(),4400);f.complete(true,4500);BearFlow.Frame d=deploy();d.troops=new TroopCount(0,150000);assertEquals(Kind.WAIT,f.next(d,5300).kind);assertEquals(200,f.next(d,6400).x);}
     @Test public void tinyButExplicitlySavedArmyIsAllowed(){MarchFlow f=flow();enter(f,4);f.next(list(),3000);f.complete(true,3100);f.next(deploy(),4400);f.complete(true,4500);BearFlow.Frame d=deploy();d.troops=new TroopCount(1,139400);assertEquals(Kind.DEPLOY,f.next(d,5300).kind);}
     @Test public void overflowBeforeSendSkipsPreset(){MarchFlow f=flow();enter(f,4);f.next(list(),3000);f.complete(true,3100);f.next(deploy(),4400);f.complete(true,4500);BearFlow.Frame d=deploy();d.troops=new TroopCount(160000,150000);assertEquals(Kind.WAIT,f.next(d,5300).kind);assertEquals(200,f.next(d,6400).x);}
@@ -65,7 +112,7 @@ public class MarchFlowTest {
     @Test public void uncertainDeployNeverClicksDeployTwice(){MarchFlow f=flow();enter(f,3);f.next(list(),3000);f.complete(true,3100);f.next(deploy(),4400);f.complete(true,4500);f.next(deploy(),5300);f.complete(true,5400);assertEquals(Kind.WAIT,f.next(deploy(),13000).kind);assertEquals(Kind.BACK,f.next(deploy(),14000).kind);assertEquals(1,f.nextPreset);}
     @Test public void recordedFailuresRecoverInOneContinuousSession(){
         MarchFlow f=flow();f.next(hidden(),1000);assertEquals(Kind.NAVIGATE,f.next(hidden(),1600).kind);f.complete(true,1700);
-        BearFlow.Frame s=list();s.autoJoin=true;s.rows.clear();s.rows.add(new BearFlow.Row(0,900,700,false));s.rows.add(new BearFlow.Row(1,900,1400));
+        BearFlow.Frame s=list();s.autoJoin=true;s.rows.clear();s.rows.add(new BearFlow.Row(0,900,700,false,60));s.rows.add(new BearFlow.Row(1,900,1400,true,60));
         assertEquals(1400,f.next(s,3000).y);f.complete(true,3100);
         BearFlow.Frame d=deploy();d.savedPreset[0]=false;assertEquals(Kind.WAIT,f.next(d,4400).kind);
         assertEquals(100,f.next(deploy(),5500).x);f.complete(true,5600);
@@ -82,7 +129,7 @@ public class MarchFlowTest {
         assertEquals(Kind.JOIN,f.next(s,17800).kind);f.complete(true,17900);
         BearFlow.Frame detail=list();detail.rallyList=false;
         assertEquals(Kind.WAIT,f.next(detail,19200).kind);assertEquals(Kind.BACK,f.next(detail,20300).kind);f.complete(true,20400);
-        s.rows.add(new BearFlow.Row(2,900,2100));assertEquals(2100,f.next(s,21700).y);f.complete(true,21800);
+        s.rows.add(new BearFlow.Row(2,900,2100,true,60));assertEquals(2100,f.next(s,21700).y);f.complete(true,21800);
         assertEquals(300,f.next(deploy(),23100).x);f.complete(true,23200);
         assertEquals(Kind.DEPLOY,f.next(deploy(),24000).kind);f.complete(true,24100);
         assertEquals(Kind.WAIT,f.next(s,25400).kind);
@@ -102,7 +149,7 @@ public class MarchFlowTest {
     @Test public void overflowRecoveryUsesFreshGreenButtonAndSkipsGray(){
         MarchFlow f=flow();atVerify(f);f.next(overflow(),6700);f.complete(true,6800);
         assertEquals(Kind.BACK,f.next(deploy(),8100).kind);f.complete(true,8200);
-        BearFlow.Frame changed=list();changed.rows.clear();changed.rows.add(new BearFlow.Row(0,900,700,false));changed.rows.add(new BearFlow.Row(1,930,1550));
+        BearFlow.Frame changed=list();changed.rows.clear();changed.rows.add(new BearFlow.Row(0,900,700,false,60));changed.rows.add(new BearFlow.Row(1,930,1550,true,60));
         BearFlow.Decision join=f.next(changed,9500);assertEquals(Kind.JOIN,join.kind);assertEquals(1550,join.y);assertEquals(930,join.x);
         assertEquals(0,f.nextPreset);assertEquals(0,f.submitted);
     }

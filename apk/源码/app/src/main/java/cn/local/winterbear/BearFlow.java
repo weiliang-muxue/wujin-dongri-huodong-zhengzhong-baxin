@@ -10,14 +10,19 @@ public final class BearFlow {
     public static final class Row {
         public final int order, x, y;
         public final boolean available;
+        public final int secondsLeft;
         public Row(int order,int x,int y) {this(order,x,y,true);}
-        public Row(int order,int x,int y,boolean available) {this.order=order;this.x=x;this.y=y;this.available=available;}
+        public Row(int order,int x,int y,boolean available) {this(order,x,y,available,-1);}
+        public Row(int order,int x,int y,boolean available,int secondsLeft) {this.order=order;this.x=x;this.y=y;this.available=available;this.secondsLeft=secondsLeft;}
     }
     public static final class Frame {
         public boolean header, deploy;
         public boolean map, formation, autoJoin;
         public boolean marchHidden, rallyList, troopOverflow, worldMapChrome;
         public int dialogOkX,dialogOkY;
+        public boolean rallyTooLate;
+        public int cancelX,cancelY;
+        public long ageMillis;
         public TroopCount troops;
         public int marchUsed=-1;
         public int shortcutX,shortcutY,allianceX,allianceY,warX,warY,rallyX,rallyY,worldX,worldY,backX,backY;

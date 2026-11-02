@@ -63,7 +63,7 @@ gradlew.bat :app:assembleDebug :app:assembleDebugAndroidTest -PemulatorTest
 python tools/run_feedback_regression.py --adb <adb路径> --serial emulator-5580 --fixtures <私人样本目录> --output <本地验证目录>
 ```
 
-样本目录须包含 `reported-overflow.png`、`huawei-map.png`（1152×2376）、`xiaomi-list.png`（1080×2400）和前文列出的 13 个 `video-秒数.png`（1080×2400）。测试包括报错图、常驻条遮罩、仅文字／仅按钮负例及历史录屏帧，共 17 个图像用例；最后用实际识别结果驱动关闭→返回→重新加入的状态机。日志为 `android-feedback-runtime.txt`。不会点击游戏，也不能代替用户手机上的实际触控与完整活动测试。
+样本目录须包含 `reported-overflow.png`、`huawei-map.png`（1152×2376）、`xiaomi-list.png`、`countdown-list.png`、`too-late.png`（均为1080×2400）和前文列出的 13 个 `video-秒数.png`（1080×2400）。测试包括报错图、常驻条遮罩、仅文字／仅按钮负例及历史录屏帧，共 17 个图像用例；最后用实际识别结果驱动关闭→返回→重新加入的状态机。日志为 `android-feedback-runtime.txt`。不会点击游戏，也不能代替用户手机上的实际触控与完整活动测试。
 
 
 ## 2.0.5 屏幕兼容
@@ -73,3 +73,12 @@ python tools/run_feedback_regression.py --adb <adb路径> --serial emulator-5580
 内置布局保持图标等比缩放，顶部旗帜按屏幕宽度定位，底部出征和导航按底部距离定位。1080×2400 的坐标保持原值，旧录屏匹配尺寸保持原值。自动连接必须通过两张实时地图确认，不能仅凭参考图绑定。旧参考配置可适配新尺寸并保留预设开关和顺序；手动取样不会被自动替换。
 
 `CompatibilityRuntimeCheck` 运行实际 Config、Matcher、Android Bitmap 和 OpenCV，增加华为地图、小米非熊列表、13 张旧录屏、3 个明确标记为合成的宽屏样本，并验证旧配置迁移。数字 OCR 在该入口中由样本标注代替，同时检查行军裁剪框完整包含实际数字；这不属于 ML Kit OCR 或手机触控实测。
+
+
+## 2.0.6 集结倒计时与取消派兵
+
+每条绿色＋上方的 HH:MM:SS 单独读取，不使用队长或编队名称。倒计时使用内置数字字形离线识别，必须同时匹配 6 个明确数字和 2 个冒号；无效、模糊或被遮住的读数保持未知并跳过。无需重新取样。
+
+进入前至少保留 10 秒，并扣除截图年龄；选择预设期间继续按单调时钟计算剩余时间，不足 10 秒便返回列表，避免进入后继续过期出征。“没时间了！您的部队必须加速…”文字与左侧取消按钮联合确认后，仅取消派兵，返回列表并短暂排除刚才的行，保留本次未发送的预设、只退还一次空位。不点击蓝色确定、不使用加速道具、不修改“今日不再提示”或游戏原生自动加入。
+
+`CountdownRuntimeCheck` 直接调用实际 CountdownVision / FeedbackVision：回放新截图中的 33、57、61 秒及旧录屏计时，验证 0/1/8/9/10/11 秒合成边界、读数遮挡、提示文字或取消按钮缺失、悬浮条避让，以及取消 → 返回 → 其他绿色＋。华为 1152×2376、1344×2772 使用明确标记为合成的比例样本；本轮倒计时识别没有使用标注值代替。它仍不能替代真机系统触控或整场活动测试。
