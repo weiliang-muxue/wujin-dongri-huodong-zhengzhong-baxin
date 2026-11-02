@@ -71,17 +71,17 @@ final class MarchFlow {
                 if(now-dialogSince>=3000&&dialogAttempts<2&&f.dialogOkX>0){dialogAttempts++;return act(Kind.NAVIGATE,f.dialogOkX,f.dialogOkY,Phase.DISMISS_OVERFLOW,"再次关闭超编提示，不重复跳过预设");}
                 return waitFor("等待超编提示关闭");
             }
-            if(f.formation||f.deploy){phase=Phase.FORMATION;phaseSince=now;unknownSince=-1;}
-            else if(f.header){returnToList(now);}
+            if(f.formation||f.deploy||f.header){returnToList(now);}
             else if(f.map){phase=Phase.MAP;checkedAt=-1;remaining=0;resetEvidence();}
             else return unrecognized(now,"等待超编提示关闭后的页面");
         }
         if(f.troopOverflow&&f.dialogOkX>0){
-            if(phase!=Phase.VERIFY&&phase!=Phase.SEND&&phase!=Phase.FORMATION)return pause("请先处理当前游戏提示");
             if(charged){remaining++;charged=false;}
-            if(selected>=0)attemptedMask|=1<<selected;selected=choosePreset();markerMissingSince=-1;
+            // Explicit rejection did not send this preset. Retry it only after a fresh green +.
+            if(selected>=0){nextPreset=selected;attemptedMask&=~(1<<selected);}
+            markerMissingSince=-1;
             dialogSince=now;dialogAttempts=1;
-            return act(Kind.NAVIGATE,f.dialogOkX,f.dialogOkY,Phase.DISMISS_OVERFLOW,"士兵超出上限，关闭提示后换下一个预设");
+            return act(Kind.NAVIGATE,f.dialogOkX,f.dialogOkY,Phase.DISMISS_OVERFLOW,"士兵超出上限，关闭提示后返回列表重新加入");
         }
         if(phase==Phase.RETURN_MAP){
             if(f.map){phase=Phase.MAP;phaseSince=now;unknownSince=-1;attemptedMask=0;resetEvidence();return waitFor("已回地图，检查新空位");}

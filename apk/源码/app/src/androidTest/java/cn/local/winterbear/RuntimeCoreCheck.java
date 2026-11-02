@@ -20,7 +20,7 @@ public final class RuntimeCoreCheck {
             throw new AssertionError("Unknown/march count was accepted as troop count");
         System.out.println("FIX VERIFIED ON ART: 179810/179810 usable; unreadable count stays unknown");
         Result tests=JUnitCore.runClasses(
-            cn.local.bullseye.FloatingGuardTest.class,cn.local.bullseye.SessionGuardTest.class,
+            BearOverlayGuardTest.class,cn.local.bullseye.FloatingGuardTest.class,cn.local.bullseye.SessionGuardTest.class,
             ModeGateTest.class,MarchCountTest.class,MarchFlowTest.class,RallyOrderTest.class,
             GestureGateTest.class,MarchSimulationTest.class,LiveMapCheckTest.class,
             TroopCountTest.class,ForegroundGateTest.class);

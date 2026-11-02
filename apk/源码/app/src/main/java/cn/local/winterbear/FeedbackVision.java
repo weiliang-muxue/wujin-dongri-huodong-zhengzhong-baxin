@@ -6,6 +6,7 @@ import org.opencv.android.Utils;
 import org.opencv.core.*;
 import org.opencv.imgproc.Imgproc;
 import java.io.InputStream;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -13,13 +14,16 @@ import java.util.List;
 final class FeedbackVision implements AutoCloseable {
     private final Mat body,title,button,city,search,bear,plus,plusColor,bearTop,plusTop,plusTopColor;
     private final Mat deploy,deployColor;
+    private final Mat bodyV2,buttonV2;
     private final Mat[] preset=new Mat[6];
-    FeedbackVision(Config config){body=load(config,"troop_overflow");title=load(config,"confirm_title");button=load(config,"confirm_ok");city=load(config,"map_city");search=load(config,"map_search");bear=load(config,"bear_label");plus=load(config,"green_plus");plusColor=load(config,"green_plus",true);bearTop=load(config,"bear_label_top");plusTop=load(config,"green_plus_top");plusTopColor=load(config,"green_plus_top",true);deploy=load(config,"deploy");deployColor=load(config,"deploy",true);for(int i=0;i<6;i++)preset[i]=load(config,"preset"+i);}
-    private Mat load(Config config,String key){
-        return load(config,key,false);
+    interface Assets { InputStream open(String path) throws IOException; }
+    FeedbackVision(Config config){this(path->config.context.getAssets().open(path));}
+    FeedbackVision(Assets assets){body=load(assets,"troop_overflow");title=load(assets,"confirm_title");button=load(assets,"confirm_ok");bodyV2=load(assets,"troop_overflow_v2");buttonV2=load(assets,"confirm_ok_v2");city=load(assets,"map_city");search=load(assets,"map_search");bear=load(assets,"bear_label");plus=load(assets,"green_plus");plusColor=load(assets,"green_plus",true);bearTop=load(assets,"bear_label_top");plusTop=load(assets,"green_plus_top");plusTopColor=load(assets,"green_plus_top",true);deploy=load(assets,"deploy");deployColor=load(assets,"deploy",true);for(int i=0;i<6;i++)preset[i]=load(assets,"preset"+i);}
+    private Mat load(Assets assets,String key){
+        return load(assets,key,false);
     }
-    private Mat load(Config config,String key,boolean color){
-        try(InputStream in=config.context.getAssets().open("feedback/"+key+".png")){
+    private Mat load(Assets assets,String key,boolean color){
+        try(InputStream in=assets.open("feedback/"+key+".png")){
             Bitmap image=BitmapFactory.decodeStream(in);Mat rgba=new Mat(),result=new Mat();
             try{Utils.bitmapToMat(image,rgba);Imgproc.cvtColor(rgba,result,color?Imgproc.COLOR_RGBA2RGB:Imgproc.COLOR_RGBA2GRAY);return result;}
             finally{image.recycle();rgba.release();}
@@ -39,9 +43,15 @@ final class FeedbackVision implements AutoCloseable {
         try{
             Imgproc.resize(fullGray,small,new Size(324,720),0,0,Imgproc.INTER_AREA);
             frame.worldMapChrome=hit(small,city,new Rect(275,695,47,25))!=null&&hit(small,search,new Rect(92,600,38,42))!=null;
-            if(hit(small,body,new Rect(55,355,220,65))==null||hit(small,title,new Rect(125,285,75,45))==null)return;
-            Point ok=hit(small,button,new Rect(85,425,155,75));
-            if(ok!=null){frame.troopOverflow=true;frame.dialogOkX=(int)Math.round(ok.x*width/324);frame.dialogOkY=(int)Math.round(ok.y*height/720);}
+            Mat[] bodies={body,bodyV2},buttons={button,buttonV2};
+            for(int i=0;i<bodies.length;i++){
+                Point text=hit(small,bodies[i],new Rect(50,330,235,110));
+                Point ok=hit(small,buttons[i],new Rect(80,425,165,90));
+                // Specific error + aligned button; the title may be covered by a floating control.
+                if(text!=null&&ok!=null&&Math.abs(text.x-ok.x)<30&&ok.y-text.y>40&&ok.y-text.y<125){
+                    frame.troopOverflow=true;frame.dialogOkX=(int)Math.round(ok.x*width/324);frame.dialogOkY=(int)Math.round(ok.y*height/720);break;
+                }
+            }
         }finally{small.release();}
     }
     private List<Point> hits(Mat screen,Mat template,Rect region){
@@ -103,5 +113,5 @@ final class FeedbackVision implements AutoCloseable {
             for(int i=0;i<6;i++)if(!frame.savedPreset[i]&&Math.abs(config.p.getInt("presetX"+i,0)*324.0/width-x[i])<6&&Math.abs(config.p.getInt("presetY"+i,0)*720.0/height-128)<6&&hit(gray,preset[i],new Rect(x[i]-10,117,20,21))!=null)frame.savedPreset[i]=true;
         }finally{gray.release();color.release();}
     }
-    public void close(){body.release();title.release();button.release();city.release();search.release();bear.release();plus.release();plusColor.release();bearTop.release();plusTop.release();plusTopColor.release();deploy.release();deployColor.release();for(Mat p:preset)p.release();}
+    public void close(){body.release();title.release();button.release();bodyV2.release();buttonV2.release();city.release();search.release();bear.release();plus.release();plusColor.release();bearTop.release();plusTop.release();plusTopColor.release();deploy.release();deployColor.release();for(Mat p:preset)p.release();}
 }

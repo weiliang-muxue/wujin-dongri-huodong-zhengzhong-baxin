@@ -25,7 +25,8 @@ def score(frame, template, region):
 
 
 body = read(ASSETS / "feedback/troop_overflow.png")
-title = read(ASSETS / "feedback/confirm_title.png")
+body_v2 = read(ASSETS / "feedback/troop_overflow_v2.png")
+button_v2 = read(ASSETS / "feedback/confirm_ok_v2.png")
 button = read(ASSETS / "feedback/confirm_ok.png")
 city_template = read(ASSETS / "feedback/map_city.png")
 search_template = read(ASSETS / "feedback/map_search.png")
@@ -38,9 +39,15 @@ plus_top_color = cv2.imdecode(np.fromfile(str(ASSETS / "feedback/green_plus_top.
 
 
 def overflow(frame):
-    return (score(frame, body, (55,355,220,65)) >= .88
-            and score(frame,title,(125,285,75,45)) >= .88
-            and score(frame,button,(85,425,155,75)) >= .88)
+    def point(template,region):
+        x,y,w,h=region
+        _,confidence,_,(px,py)=cv2.minMaxLoc(cv2.matchTemplate(frame[y:y+h,x:x+w],template,cv2.TM_CCOEFF_NORMED))
+        if not np.isfinite(confidence) or confidence<.88:return None
+        return x+px+template.shape[1]/2,y+py+template.shape[0]/2
+    for text_tpl,ok_tpl in ((body,button),(body_v2,button_v2)):
+        text=point(text_tpl,(50,330,235,110));ok=point(ok_tpl,(80,425,165,90))
+        if text and ok and abs(text[0]-ok[0])<30 and 40<ok[1]-text[1]<125:return True
+    return False
 
 
 def reference_score(frame, key, rect):

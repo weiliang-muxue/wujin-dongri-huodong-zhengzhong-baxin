@@ -14,7 +14,8 @@ def verify(apk: Path, version: str) -> dict:
         dex = [archive.read(name) for name in archive.namelist() if name.endswith('.dex')]
         resources = archive.read('resources.arsc')
         names=archive.namelist()
-        for name in ('assets/feedback/deploy.png','assets/reference/bear_label.png'):
+        for name in ('assets/feedback/deploy.png','assets/reference/bear_label.png',
+                     'assets/feedback/troop_overflow_v2.png','assets/feedback/confirm_ok_v2.png'):
             if name not in names:raise ValueError('Missing bear asset: '+name)
         if any('/x86' in name for name in names):raise ValueError('Unexpected desktop ABI')
     if not dex:

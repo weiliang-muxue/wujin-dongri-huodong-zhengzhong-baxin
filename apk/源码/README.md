@@ -4,13 +4,13 @@ JDK 17、Gradle 8.9、Android SDK 35 extension 15、Build Tools 35.0.0。设置 
 
 构建：`gradlew.bat :app:testEngine :app:assembleRelease :app:lintRelease`。
 
-将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.0.3.apk。
+将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.0.4.apk。
 
-检查成品：`python tools/verify_android_package.py ../无尽冬日助手-2.0.3.apk --version 2.0.3`。
+检查成品：`python tools/verify_android_package.py ../无尽冬日助手-2.0.4.apk --version 2.0.4`。
 
 一个 launcher：ModeActivity；一个无障碍服务：BearService。cn.local.bullseye.GameService 是该服务内的模块，不是第二个 Android Service。ModeGate、运行代次和输入前检查共同限制旧任务回调。返回活动选择会停止两个模块。
 
-打熊实际流程在 MarchFlow.java，与 Windows bear_flow.py 对照测试。BearFlow.java 只保留页面和动作数据类型。正中靶心保留实际券数、低券切换、结算退出；正中靶心悬浮条保持显示；仅在识别用的截图副本里遮罩悬浮条。固定尺寸避免状态更新时跳动，拖动时停发点击，落点自动避开券数、开始按钮、靶子、倍率及结算区域；旧位置采集的画面不再用于点击。
+打熊实际流程在 MarchFlow.java。2.0.4 仅更新 Android，电脑版保持 2.0.3。BearFlow.java 只保留页面和动作数据类型。正中靶心保留实际券数、低券切换、结算退出；正中靶心悬浮条保持显示；仅在识别用的截图副本里遮罩悬浮条。固定尺寸避免状态更新时跳动，拖动时停发点击，落点自动避开券数、开始按钮、靶子、倍率及结算区域；旧位置采集的画面不再用于点击。
 
 Release 开启 R8 与资源裁剪，仅打包 ARM64 和 ARMv7，共用两套流程的 OpenCV / ML Kit。应用合并清单移除联网权限。
 
@@ -49,3 +49,18 @@ adb -s emulator-5580 shell "CLASSPATH=/data/local/tmp/wujindongri-runtime-app.ap
 这个入口直接通过 `app_process` 执行 APK 内的 DEX，不依赖安装或启动应用。最后一个参数是必填的模拟器报告目录。成功时输出旧异常复现、`FIX VERIFIED ON ART` 和 `ART JUNIT` 的测试数量及 `0 failures`；失败会抛出异常。它不执行 OpenCV / ML Kit 图片识别，也不验证触控、权限或游戏服务器响应；图片识别回归仍需运行 `RuntimeRegression`。
 
 `-PemulatorTest` 仅供模拟器测试，使用 x86_64；交付时必须去掉此参数重新构建 Release，成品检查会拒绝包含 x86 的安装包。
+
+## 2.0.4 打熊修复
+
+“士兵超过出征上限”使用具体错误文字和下方确定按钮共同识别，不再要求弹窗标题无遮挡。关闭后必须退回集结列表，重新识别绿色＋，再使用当前未成功发送的预设；重复弹窗不会重复退还空位或记作成功。
+
+打熊运行时使用固定尺寸的常驻悬浮条，自动避开行军、六个旗帜、报错文字、确定按钮、绿色＋及滑动路径。只在识别截图副本中遮罩自身区域；运行截图和点击不会隐藏悬浮窗。拖动或布局变化后废弃旧画面；手动框选模板时仍会暂时隐藏一次。
+
+本次还可在专用 x86_64 Android 模拟器上直接执行 APK 中的 Android Bitmap / OpenCV 识别，不依赖应用安装服务：
+
+```powershell
+gradlew.bat :app:assembleDebug :app:assembleDebugAndroidTest -PemulatorTest
+python tools/run_feedback_regression.py --adb <adb路径> --serial emulator-5580 --fixtures <私人样本目录> --output <本地验证目录>
+```
+
+样本目录须包含 `reported-overflow.png` 和前文列出的 13 个 `video-秒数.png`（1080×2400）。测试包括报错图、常驻条遮罩、仅文字／仅按钮负例及历史录屏帧，共 17 个图像用例；最后用实际识别结果驱动关闭→返回→重新加入的状态机。日志为 `android-feedback-runtime.txt`。不会点击游戏，也不能代替用户手机上的实际触控与完整活动测试。

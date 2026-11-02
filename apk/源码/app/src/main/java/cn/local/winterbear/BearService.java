@@ -4,6 +4,9 @@ import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.GestureDescription;
 import android.content.Intent;
 import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
 import android.graphics.Insets;
 import android.graphics.Path;
 import android.graphics.PixelFormat;
@@ -26,6 +29,10 @@ import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.text.TextUtils;
+import cn.local.bullseye.FloatingGuard;
+import cn.local.bullseye.FloatingGuard.Box;
+import java.util.List;
 import java.text.SimpleDateFormat;
 import java.util.ArrayDeque;
 import java.util.Date;
@@ -52,7 +59,10 @@ public final class BearService extends AccessibilityService {
     private LinearLayout bubble,picker,controls;
     private WindowManager.LayoutParams bubbleParams;
     private TextView statusLabel;
-    private Button runButton,setupButton;
+    private Button runButton,setupButton,moreButton;
+    private Box bubbleBounds;
+    private long overlayRevision;
+    private boolean dragging,overlayMoving;
     private Matcher matcher;
     private String status="准备就绪",captureMode="";
     private int captureSlot,generation,captureId,scrollCount;
@@ -81,12 +91,14 @@ public final class BearService extends AccessibilityService {
             log.addLast(new SimpleDateFormat("HH:mm:ss",Locale.CHINA).format(new Date())+"  "+value);
             while(log.size()>240)log.removeFirst();
         }
-        if(statusLabel!=null)statusLabel.setText(value);
+        if(statusLabel!=null&&!value.contentEquals(statusLabel.getText()))statusLabel.setText(value);
         updateControls();
     }
     private void updateControls(){
+        if(moreButton!=null&&!flow.running&&!checkingMap&&!capturing)moreButton.setVisibility(View.VISIBLE);
         if(runButton!=null){
-            runButton.setText(flow.running?"暂停":checkingMap?"正在读取地图…":captureMode.equals("auto_map")?"连接游戏":!captureMode.isEmpty()?"截取当前页面":config.dry()?"试识别":"开始打熊");
+            String label=flow.running?"暂停":checkingMap?"读取中":captureMode.equals("auto_map")?"连接":!captureMode.isEmpty()?"取样":config.dry()?"识别":"开始";
+            if(!label.contentEquals(runButton.getText()))runButton.setText(label);
             runButton.setEnabled(!checkingMap);runButton.setAlpha(checkingMap?.55f:1f);
         }
         if(setupButton!=null){
@@ -102,6 +114,7 @@ public final class BearService extends AccessibilityService {
     void pause(String reason) {
         generation++;checkingMap=false;previewCheck.reset();gestureGate.cancel();flow.stop();main.removeCallbacks(tick);setStatus(reason);
         if(bubble!=null&&picker==null&&!destroyed)bubble.setVisibility(View.VISIBLE);
+        if(moreButton!=null)moreButton.setVisibility(View.VISIBLE);
         Matcher previous=matcher;matcher=null;
         if(previous!=null&&!worker.isShutdown())worker.execute(previous::close);
     }
@@ -125,6 +138,7 @@ public final class BearService extends AccessibilityService {
         flow.start(SystemClock.elapsedRealtime());
         foregroundGate.reset();
         if(controls!=null)controls.setVisibility(View.GONE);
+        if(moreButton!=null)moreButton.setVisibility(View.GONE);
         int session=generation;
         main.postDelayed(()->{if(session==generation&&flow.running)pause("已达到本次运行时长");},flow.remainingMillis(SystemClock.elapsedRealtime()));
         setStatus(flow.dry?"只识别模式 · 检查行军 x/6":"开始检查实际行军空位");cycle();
@@ -132,14 +146,18 @@ public final class BearService extends AccessibilityService {
     void showBubble() {
         if(destroyed)return;
         if(bubble!=null){bubble.setVisibility(View.VISIBLE);return;}
-        bubble=Ui.column(this);bubble.setPadding(Ui.dp(this,10),Ui.dp(this,8),Ui.dp(this,10),Ui.dp(this,10));
+        bubble=Ui.column(this);bubble.setPadding(overlayDp(6),overlayDp(6),overlayDp(6),overlayDp(6));
         bubble.setBackground(Ui.shape(this,Ui.CARD,16));bubble.setElevation(Ui.dp(this,8));
-        TextView handle=Ui.text(this,"打熊  ⠿ 拖动",14,Ui.ACCENT);handle.setMinHeight(Ui.dp(this,48));handle.setGravity(Gravity.CENTER_VERTICAL);bubble.addView(handle);
-        statusLabel=Ui.text(this,status,13,Ui.TEXT);statusLabel.setMaxLines(4);bubble.addView(statusLabel);
-        runButton=Ui.button(this,bubble,"试识别",true,()->{if(flow.running)pause("已手动暂停");else if(!captureMode.isEmpty())captureNow();else start();});
-        Ui.button(this,bubble,"停止",false,()->{pause("已停止");removeBubble();});
-        Ui.button(this,bubble,"更多 / 收起",false,()->{controls.setVisibility(controls.getVisibility()==View.VISIBLE?View.GONE:View.VISIBLE);});
+        TextView handle=Ui.text(this,"打熊 ⠿ 拖动",14,Ui.ACCENT);handle.setGravity(Gravity.CENTER_VERTICAL);bubble.addView(handle,new LinearLayout.LayoutParams(-1,overlayDp(40)));
+        statusLabel=Ui.text(this,status,12,Ui.TEXT);statusLabel.setMaxLines(2);statusLabel.setEllipsize(TextUtils.TruncateAt.END);bubble.addView(statusLabel,new LinearLayout.LayoutParams(-1,overlayDp(32)));
+        LinearLayout actions=new LinearLayout(this);LinearLayout.LayoutParams row=new LinearLayout.LayoutParams(-1,overlayDp(48));row.topMargin=overlayDp(2);bubble.addView(actions,row);
+        runButton=Ui.button(this,actions,"开始",true,()->{if(flow.running)pause("已手动暂停");else if(!captureMode.isEmpty())captureNow();else start();});
+        Button stopButton=Ui.button(this,actions,"停止",false,()->{pause("已停止");removeBubble();});
+        for(Button button:new Button[]{runButton,stopButton}){button.setMinHeight(0);button.setMinimumHeight(0);button.setPadding(0,0,0,0);button.setTextSize(13);button.setSingleLine(true);button.setLayoutParams(new LinearLayout.LayoutParams(0,-1,1));}
+        ((LinearLayout.LayoutParams)runButton.getLayoutParams()).rightMargin=overlayDp(4);
+        moreButton=Ui.button(this,bubble,"更多 / 收起",false,()->{controls.setVisibility(controls.getVisibility()==View.VISIBLE?View.GONE:View.VISIBLE);});
         controls=Ui.column(this);bubble.addView(controls);
+        controls.setVisibility(View.GONE);
         setupButton=Ui.button(this,controls,"连接 / 检查地图",false,()->{
             if(manualMapFallback){prepareCapture("march",0);return;}
             if(!captureMode.isEmpty()){captureMode="";pause("已取消准备；可点“设置 / 说明”继续");return;}
@@ -147,7 +165,7 @@ public final class BearService extends AccessibilityService {
         });
         Ui.button(this,controls,"设置 / 说明",false,()->{pause("已打开助手设置");startActivity(new Intent(this,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP));});
         Ui.button(this,controls,"关闭悬浮窗",false,()->{pause("已关闭悬浮窗");removeBubble();});
-        bubbleParams=new WindowManager.LayoutParams(Ui.dp(this,180),-2,WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+        bubbleParams=new WindowManager.LayoutParams((int)(windows.getCurrentWindowMetrics().getBounds().width()*.34f),-2,WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,PixelFormat.TRANSLUCENT);
         bubbleParams.gravity=Gravity.TOP|Gravity.LEFT;
         Rect screenBounds=windows.getCurrentWindowMetrics().getBounds();
@@ -155,19 +173,56 @@ public final class BearService extends AccessibilityService {
         bubbleParams.y=Math.max(0,Math.min(screenBounds.height()-Ui.dp(this,350),config.p.getInt("bubbleY",(int)(screenBounds.height()*.45))));
         handle.setOnTouchListener(new View.OnTouchListener(){float startX,startY;int x,y;
             public boolean onTouch(View view,MotionEvent event){
-                if(event.getActionMasked()==MotionEvent.ACTION_DOWN){startX=event.getRawX();startY=event.getRawY();x=bubbleParams.x;y=bubbleParams.y;return true;}
+                if(event.getActionMasked()==MotionEvent.ACTION_DOWN){dragging=true;overlayRevision++;startX=event.getRawX();startY=event.getRawY();x=bubbleParams.x;y=bubbleParams.y;return true;}
                 if(event.getActionMasked()==MotionEvent.ACTION_MOVE){
                     Rect bounds=windows.getCurrentWindowMetrics().getBounds();
                     bubbleParams.x=Math.max(0,Math.min(bounds.width()-bubble.getWidth(),x+(int)(event.getRawX()-startX)));
                     bubbleParams.y=Math.max(0,Math.min(bounds.height()-bubble.getHeight(),y+(int)(event.getRawY()-startY)));
                     windows.updateViewLayout(bubble,bubbleParams);return true;
                 }
-                if(event.getActionMasked()==MotionEvent.ACTION_UP){config.p.edit().putInt("bubbleX",bubbleParams.x).putInt("bubbleY",bubbleParams.y).apply();view.performClick();return true;}return true;
+                if(event.getActionMasked()==MotionEvent.ACTION_UP||event.getActionMasked()==MotionEvent.ACTION_CANCEL){overlayRevision++;dragging=false;config.p.edit().putInt("bubbleX",bubbleParams.x).putInt("bubbleY",bubbleParams.y).apply();view.performClick();return true;}return true;
             }});
         windows.addView(bubble,bubbleParams);
+        bubble.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->publishBubbleBounds());
         updateControls();
     }
-    private void removeBubble(){if(bubble!=null){windows.removeView(bubble);bubble=null;statusLabel=null;runButton=null;setupButton=null;}}
+    private void removeBubble(){overlayRevision++;dragging=false;overlayMoving=false;bubbleBounds=null;if(bubble!=null){windows.removeView(bubble);bubble=null;statusLabel=null;runButton=null;setupButton=null;moreButton=null;}}
+    private int overlayDp(int value){return Math.round(value*Math.min(getResources().getDisplayMetrics().density,windows.getCurrentWindowMetrics().getBounds().width()/360f));}
+    private void publishBubbleBounds(){
+        if(bubble==null||bubble.getWidth()==0||bubble.getHeight()==0)return;
+        int[] xy=new int[2];bubble.getLocationOnScreen(xy);
+        Box next=new Box(xy[0],xy[1],xy[0]+bubble.getWidth(),xy[1]+bubble.getHeight());
+        if(!next.same(bubbleBounds)){bubbleBounds=next;overlayRevision++;}
+    }
+    private boolean prepareAnalysisOverlay(){
+        if(bubble==null){showBubble();return false;}
+        if(dragging||overlayMoving)return false;
+        if(moreButton.getVisibility()!=View.GONE||controls.getVisibility()!=View.GONE){moreButton.setVisibility(View.GONE);controls.setVisibility(View.GONE);overlayRevision++;return false;}
+        // The start button has just collapsed the settings. Wait for the smaller layout.
+        if(bubble.isLayoutRequested())return false;
+        publishBubbleBounds();if(bubbleBounds==null)return false;
+        Rect screen=windows.getCurrentWindowMetrics().getBounds();
+        Insets inset=windows.getCurrentWindowMetrics().getWindowInsets().getInsetsIgnoringVisibility(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());
+        List<Box> areas=BearOverlayGuard.areas(screen.width(),screen.height());
+        // Respect custom anchors as well as the reference layout.
+        for(String key:new String[]{"header","formation","back","world","alliance","war","rally_tab","deploy","march_anchor"}){
+            int x=config.p.getInt(key+"X",0),y=config.p.getInt(key+"Y",0);
+            if(x>0&&y>0)areas.add(new Box(x-overlayDp(20),y-overlayDp(16),x+overlayDp(20),y+overlayDp(16)));
+        }
+        Rect count=config.counterRect();if(count.width()>0)areas.add(new Box(count.left,count.top,count.right,count.bottom));
+        for(int i=0;i<6;i++){int x=config.p.getInt("presetX"+i,0),y=config.p.getInt("presetY"+i,0);if(x>0&&y>0)areas.add(new Box(x-20,y-20,x+20,y+20));}
+        Box clear=FloatingGuard.place(bubbleBounds,new Box(screen.left+inset.left,screen.top+inset.top,screen.right-inset.right,screen.bottom-inset.bottom),areas,overlayDp(8));
+        if(clear==null){pause("悬浮条无法避开按钮，请调整屏幕显示大小后重试");return false;}
+        if(!clear.same(bubbleBounds)){
+            bubbleParams.x+=clear.left-bubbleBounds.left;bubbleParams.y+=clear.top-bubbleBounds.top;overlayRevision++;overlayMoving=true;
+            final View moved=bubble;
+            moved.getViewTreeObserver().addOnPreDrawListener(new android.view.ViewTreeObserver.OnPreDrawListener(){
+                @Override public boolean onPreDraw(){moved.getViewTreeObserver().removeOnPreDrawListener(this);if(bubble==moved){publishBubbleBounds();overlayMoving=false;}return true;}
+            });
+            windows.updateViewLayout(bubble,bubbleParams);return false;
+        }
+        return true;
+    }
     void prepareCapture(String mode,int slot){
         if(picker!=null||capturing||checkingMap){setStatus("请先完成或取消当前操作");return;}
         activateBear();pause("准备连接游戏");captureMode=mode;captureSlot=slot;manualMapFallback=false;
@@ -202,11 +257,13 @@ public final class BearService extends AccessibilityService {
                 bitmap.recycle();setStatus("分辨率已改变，请清除旧模板后重新取样");return;
             }
             openPicker(bitmap,mode,slot,app);
-        });
+        },true,()->{});
     }
     private void readMapFrame(int token,String app,LiveMapCheck check,int attempt){
         if(token!=generation||!checkingMap||destroyed)return;
         if(!interactive()||!activePackage().equals(app)){finishMapCheck("游戏已切到后台，请回地图后重试",false);return;}
+        if(!prepareAnalysisOverlay()){if(checkingMap)main.postDelayed(()->readMapFrame(token,app,check,attempt),250);return;}
+        final long frameRevision=overlayRevision;
         final long capturedAt=SystemClock.elapsedRealtime();
         screenshot(bitmap->{
             if(token!=generation||!checkingMap||destroyed){bitmap.recycle();return;}
@@ -226,6 +283,7 @@ public final class BearService extends AccessibilityService {
                 final BearFlow.Frame result=frame;final String error=failure;final boolean referenceUsed=reference;
                 main.post(()->{
                     if(token!=generation||!checkingMap||destroyed)return;
+                    if(!BearOverlayGuard.current(frameRevision,overlayRevision,dragging)){main.postDelayed(()->readMapFrame(token,app,check,attempt),250);return;}
                     if(!interactive()||!activePackage().equals(app)){finishMapCheck("游戏已切到后台，请回地图后重试",false);return;}
                     if(error!=null){finishMapCheck(error,true);return;}
                     if(check.accept(app,w,h,result.map,result.marchUsed,result.marchHidden,capturedAt,SystemClock.elapsedRealtime())){
@@ -244,13 +302,15 @@ public final class BearService extends AccessibilityService {
                     main.postDelayed(()->readMapFrame(token,app,check,attempt+1),900);
                 });
             });
-        });
+        },false,()->main.postDelayed(()->readMapFrame(token,app,check,attempt),250));
     }
     private void finishMapCheck(String message,boolean manual){checkingMap=false;manualMapFallback=manual;setStatus(message);}
-    private void screenshot(Consumer<Bitmap> success){
+    private void screenshot(Consumer<Bitmap> success,boolean sample,Runnable retry){
         if(capturing||destroyed)return;
         capturing=true;int id=++captureId;
-        if(bubble!=null)bubble.setVisibility(View.INVISIBLE);
+        final long revision=overlayRevision;final Box mask=bubbleBounds==null?null:bubbleBounds.padded(overlayDp(8));
+        // Only an explicit one-off template capture hides controls. Runtime analysis never does.
+        if(sample&&bubble!=null)bubble.setVisibility(View.INVISIBLE);
         main.postDelayed(()->{
             if(destroyed||id!=captureId)return;
             try {
@@ -259,31 +319,40 @@ public final class BearService extends AccessibilityService {
                         Bitmap copy=null,wrapped=null;
                         try(HardwareBuffer buffer=result.getHardwareBuffer()){
                             wrapped=Bitmap.wrapHardwareBuffer(buffer,result.getColorSpace());
-                            if(wrapped!=null&&id==captureId&&!destroyed)copy=wrapped.copy(Bitmap.Config.ARGB_8888,false);
+                            if(wrapped!=null&&id==captureId&&!destroyed)copy=wrapped.copy(Bitmap.Config.ARGB_8888,!sample);
                         } catch(Exception e){ }
                         finally {if(wrapped!=null)wrapped.recycle();}
                         if(id!=captureId||destroyed){if(copy!=null)copy.recycle();return;}
-                        restoreAfterScreenshot();
-                        if(copy==null)pause("无法读取画面，请重新开启服务后重试");else success.accept(copy);
+                        publishBubbleBounds();
+                        finishScreenshot(sample);
+                        if(copy==null){pause("无法读取画面，请重新开启服务后重试");return;}
+                        if(!sample){
+                            if(mask==null||!BearOverlayGuard.current(revision,overlayRevision,dragging)){copy.recycle();retry.run();return;}
+                            Paint paint=new Paint();paint.setColor(Color.BLACK);
+                            new Canvas(copy).drawRect(mask.left,mask.top,mask.right,mask.bottom,paint);
+                        }
+                        success.accept(copy);
                     }
                     public void onFailure(int code){
-                        if(id!=captureId||destroyed)return;restoreAfterScreenshot();
+                        if(id!=captureId||destroyed)return;finishScreenshot(sample);
                         pause("截图失败（"+code+"），请确认屏幕已解锁且游戏允许截图");
                     }
                 });
-            } catch(Exception e){restoreAfterScreenshot();pause("截图不可用："+e.getClass().getSimpleName());}
-        },120);
+            } catch(Exception e){finishScreenshot(sample);pause("截图不可用："+e.getClass().getSimpleName());}
+        },sample?120:0);
         main.postDelayed(()->{
-            if(capturing&&id==captureId){captureId++;restoreAfterScreenshot();pause("截图超时，请重新开启服务");}
+            if(capturing&&id==captureId){captureId++;finishScreenshot(sample);pause("截图超时，请重新开启服务");}
         },5000);
     }
-    private void restoreAfterScreenshot(){capturing=false;if(bubble!=null)bubble.setVisibility(View.VISIBLE);}
+    private void finishScreenshot(boolean sample){capturing=false;if(sample&&bubble!=null)bubble.setVisibility(View.VISIBLE);}
     private void cycle(){
         if(!flow.running||destroyed||!modes.is(ModeGate.Mode.BEAR))return;
         if(flow.expired(SystemClock.elapsedRealtime())){pause("已达到本次运行时长");return;}
         if(!interactive()){pause("屏幕关闭，已暂停");return;}
         if(!gameAvailable())return;
         if(capturing||flow.pending()){main.postDelayed(tick,700);return;}
+        if(!prepareAnalysisOverlay()){if(flow.running)main.postDelayed(tick,250);return;}
+        final long frameRevision=overlayRevision;
         final int token=generation;final Matcher current=matcher;final long snapshotTime=SystemClock.elapsedRealtime();
         screenshot(bitmap->{
             if(token!=generation||!flow.running){bitmap.recycle();return;}
@@ -303,6 +372,8 @@ public final class BearService extends AccessibilityService {
                 final BearFlow.Frame result=observed;final String failure=error;
                 main.post(()->{
                     if(token!=generation||!flow.running||destroyed)return;
+                    publishBubbleBounds();
+                    if(!BearOverlayGuard.current(frameRevision,overlayRevision,dragging)){main.postDelayed(tick,250);return;}
                     if(failure!=null){pause("识别异常："+failure);return;}
                     if(SystemClock.elapsedRealtime()-snapshotTime>4000){pause("识别耗时过长，已暂停以避免使用旧画面点击");return;}
                     if(!interactive()){pause("屏幕关闭，已暂停");return;}
@@ -315,23 +386,22 @@ public final class BearService extends AccessibilityService {
                     gesture(decision,token);
                 });
             });
-        });
+        },false,()->main.postDelayed(tick,250));
     }
     private void gesture(BearFlow.Decision decision,int token){
         // Every action is gated again after image recognition to avoid clicking another app.
         if(token!=generation||!flow.running||!activePackage().equals(config.target())){pause("点击前检测到页面切换，已暂停");return;}
         if(flow.expired(SystemClock.elapsedRealtime())){pause("已达到本次运行时长");return;}
-        Path path=new Path();long duration;
+        Path path=new Path();long duration;float x1,y1,x2,y2;
         if(decision.kind==BearFlow.Kind.SCROLL){
             boolean back=(scrollCount++%4)>=2;
-            path.moveTo(config.width()*.50f,config.height()*(back?.36f:.72f));
-            path.lineTo(config.width()*.50f,config.height()*(back?.72f:.36f));duration=400;
+            x1=x2=config.width()*.50f;y1=config.height()*(back?.36f:.72f);y2=config.height()*(back?.72f:.36f);
+            path.moveTo(x1,y1);path.lineTo(x2,y2);duration=400;
         }else{
             if(decision.x<=0||decision.y<=0||decision.x>=config.width()||decision.y>=config.height()){pause("点击位置无效，请重新取样");return;}
-            path.moveTo(decision.x,decision.y);duration=70;
+            x1=x2=decision.x;y1=y2=decision.y;path.moveTo(x1,y1);duration=70;
         }
-        // The bubble must not intercept a game tap at the same screen position.
-        if(bubble!=null)bubble.setVisibility(View.INVISIBLE);
+        if(dragging||!BearOverlayGuard.inputClear(bubbleBounds,x1,y1,x2,y2,overlayDp(8))){pause("悬浮条挡住按钮，请移开后继续");return;}
         GestureDescription description=new GestureDescription.Builder().addStroke(new GestureDescription.StrokeDescription(path,0,duration)).build();
         final long ticket=gestureGate.begin();
         try{
@@ -340,16 +410,15 @@ public final class BearService extends AccessibilityService {
                 @Override public void onCancelled(GestureDescription gesture){finish(false);}
                 private void finish(boolean ok){
                     if(token!=generation||!flow.running||!gestureGate.finish(ticket))return;
-                    if(bubble!=null)bubble.setVisibility(View.VISIBLE);
                     flow.complete(ok,SystemClock.elapsedRealtime());
                     if(config.p.getInt("nextPreset",0)!=flow.nextPreset)config.p.edit().putInt("nextPreset",flow.nextPreset).apply();
                     if(!flow.running&&flow.expired(SystemClock.elapsedRealtime()))pause("已达到本次运行时长");
                     else if(!ok)pause("触控被打断，已暂停；未确认上车");else main.postDelayed(tick,850);
                 }
             },main);
-            if(!accepted){gestureGate.finish(ticket);if(bubble!=null)bubble.setVisibility(View.VISIBLE);flow.complete(false,SystemClock.elapsedRealtime());pause("系统未接受触控操作，已暂停");}
-            main.postDelayed(()->{if(token==generation&&flow.running&&gestureGate.finish(ticket)) {if(bubble!=null)bubble.setVisibility(View.VISIBLE);pause("触控响应超时，已暂停");}},3000);
-        }catch(Exception e){if(bubble!=null)bubble.setVisibility(View.VISIBLE);pause("触控失败："+e.getClass().getSimpleName());}
+            if(!accepted){gestureGate.finish(ticket);flow.complete(false,SystemClock.elapsedRealtime());pause("系统未接受触控操作，已暂停");}
+            main.postDelayed(()->{if(token==generation&&flow.running&&gestureGate.finish(ticket))pause("触控响应超时，已暂停");},3000);
+        }catch(Exception e){pause("触控失败："+e.getClass().getSimpleName());}
     }
     private boolean gameAvailable(){
         boolean target=activePackage().equals(config.target());

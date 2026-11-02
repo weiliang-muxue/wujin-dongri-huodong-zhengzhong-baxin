@@ -26,7 +26,7 @@ public final class RuntimeRegression extends Instrumentation {
             catch(IllegalArgumentException expected){reproduced=true;report("OLD BUG REPRODUCED: "+expected);}
             require(reproduced,"Expected Android's unsupported regex flag failure");
             Result tests=JUnitCore.runClasses(
-                cn.local.bullseye.FloatingGuardTest.class,cn.local.bullseye.SessionGuardTest.class,
+                BearOverlayGuardTest.class,cn.local.bullseye.FloatingGuardTest.class,cn.local.bullseye.SessionGuardTest.class,
                 ModeGateTest.class,MarchCountTest.class,MarchFlowTest.class,RallyOrderTest.class,
                 GestureGateTest.class,MarchSimulationTest.class,LiveMapCheckTest.class,
                 TroopCountTest.class,ForegroundGateTest.class);
