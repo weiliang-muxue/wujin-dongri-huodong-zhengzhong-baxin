@@ -27,4 +27,31 @@ public class BearOverlayGuardTest {
         assertFalse(BearOverlayGuard.inputClear(panel,600,1600,600,2200,8));
         assertTrue(BearOverlayGuard.inputClear(panel,950,800,950,1400,8));
     }
+    @Test public void huaweiReproducesOldFailureAndAdaptivePanelFits(){
+        int w=1152,h=2376;float old=3.2f;
+        Box screen=new Box(0,90,w,h-96);
+        assertNull(FloatingGuard.place(new Box(440,710,440+(int)(w*.34f),710+BearOverlayGuard.panelHeight(old)),screen,BearOverlayGuard.areas(w,h),Math.round(8*old)));
+        for(int[] dimensions:new int[][]{{1152,2376},{1344,2772},{1080,2400},{720,1600},{1440,3200},{1080,2160},{1080,1920}}){
+            w=dimensions[0];h=dimensions[1];
+            for(float density:new float[]{2,2.75f,3,3.5f,4,4.5f})for(int inset:new int[]{0,90,144}){
+                float d=BearOverlayGuard.panelScale(w,h,density);int gap=Math.round(8*d);
+                Box panel=new Box(w/3,h/3,w/3+(int)(w*.34f),h/3+BearOverlayGuard.panelHeight(d));
+                Box clear=FloatingGuard.place(panel,new Box(0,inset,w,h-inset),BearOverlayGuard.areas(w,h),gap);
+                assertNotNull(w+"x"+h+" density="+density+" inset="+inset,clear);
+                assertFalse(FloatingGuard.blocked(clear,BearOverlayGuard.areas(w,h),gap));
+                assertTrue(BearOverlayGuard.inputClear(clear,w*.5f,h*.36f,w*.5f,h*.72f,gap));
+            }
+        }
+    }
+    @Test public void xiaomiKeepsItsExistingPanelSize(){
+        for(float density:new float[]{2,2.75f,3,3.5f,4})assertEquals(Math.min(density,3),BearOverlayGuard.panelScale(1080,2400,density),0);
+    }
+    @Test public void referenceAnchorsRespectAspectRatioAndOriginalLayout(){
+        ReferenceLayout original=new ReferenceLayout(1080,2400),huawei=new ReferenceLayout(1152,2376);
+        for(int x:new int[]{98,209,319,431,542,654})assertEquals(x,original.x(x));
+        for(int y:new int[]{307,427,607,635,2301,2364})assertEquals(y,original.y(y));
+        assertEquals(455,huawei.y(427));assertEquals(2338,huawei.y(2364));
+        assertEquals(668,huawei.feedbackHeight());assertEquals(720,original.feedbackHeight());
+        assertFalse(ReferenceLayout.supported(2376,1152));assertFalse(ReferenceLayout.supported(1000,1000));
+    }
 }

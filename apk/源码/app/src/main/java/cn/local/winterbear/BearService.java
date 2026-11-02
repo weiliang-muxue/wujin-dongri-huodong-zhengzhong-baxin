@@ -147,13 +147,16 @@ public final class BearService extends AccessibilityService {
         if(destroyed)return;
         if(bubble!=null){bubble.setVisibility(View.VISIBLE);return;}
         bubble=Ui.column(this);bubble.setPadding(overlayDp(6),overlayDp(6),overlayDp(6),overlayDp(6));
-        bubble.setBackground(Ui.shape(this,Ui.CARD,16));bubble.setElevation(Ui.dp(this,8));
+        bubble.setBackground(Ui.shape(this,Ui.CARD,16));bubble.setElevation(overlayDp(8));
         TextView handle=Ui.text(this,"打熊 ⠿ 拖动",14,Ui.ACCENT);handle.setGravity(Gravity.CENTER_VERTICAL);bubble.addView(handle,new LinearLayout.LayoutParams(-1,overlayDp(40)));
+        handle.setMaxLines(1);handle.setAutoSizeTextTypeUniformWithConfiguration(8,14,1,android.util.TypedValue.COMPLEX_UNIT_SP);
         statusLabel=Ui.text(this,status,12,Ui.TEXT);statusLabel.setMaxLines(2);statusLabel.setEllipsize(TextUtils.TruncateAt.END);bubble.addView(statusLabel,new LinearLayout.LayoutParams(-1,overlayDp(32)));
+        statusLabel.setAutoSizeTextTypeUniformWithConfiguration(8,12,1,android.util.TypedValue.COMPLEX_UNIT_SP);
         LinearLayout actions=new LinearLayout(this);LinearLayout.LayoutParams row=new LinearLayout.LayoutParams(-1,overlayDp(48));row.topMargin=overlayDp(2);bubble.addView(actions,row);
         runButton=Ui.button(this,actions,"开始",true,()->{if(flow.running)pause("已手动暂停");else if(!captureMode.isEmpty())captureNow();else start();});
         Button stopButton=Ui.button(this,actions,"停止",false,()->{pause("已停止");removeBubble();});
         for(Button button:new Button[]{runButton,stopButton}){button.setMinHeight(0);button.setMinimumHeight(0);button.setPadding(0,0,0,0);button.setTextSize(13);button.setSingleLine(true);button.setLayoutParams(new LinearLayout.LayoutParams(0,-1,1));}
+        for(Button button:new Button[]{runButton,stopButton})button.setAutoSizeTextTypeUniformWithConfiguration(8,13,1,android.util.TypedValue.COMPLEX_UNIT_SP);
         ((LinearLayout.LayoutParams)runButton.getLayoutParams()).rightMargin=overlayDp(4);
         moreButton=Ui.button(this,bubble,"更多 / 收起",false,()->{controls.setVisibility(controls.getVisibility()==View.VISIBLE?View.GONE:View.VISIBLE);});
         controls=Ui.column(this);bubble.addView(controls);
@@ -187,7 +190,10 @@ public final class BearService extends AccessibilityService {
         updateControls();
     }
     private void removeBubble(){overlayRevision++;dragging=false;overlayMoving=false;bubbleBounds=null;if(bubble!=null){windows.removeView(bubble);bubble=null;statusLabel=null;runButton=null;setupButton=null;moreButton=null;}}
-    private int overlayDp(int value){return Math.round(value*Math.min(getResources().getDisplayMetrics().density,windows.getCurrentWindowMetrics().getBounds().width()/360f));}
+    private int overlayDp(int value){
+        Rect screen=windows.getCurrentWindowMetrics().getBounds();
+        return Math.round(value*BearOverlayGuard.panelScale(screen.width(),screen.height(),getResources().getDisplayMetrics().density));
+    }
     private void publishBubbleBounds(){
         if(bubble==null||bubble.getWidth()==0||bubble.getHeight()==0)return;
         int[] xy=new int[2];bubble.getLocationOnScreen(xy);
@@ -271,11 +277,11 @@ public final class BearService extends AccessibilityService {
             worker.execute(()->{
                 BearFlow.Frame frame=null;String failure=null;boolean reference=false;
                 try{
-                    if(config.width()!=0&&(config.width()!=w||config.height()!=h))throw new IllegalStateException("截图尺寸已变化，请在高级设置清除旧取样后重连");
+                    boolean changed=config.width()!=0&&(config.width()!=w||config.height()!=h);
+                    if(changed&&!config.canAdaptReference())throw new IllegalStateException("手动取样尺寸已变化，请重新取样");
                     Config detection=config;
-                    if(!config.marchReady()){
-                        if(w!=1080||h!=2400)throw new IllegalStateException("当前布局暂不能自动连接，请点“改为手动框选行军”");
-                        detection=Config.referenceProbe(this);reference=true;
+                    if(!config.marchReady()||changed){
+                        detection=Config.referenceProbe(this,w,h);reference=true;
                     }
                     try(Matcher reader=new Matcher(detection)){reader.frame(bitmap);frame=reader.observe();}
                 }catch(Exception e){failure=e.getMessage()==null?"地图识别失败，请重试或手动框选行军":e.getMessage();}
@@ -289,7 +295,8 @@ public final class BearService extends AccessibilityService {
                     if(check.accept(app,w,h,result.map,result.marchUsed,result.marchHidden,capturedAt,SystemClock.elapsedRealtime())){
                         try{
                             // Merge only after real screenshots match; keep existing manual samples and switches.
-                            if(w==1080&&h==2400)config.fillMissingReferenceLayout();
+                            if(config.width()!=0&&(config.width()!=w||config.height()!=h))config.adaptReferenceLayout(w,h);
+                            else config.fillMissingReferenceLayout(w,h);
                             if(referenceUsed&&!config.marchReady())throw new IllegalStateException("地图布局保存失败，请手动取样");
                             config.markMapVerified(app,w,h,result.marchUsed);
                             checkingMap=false;manualMapFallback=false;captureMode="";config.p.edit().putBoolean("dry",false).apply();

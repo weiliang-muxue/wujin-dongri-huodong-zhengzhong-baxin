@@ -25,13 +25,18 @@ final class Matcher implements AutoCloseable {
     private final Map<String,Mat> colorTemplates=new HashMap<>();
     private Mat gray,color;
     private double scale;
-    private final CounterOcr counter=new CounterOcr();
+    interface Numbers {int read(Bitmap screenshot,Rect region);TroopCount troops(Bitmap screenshot,Rect region);void close();}
+    private final Numbers counter;
     private Bitmap currentBitmap;
     private String stage="初始化";
     String stage(){return stage;}
     private final FeedbackVision feedback;
     Matcher(Config config) {
+        this(config,new CounterOcr());
+    }
+    Matcher(Config config,Numbers counter) {
         this.config=config;
+        this.counter=counter;
         if(!OpenCVLoader.initLocal()) throw new IllegalStateException("图像识别组件初始化失败");
         feedback=new FeedbackVision(config);
     }
@@ -53,15 +58,20 @@ final class Matcher implements AutoCloseable {
     private Mat template(String key) {
         if(templates.containsKey(key)) return templates.get(key);
         boolean referenceScale=key.startsWith("bear_label@");
-        double factor=referenceScale?Double.parseDouble(key.substring(key.indexOf('@')+1))*config.width()/1080.0:1.0;
-        Bitmap bitmap=config.image(referenceScale?"bear_label":key); if(bitmap==null) return null;
+        boolean marchCore=key.equals("march_anchor_core");
+        String sourceKey=referenceScale?"bear_label":marchCore?"march_anchor":key;
+        double factor=referenceScale?Double.parseDouble(key.substring(key.indexOf('@')+1))*config.width()/1080.0:config.p.getFloat(sourceKey+"Scale",1f);
+        Bitmap bitmap=config.image(sourceKey); if(bitmap==null) return null;
         Mat rgba=new Mat(), original=new Mat(), result=new Mat(),rgb=new Mat();
         try {
             Utils.bitmapToMat(bitmap,rgba); Imgproc.cvtColor(rgba,original,Imgproc.COLOR_RGBA2GRAY);
-            Imgproc.resize(original,result,new Size(),scale*factor,scale*factor,referenceScale?Imgproc.INTER_CUBIC:Imgproc.INTER_AREA);
+            Mat detail=original;
+            if(marchCore){int m=Math.round(Math.min(original.cols(),original.rows())*.15f);detail=original.submat(m,original.rows()-m,m,original.cols()-m);}
+            try{Imgproc.resize(detail,result,new Size(),scale*factor,scale*factor,referenceScale?Imgproc.INTER_CUBIC:Imgproc.INTER_AREA);}
+            finally{if(detail!=original)detail.release();}
             if(key.startsWith("join")||key.equals("deploy")) {
                 Imgproc.cvtColor(rgba,rgb,Imgproc.COLOR_RGBA2RGB);Mat small=new Mat();
-                Imgproc.resize(rgb,small,new Size(),scale,scale,Imgproc.INTER_AREA);colorTemplates.put(key,small);
+                Imgproc.resize(rgb,small,new Size(),scale*factor,scale*factor,Imgproc.INTER_AREA);colorTemplates.put(key,small);
             }
             templates.put(key,result); return result;
         } finally { bitmap.recycle(); rgba.release(); original.release();rgb.release(); }
@@ -118,12 +128,18 @@ final class Matcher implements AutoCloseable {
         Hit deploy=near("deploy",config.p.getInt("deployX",0),config.p.getInt("deployY",0));
         f.deploy=deploy!=null;
         if(deploy!=null) { f.deployX=deploy.x; f.deployY=deploy.y; }
-        f.formation=near("formation",config.p.getInt("formationX",0),config.p.getInt("formationY",0))!=null;
+        f.formation=f.formation||near("formation",config.p.getInt("formationX",0),config.p.getInt("formationY",0))!=null;
         f.autoJoin=near("auto_join",config.p.getInt("auto_joinX",0),config.p.getInt("auto_joinY",0))!=null;
         Hit march=nearConfigured("march_anchor");
         if(march==null){
             List<Hit> moved=find("march_anchor",new Rect(0,(int)(config.height()*.18),(int)(config.width()*.30),(int)(config.height()*.39)),1);
             if(!moved.isEmpty())march=moved.get(0);
+        }
+        if(march==null){
+            // Transparent map backgrounds vary by phone; retain the text and threshold,
+            // discarding only the surrounding background. Unreadable visible numbers must wait.
+            List<Hit> core=find("march_anchor_core",new Rect(0,(int)(config.height()*.18),(int)(config.width()*.30),(int)(config.height()*.39)),1);
+            if(!core.isEmpty())march=core.get(0);
         }
         boolean mapChrome=f.worldMapChrome||(nearConfigured("map_city")!=null&&nearConfigured("alliance")!=null);
         f.map=!f.header&&!f.formation&&!f.deploy&&(march!=null||mapChrome);
@@ -152,7 +168,8 @@ final class Matcher implements AutoCloseable {
             feedback.formation(gray,color,f,config.width(),config.height(),config);
             int w=config.width(),hgt=config.height();
             stage="读取出征兵力";
-            f.troops=counter.troops(currentBitmap,new Rect((int)(w*.10),(int)(hgt*.210),(int)(w*.38),(int)(hgt*.240)));
+            float troopHeight=ReferenceLayout.supported(w,hgt)&&config.p.getBoolean("referenceLayout",false)?w*2400f/1080:hgt;
+            f.troops=counter.troops(currentBitmap,new Rect((int)(w*.10),(int)(troopHeight*.210),(int)(w*.38),(int)(troopHeight*.240)));
         }
         if(f.rallyList && !f.deploy && config.rallyReady() && !config.customRallyReady()) {
             stage="识别巨熊集结";

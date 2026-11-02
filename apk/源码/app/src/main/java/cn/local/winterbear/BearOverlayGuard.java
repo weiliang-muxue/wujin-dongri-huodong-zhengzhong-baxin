@@ -7,6 +7,17 @@ import java.util.List;
 
 /** Critical bear cues and gesture paths in screen pixels, independent of Android Views. */
 final class BearOverlayGuard {
+    // Keep the existing size when it fits. Wider phones need a shorter panel, not
+    // a different placement rule or repeated hide/show around every screenshot.
+    static float panelScale(int w,int h,float density){
+        float scale=Math.min(density,w/360f);
+        int lane=(int)Math.floor(h*.91f)-(int)Math.ceil(h*.721f);
+        while(panelHeight(scale)+2*Math.round(8*scale)>lane-2&&scale>.1f)scale-=.01f;
+        return scale;
+    }
+    static int panelHeight(float scale){
+        return 2*Math.round(6*scale)+Math.round(40*scale)+Math.round(32*scale)+Math.round(48*scale)+Math.round(2*scale);
+    }
     static List<Box> areas(int w,int h){
         List<Box> a=new ArrayList<>();
         a.add(FloatingGuard.normalized(w,h,0,0,1,.29f)); // back, headers, flags, troop count

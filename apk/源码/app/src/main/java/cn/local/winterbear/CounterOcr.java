@@ -12,12 +12,12 @@ import com.google.mlkit.vision.text.latin.TextRecognizerOptions;
 import java.util.concurrent.TimeUnit;
 
 /** Bundled Latin model reads only the calibrated x/6 rectangle; never uploads screenshots. */
-final class CounterOcr implements AutoCloseable {
+final class CounterOcr implements AutoCloseable,Matcher.Numbers {
     private final TextRecognizer reader=TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
-    int read(Bitmap screenshot,Rect region){
+    public int read(Bitmap screenshot,Rect region){
         return MarchCount.used(text(screenshot,region));
     }
-    TroopCount troops(Bitmap screenshot,Rect region){return TroopCount.parse(text(screenshot,region));}
+    public TroopCount troops(Bitmap screenshot,Rect region){return TroopCount.parse(text(screenshot,region));}
     private String text(Bitmap screenshot,Rect region){
         if(region.width()<12||region.height()<12||region.left<0||region.top<0||region.right>screenshot.getWidth()||region.bottom>screenshot.getHeight())return "";
         Bitmap crop=Bitmap.createBitmap(screenshot,region.left,region.top,region.width(),region.height());

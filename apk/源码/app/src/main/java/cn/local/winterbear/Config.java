@@ -18,11 +18,13 @@ final class Config {
     final Context context;
     final SharedPreferences p;
     private final File templateDirectory;
+    private final FeedbackVision.Assets assets;
     Config(Context context) {
         this(context,false);
     }
     private Config(Context context,boolean probe) {
         this.context = context.getApplicationContext();
+        assets=path->this.context.getAssets().open(path);
         p = context.getSharedPreferences(probe?"bear_reference_probe":"bear", Context.MODE_PRIVATE);
         templateDirectory=probe?new File(context.getCacheDir(),"reference-probe"):context.getFilesDir();
         if(!templateDirectory.isDirectory())templateDirectory.mkdirs();
@@ -36,8 +38,17 @@ final class Config {
             try{fillMissingReferenceLayout();p.edit().putInt("assetSchema",2).apply();}catch(Exception ignored){}
         }
     }
+    // Android runtime fixtures use the same import code with isolated preferences/files.
+    Config(SharedPreferences preferences,File directory,FeedbackVision.Assets assets){
+        context=null;p=preferences;templateDirectory=directory;this.assets=assets;
+        if(!directory.isDirectory())directory.mkdirs();
+    }
+    InputStream openAsset(String path)throws IOException{return assets.open(path);}
     static Config referenceProbe(Context context) throws Exception {
-        Config probe=new Config(context,true);probe.importReferenceLayout();return probe;
+        return referenceProbe(context,1080,2400);
+    }
+    static Config referenceProbe(Context context,int w,int h) throws Exception {
+        Config probe=new Config(context,true);probe.referenceLayout(true,w,h);return probe;
     }
     File file(String key) { return new File(templateDirectory, key + ".png"); }
     boolean has(String key) { return file(key).isFile(); }
@@ -66,34 +77,71 @@ final class Config {
         return mode;
     }
     void importReferenceLayout() throws Exception {
-        referenceLayout(true);
+        referenceLayout(true,width()==0?1080:width(),height()==0?2400:height());
     }
     void fillMissingReferenceLayout() throws Exception {
-        referenceLayout(false);
+        fillMissingReferenceLayout(width()==0?1080:width(),height()==0?2400:height());
     }
-    private void referenceLayout(boolean replace) throws Exception {
+    void fillMissingReferenceLayout(int w,int h) throws Exception {referenceLayout(false,w,h);}
+    // Existing manual crops must never be silently replaced by a different phone's layout.
+    boolean canAdaptReference(){
+        if(p.getBoolean("manualCalibration",false)||customRallyReady())return false;
+        if(p.getBoolean("referenceLayout",false))return true;
+        if(width()!=1080||height()!=2400)return false;
+        try{
+            if(has("war")||has("bear_row")||has("join_row"))return false;
+            JSONObject layout=readReferenceLayout();JSONObject crops=layout.getJSONObject("crops");
+            JSONArray count=layout.getJSONArray("counter");
+            if(!counterRect().equals(new Rect(count.getInt(0),count.getInt(1),count.getInt(2),count.getInt(3))))return false;
+            JSONArray presets=layout.getJSONArray("presets");
+            for(int i=0;i<SLOTS;i++)if(p.getInt("presetX"+i,0)!=presets.getJSONArray(i).getInt(0)||p.getInt("presetY"+i,0)!=presets.getJSONArray(i).getInt(1))return false;
+            java.util.Iterator<String> keys=crops.keys();
+            while(keys.hasNext()){
+                String key=keys.next();if(!has(key))continue;
+                JSONArray rect=crops.getJSONArray(key);
+                if(p.getInt(key+"X",0)!=rect.getInt(0)+rect.getInt(2)/2||p.getInt(key+"Y",0)!=rect.getInt(1)+rect.getInt(3)/2)return false;
+                try(InputStream asset=new java.io.BufferedInputStream(openAsset("reference/"+key+".png"));InputStream saved=new java.io.BufferedInputStream(new java.io.FileInputStream(file(key)))){
+                    int a,b;do{a=asset.read();b=saved.read();if(a!=b)return false;}while(a!=-1);
+                }
+            }
+            return true;
+        }catch(Exception e){return false;}
+    }
+    void adaptReferenceLayout(int w,int h) throws Exception {
+        if(!canAdaptReference())throw new IllegalStateException("手动取样尺寸已变化，请重新取样");
+        boolean[] enabled=new boolean[SLOTS];for(int i=0;i<SLOTS;i++)enabled[i]=enabled(i);
+        int next=p.getInt("nextPreset",0);referenceLayout(true,w,h);
+        SharedPreferences.Editor e=p.edit().putInt("nextPreset",next);
+        for(int i=0;i<SLOTS;i++)e.putBoolean("enabled"+i,enabled[i]);e.apply();
+    }
+    private JSONObject readReferenceLayout() throws Exception {
         JSONObject layout;
-        try(InputStream in=context.getAssets().open("reference/layout.json");java.io.ByteArrayOutputStream bytes=new java.io.ByteArrayOutputStream()){
+        try(InputStream in=openAsset("reference/layout.json");java.io.ByteArrayOutputStream bytes=new java.io.ByteArrayOutputStream()){
             byte[] buffer=new byte[4096];int n;while((n=in.read(buffer))!=-1)bytes.write(buffer,0,n);
             layout=new JSONObject(bytes.toString("UTF-8"));
         }
-        int w=layout.getInt("width"),h=layout.getInt("height");
-        if(width()!=0&&(width()!=w||height()!=h))throw new IllegalArgumentException("此布局仅对应 1080 × 2400 截图，请在本机自行取样");
+        return layout;
+    }
+    private void referenceLayout(boolean replace,int w,int h) throws Exception {
+        if(!ReferenceLayout.supported(w,h))throw new IllegalArgumentException("当前屏幕比例需要手动取样");
+        JSONObject layout=readReferenceLayout();ReferenceLayout geometry=new ReferenceLayout(w,h);
         SharedPreferences.Editor e=p.edit().putInt("width",w).putInt("height",h);
+        if(replace||width()==0)e.putBoolean("referenceLayout",true).putBoolean("manualCalibration",false);
         boolean fillCounter=replace||!marchReady();
         if(replace)e.putBoolean("dry",true).putInt("nextPreset",0).putBoolean("mapVerified",false);
         JSONObject crops=layout.getJSONObject("crops");java.util.Iterator<String> keys=crops.keys();
         while(keys.hasNext()){
             String key=keys.next();JSONArray rect=crops.getJSONArray(key);
-            if(!replace&&has(key)&&!(fillCounter&&key.equals("march_anchor")))continue;
-            try(InputStream in=context.getAssets().open("reference/"+key+".png");FileOutputStream out=new FileOutputStream(file(key))){byte[] buffer=new byte[4096];int n;while((n=in.read(buffer))!=-1)out.write(buffer,0,n);}
-            e.putInt(key+"X",rect.getInt(0)+rect.getInt(2)/2).putInt(key+"Y",rect.getInt(1)+rect.getInt(3)/2);
+            boolean positioned=p.getInt(key+"X",0)>0&&p.getInt(key+"Y",0)>0;
+            if(!replace&&has(key)&&positioned&&!(fillCounter&&key.equals("march_anchor")))continue;
+            try(InputStream in=openAsset("reference/"+key+".png");FileOutputStream out=new FileOutputStream(file(key))){byte[] buffer=new byte[4096];int n;while((n=in.read(buffer))!=-1)out.write(buffer,0,n);}
+            e.putInt(key+"X",geometry.x(rect.getInt(0)+rect.getInt(2)/2)).putInt(key+"Y",geometry.y(rect.getInt(1)+rect.getInt(3)/2)).putFloat(key+"Scale",geometry.scale());
         }
         JSONArray count=layout.getJSONArray("counter");
-        if(fillCounter)e.putInt("countLeft",count.getInt(0)).putInt("countTop",count.getInt(1)).putInt("countRight",count.getInt(2)).putInt("countBottom",count.getInt(3));
+        if(fillCounter)e.putInt("countLeft",geometry.x(count.getInt(0))).putInt("countTop",geometry.y(count.getInt(1))).putInt("countRight",geometry.x(count.getInt(2))).putInt("countBottom",geometry.y(count.getInt(3)));
         JSONArray presets=layout.getJSONArray("presets");
         for(int i=0;i<6;i++){
-            if(replace||p.getInt("presetX"+i,0)<=0||p.getInt("presetY"+i,0)<=0)e.putInt("presetX"+i,presets.getJSONArray(i).getInt(0)).putInt("presetY"+i,presets.getJSONArray(i).getInt(1));
+            if(replace||p.getInt("presetX"+i,0)<=0||p.getInt("presetY"+i,0)<=0)e.putInt("presetX"+i,geometry.x(presets.getJSONArray(i).getInt(0))).putInt("presetY"+i,geometry.y(presets.getJSONArray(i).getInt(1)));
             if(replace||!p.contains("enabled"+i))e.putBoolean("enabled"+i,true);
         }
         e.apply();
@@ -108,7 +156,7 @@ final class Config {
         try (FileOutputStream out = new FileOutputStream(file(key))) {
             if (!crop.compress(Bitmap.CompressFormat.PNG, 100, out)) throw new IOException("无法保存模板");
         } finally { if (crop != source) crop.recycle(); }
-        p.edit().putInt(key + "X", rect.centerX()).putInt(key + "Y", rect.centerY()).apply();
+        p.edit().putInt(key + "X", rect.centerX()).putInt(key + "Y", rect.centerY()).putFloat(key+"Scale",1f).putBoolean("manualCalibration",true).apply();
     }
     String validate() {
         if (target().isEmpty()) return "请先在地图录入行军区域，绑定目标游戏";
@@ -134,7 +182,7 @@ final class Config {
     void clearCalibration() {
         for (String key : new String[]{"header", "deploy", "bear_row", "join_row","join_reference","bear_reference","bear_label","march_anchor"}) file(key).delete();
         for(String[] entry:NAV)file(entry[0]).delete();
-        SharedPreferences.Editor e = p.edit().remove("target").remove("width").remove("height").remove("rallySampleReady").remove("countLeft").remove("countRight").remove("countTop").remove("countBottom").remove("mapVerified").remove("lastMapUsed").putInt("nextPreset",0).putBoolean("dry",true);
+        SharedPreferences.Editor e = p.edit().remove("target").remove("width").remove("height").remove("referenceLayout").remove("manualCalibration").remove("rallySampleReady").remove("countLeft").remove("countRight").remove("countTop").remove("countBottom").remove("mapVerified").remove("lastMapUsed").putInt("nextPreset",0).putBoolean("dry",true);
         for (int i=0; i<SLOTS; i++) {
             file("leader"+i).delete(); file("bear"+i).delete(); file("join"+i).delete();
             file("preset_marker"+i).delete();
