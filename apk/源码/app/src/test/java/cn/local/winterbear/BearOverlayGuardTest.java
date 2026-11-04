@@ -46,6 +46,26 @@ public class BearOverlayGuardTest {
     @Test public void xiaomiKeepsItsExistingPanelSize(){
         for(float density:new float[]{2,2.75f,3,3.5f,4})assertEquals(Math.min(density,3),BearOverlayGuard.panelScale(1080,2400,density),0);
     }
+    @Test public void additionalPhoneAndFoldableFloatingBoundsFit(){
+        // Geometry only: the Pura X game layout and container capabilities are not certified here.
+        for(int[] size:new int[][]{{1080,2374},{1260,2800},{1320,2120},{1248,2004},{720,1156},{1080,2520},{1440,3120},{1080,2340},{1220,2712}}){
+            int w=size[0],h=size[1];
+            for(float density:new float[]{1,2,3,4,5})for(int inset:new int[]{0,60,120}){
+                float scale=BearOverlayGuard.panelScale(w,h,density);
+                Box clear=FloatingGuard.place(new Box(0,h/3,(int)(w*.34),h/3+BearOverlayGuard.panelHeight(scale)),new Box(0,inset,w,h-inset),BearOverlayGuard.areas(w,h),Math.round(8*scale));
+                if(clear==null){
+                    // Runtime collapses only if the expanded panel cannot fit.
+                    clear=FloatingGuard.place(new Box(0,h/3,Math.round(72*scale),h/3+2*Math.round(6*scale)+Math.round(40*scale)),new Box(0,inset,w,h-inset),BearOverlayGuard.areas(w,h),Math.round(8*scale));
+                }
+                assertNotNull(w+"x"+h,clear);
+                scale=HuntOverlayGuard.scale(w,inset,density);
+                int panelHeight=8+Math.round(32*scale)+Math.round(30*scale)+Math.round(44*scale);
+                clear=HuntOverlayGuard.place(new Box(0,0,(int)(w*.57),panelHeight),w,h,0,inset,0,inset);
+                assertNotNull("hunt "+w+"x"+h+" inset "+inset,clear);
+                assertTrue(clear.top>=inset&&clear.bottom<w*.33&&clear.left>w*.32&&clear.right<=w);
+            }
+        }
+    }
     @Test public void referenceAnchorsRespectAspectRatioAndOriginalLayout(){
         ReferenceLayout original=new ReferenceLayout(1080,2400),huawei=new ReferenceLayout(1152,2376);
         for(int x:new int[]{98,209,319,431,542,654})assertEquals(x,original.x(x));

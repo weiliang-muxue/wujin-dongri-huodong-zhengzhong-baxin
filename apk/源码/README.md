@@ -4,15 +4,23 @@ JDK 17、Gradle 8.9、Android SDK 35 extension 15、Build Tools 35.0.0。设置 
 
 构建：`gradlew.bat :app:testEngine :app:assembleRelease :app:lintRelease`。
 
-将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.0.4.apk。
+将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.1.0.apk。
 
-检查成品：`python tools/verify_android_package.py ../无尽冬日助手-2.0.4.apk --version 2.0.4`。
+检查成品：`python tools/verify_android_package.py ../无尽冬日助手-2.1.0.apk --version 2.1.0`。
 
-一个 launcher：ModeActivity；一个无障碍服务：BearService。cn.local.bullseye.GameService 是该服务内的模块，不是第二个 Android Service。ModeGate、运行代次和输入前检查共同限制旧任务回调。返回活动选择会停止两个模块。
+一个 launcher：ModeActivity；一个无障碍服务：BearService。cn.local.bullseye.GameService 和 HuntController 是该服务内的模块，不是其他 Android Service。ModeGate、运行代次和输入前检查共同限制旧任务回调。返回活动选择会停止所有模块。
 
 打熊实际流程在 MarchFlow.java。2.0.4 仅更新 Android，电脑版保持 2.0.3。BearFlow.java 只保留页面和动作数据类型。正中靶心保留实际券数、低券切换、结算退出；正中靶心悬浮条保持显示；仅在识别用的截图副本里遮罩悬浮条。固定尺寸避免状态更新时跳动，拖动时停发点击，落点自动避开券数、开始按钮、靶子、倍率及结算区域；旧位置采集的画面不再用于点击。
 
-Release 开启 R8 与资源裁剪，仅打包 ARM64 和 ARMv7，共用两套流程的 OpenCV / ML Kit。应用合并清单移除联网权限。
+Release 开启 R8 与资源裁剪，仅打包 ARM64 和 ARMv7，四套流程共用 OpenCV / ML Kit。应用合并清单移除联网权限。
+
+2.1.0：HuntFlow 管理巨兽集结、野兽攻击、1～6 行军上限、预设顺序及库存罐头额度；HuntVision 定位游戏控件并读取等级、行军和库存；HuntController 在同一无障碍服务中运行。HuntActivity 的设置仅保留在本次任务内。OverlayFold 为四个活动提供手动收起、点击展开，状态更新不会重新挂载窗口。
+
+HuntOverlayGuard 使用当前窗口系统栏/刘海边距，在固定识别区域之外选择浮窗位置。BearService / GameService 放不下展开浮窗时尝试收起后重新避让；收起操作会使旧截图失效。新增宽竖屏检查仅验证窗口几何，未扩宽 ReferenceLayout 的游戏识别比例白名单。
+
+PermissionActivity 将系统前置限制与无障碍启用分开，优先打开本服务详情，不存在时回退到公开无障碍列表；跳转未离开本页面会明确提示。查询服务列表仅用于排查，不将“服务未列出”武断解释为用户拒绝。它不写系统权限、不绕过受限设置、不申请额外权限，不保证卓易通支持系统截图与点击。
+
+新增截图回归：`run_feedback_regression.py` 可传入 `--hunt-fixtures <11张本地样本目录>`；数字输入在这部分回放中使用标注。真实本地 OCR 与界面检查使用 `python tools/run_hunt_device_check.py --adb <adb路径> --serial emulator-5580 --fixtures <本地样本目录> --output <验证目录>`，需要模拟器系统完整启动。检查包含退出后新任务设置复位、收起组件的持续状态更新和实际 OCR；不启用无障碍，也不操作游戏。
 
 本地输出使用当前开发机调试签名，便于覆盖同机此前构建的打熊助手；密钥不提交。发布到应用商店前应自行配置正式签名，不要把密码或 keystore 写进 Git。
 

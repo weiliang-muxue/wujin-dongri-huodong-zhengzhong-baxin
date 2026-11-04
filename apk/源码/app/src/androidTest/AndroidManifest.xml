@@ -1,0 +1,3 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <instrumentation android:name="cn.local.winterbear.HuntDeviceCheck" android:targetPackage="cn.local.winterbear" />
+</manifest>

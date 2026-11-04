@@ -17,6 +17,9 @@ def verify(apk: Path, version: str) -> dict:
         for name in ('assets/feedback/deploy.png','assets/reference/bear_label.png',
                      'assets/feedback/troop_overflow_v2.png','assets/feedback/confirm_ok_v2.png'):
             if name not in names:raise ValueError('Missing bear asset: '+name)
+        if tuple(map(int,version.split('.'))) >= (2,1,0):
+            for key in ('map_search','search','rally_action','attack_action','rally_start','energy_can','energy_use','energy_close'):
+                if f'assets/hunt/{key}.png' not in names:raise ValueError('Missing hunt asset: '+key)
         if any('/x86' in name for name in names):raise ValueError('Unexpected desktop ABI')
     if not dex:
         raise ValueError('APK contains no DEX bytecode')

@@ -21,6 +21,7 @@ import android.view.Display;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewConfiguration;
 import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
@@ -52,11 +53,13 @@ public final class BearService extends AccessibilityService {
     private final ForegroundGate foregroundGate=new ForegroundGate();
     public final ModeGate modes=new ModeGate();
     private cn.local.bullseye.GameService bullseye;
+    private HuntController hunt;
     private final ArrayDeque<String> log=new ArrayDeque<>();
     private final Runnable tick=this::cycle;
     private Config config;
     private WindowManager windows;
     private LinearLayout bubble,picker,controls;
+    private OverlayFold bubbleFold;
     private WindowManager.LayoutParams bubbleParams;
     private TextView statusLabel;
     private Button runButton,setupButton,moreButton;
@@ -72,15 +75,15 @@ public final class BearService extends AccessibilityService {
 
     @Override protected void onServiceConnected() {
         super.onServiceConnected();config=new Config(this);windows=getSystemService(WindowManager.class);
-        reference=new WeakReference<>(this);bullseye=new cn.local.bullseye.GameService(this);setStatus("服务已开启 · 选择活动后开始");
+        reference=new WeakReference<>(this);bullseye=new cn.local.bullseye.GameService(this);hunt=new HuntController(this);setStatus("服务已开启 · 选择活动后开始");
     }
     @Override public void onAccessibilityEvent(AccessibilityEvent event) {
         // A heads-up notification can temporarily replace the active accessibility root.
         // The cycle and gesture gates suspend all actions until the actual game is foreground again.
     }
-    @Override public void onInterrupt(){pause("服务被系统中断");if(bullseye!=null)bullseye.onInterrupt();}
+    @Override public void onInterrupt(){pause("服务被系统中断");if(bullseye!=null)bullseye.onInterrupt();if(hunt!=null)hunt.pause("服务被系统中断");}
     @Override public void onDestroy() {
-        destroyed=true;pause("服务已关闭");if(bullseye!=null)bullseye.onDestroy();captureId++;removePicker();removeBubble();
+        destroyed=true;pause("服务已关闭");if(bullseye!=null)bullseye.onDestroy();if(hunt!=null)hunt.destroy();captureId++;removePicker();removeBubble();
         main.removeCallbacksAndMessages(null);worker.shutdown();if(current()==this)reference.clear();super.onDestroy();
     }
     String status(){return status;}
@@ -120,9 +123,13 @@ public final class BearService extends AccessibilityService {
     }
     private boolean interactive() { return getSystemService(PowerManager.class).isInteractive(); }
     public String foregroundPackage(){return activePackage();}
-    public void activateBullseye(){pause("已切换正中靶心");removePicker();removeBubble();modes.select(ModeGate.Mode.BULLSEYE);}
-    public void stopAllModes(){pause("已返回活动选择");removePicker();removeBubble();if(bullseye!=null)bullseye.stopRun("已切换活动");modes.select(ModeGate.Mode.NONE);}
-    private void activateBear(){if(bullseye!=null)bullseye.stopRun("已切换打熊");modes.select(ModeGate.Mode.BEAR);}
+    public void activateBullseye(){pause("已切换正中靶心");removePicker();removeBubble();if(hunt!=null)hunt.stop();modes.select(ModeGate.Mode.BULLSEYE);}
+    public void stopAllModes(){pause("已返回活动选择");removePicker();removeBubble();if(bullseye!=null)bullseye.stopRun("已切换活动");if(hunt!=null)hunt.stop();modes.select(ModeGate.Mode.NONE);}
+    private void activateBear(){if(bullseye!=null)bullseye.stopRun("已切换打熊");if(hunt!=null)hunt.stop();modes.select(ModeGate.Mode.BEAR);}
+    void prepareHunt(HuntFlow.Options options){pause("已切换狩猎");removePicker();removeBubble();if(bullseye!=null)bullseye.stopRun("已切换活动");hunt.prepare(options);}
+    void pauseHunt(){if(hunt!=null)hunt.pauseForSettings();}
+    boolean hasHuntTask(){return hunt!=null&&hunt.hasTask();}
+    @Override public void onTaskRemoved(Intent rootIntent){if(hunt!=null)hunt.stop();super.onTaskRemoved(rootIntent);}
     private void start() {
         if(picker!=null||capturing||checkingMap){setStatus("请先完成当前识别或取样");return;}
         String error=config.validate();if(error!=null){setStatus(error);return;}
@@ -174,17 +181,19 @@ public final class BearService extends AccessibilityService {
         Rect screenBounds=windows.getCurrentWindowMetrics().getBounds();
         bubbleParams.x=Math.max(0,Math.min(screenBounds.width()-Ui.dp(this,180),config.p.getInt("bubbleX",(int)(screenBounds.width()*.38))));
         bubbleParams.y=Math.max(0,Math.min(screenBounds.height()-Ui.dp(this,350),config.p.getInt("bubbleY",(int)(screenBounds.height()*.45))));
-        handle.setOnTouchListener(new View.OnTouchListener(){float startX,startY;int x,y;
+        handle.setOnTouchListener(new View.OnTouchListener(){float startX,startY;int x,y;boolean moved;
             public boolean onTouch(View view,MotionEvent event){
-                if(event.getActionMasked()==MotionEvent.ACTION_DOWN){dragging=true;overlayRevision++;startX=event.getRawX();startY=event.getRawY();x=bubbleParams.x;y=bubbleParams.y;return true;}
+                if(event.getActionMasked()==MotionEvent.ACTION_DOWN){dragging=true;overlayRevision++;moved=false;startX=event.getRawX();startY=event.getRawY();x=bubbleParams.x;y=bubbleParams.y;return true;}
                 if(event.getActionMasked()==MotionEvent.ACTION_MOVE){
+                    moved|=Math.hypot(event.getRawX()-startX,event.getRawY()-startY)>ViewConfiguration.get(BearService.this).getScaledTouchSlop();
                     Rect bounds=windows.getCurrentWindowMetrics().getBounds();
                     bubbleParams.x=Math.max(0,Math.min(bounds.width()-bubble.getWidth(),x+(int)(event.getRawX()-startX)));
                     bubbleParams.y=Math.max(0,Math.min(bounds.height()-bubble.getHeight(),y+(int)(event.getRawY()-startY)));
                     windows.updateViewLayout(bubble,bubbleParams);return true;
                 }
-                if(event.getActionMasked()==MotionEvent.ACTION_UP||event.getActionMasked()==MotionEvent.ACTION_CANCEL){overlayRevision++;dragging=false;config.p.edit().putInt("bubbleX",bubbleParams.x).putInt("bubbleY",bubbleParams.y).apply();view.performClick();return true;}return true;
+                if(event.getActionMasked()==MotionEvent.ACTION_UP||event.getActionMasked()==MotionEvent.ACTION_CANCEL){overlayRevision++;dragging=false;config.p.edit().putInt("bubbleX",bubbleParams.x).putInt("bubbleY",bubbleParams.y).apply();if(!moved&&event.getActionMasked()==MotionEvent.ACTION_UP)view.performClick();return true;}return true;
             }});
+        bubbleFold=new OverlayFold(this,bubble,handle,"打熊",bubbleParams.width,overlayDp(72),overlayDp(40),width->{overlayRevision++;bubbleParams.width=width;bubbleParams.x=Math.min(bubbleParams.x,windows.getCurrentWindowMetrics().getBounds().width()-width);windows.updateViewLayout(bubble,bubbleParams);});
         windows.addView(bubble,bubbleParams);
         bubble.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->publishBubbleBounds());
         updateControls();
@@ -218,7 +227,10 @@ public final class BearService extends AccessibilityService {
         Rect count=config.counterRect();if(count.width()>0)areas.add(new Box(count.left,count.top,count.right,count.bottom));
         for(int i=0;i<6;i++){int x=config.p.getInt("presetX"+i,0),y=config.p.getInt("presetY"+i,0);if(x>0&&y>0)areas.add(new Box(x-20,y-20,x+20,y+20));}
         Box clear=FloatingGuard.place(bubbleBounds,new Box(screen.left+inset.left,screen.top+inset.top,screen.right-inset.right,screen.bottom-inset.bottom),areas,overlayDp(8));
-        if(clear==null){pause("悬浮条无法避开按钮，请调整屏幕显示大小后重试");return false;}
+        if(clear==null){
+            if(bubbleFold!=null&&!bubbleFold.isCollapsed()){bubbleFold.setCollapsed(true);return false;}
+            pause("当前屏幕没有可用浮窗位置，请退出分屏后继续");return false;
+        }
         if(!clear.same(bubbleBounds)){
             bubbleParams.x+=clear.left-bubbleBounds.left;bubbleParams.y+=clear.top-bubbleBounds.top;overlayRevision++;overlayMoving=true;
             final View moved=bubble;

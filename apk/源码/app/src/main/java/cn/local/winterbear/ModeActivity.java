@@ -16,6 +16,9 @@ public final class ModeActivity extends Activity {
         root.addView(Ui.text(this,"选择本次活动",17,Ui.MUTED));
         Button bear=Ui.button(this,root,"打熊",true,()->open(MainActivity.class));bear.setMinHeight(Ui.dp(this,96));bear.setTextSize(24);
         Button target=Ui.button(this,root,"正中靶心",true,()->open(cn.local.bullseye.MainActivity.class));target.setMinHeight(Ui.dp(this,96));target.setTextSize(24);
+        Button giant=Ui.button(this,root,"巨兽集结",true,()->startActivity(new Intent(this,HuntActivity.class).putExtra("giant",true)));giant.setMinHeight(Ui.dp(this,80));giant.setTextSize(24);
+        Button beast=Ui.button(this,root,"野兽集结",true,()->startActivity(new Intent(this,HuntActivity.class).putExtra("giant",false)));beast.setMinHeight(Ui.dp(this,80));beast.setTextSize(24);
+        root.addView(Ui.text(this,"2.1.0",12,Ui.MUTED));
     }
     @Override public void onResume(){super.onResume();BearService s=BearService.current();if(s!=null)s.stopAllModes();}
     private void open(Class<?> type){startActivity(new Intent(this,type));}

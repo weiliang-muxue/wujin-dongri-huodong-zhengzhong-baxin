@@ -30,6 +30,7 @@ public class GameService extends ContextWrapper {
     boolean allowInitialBoard=true;final TicketPolicy tickets=new TicketPolicy();
     int exitSeen=0,exitAttempts=0;
     WindowManager.LayoutParams floatingParams;
+    cn.local.winterbear.OverlayFold floatingFold;
     volatile FloatingGuard.Box floatingBounds;
     volatile long overlayRevision;long frameRevision=-1,moveId;
     volatile boolean dragging;
@@ -59,11 +60,18 @@ public class GameService extends ContextWrapper {
         floatingParams.gravity=Gravity.TOP|Gravity.LEFT;floatingParams.x=dp(12);floatingParams.y=dp(48);
         final long token=generation,initialMove=moveId;
         floating.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->{if(token==generation)publishFloatingBounds();});
-        version.setOnTouchListener(new View.OnTouchListener(){float sx,sy;int x,y;long move;public boolean onTouch(View v,MotionEvent e){
+        version.setOnTouchListener(new View.OnTouchListener(){float sx,sy;int x,y;long move;boolean moved;public boolean onTouch(View v,MotionEvent e){
             if(token!=generation||floating==null)return true;
-            if(e.getActionMasked()==MotionEvent.ACTION_DOWN){synchronized(tapLock){dragging=true;overlayRevision++;move=++moveId;}sx=e.getRawX();sy=e.getRawY();x=floatingParams.x;y=floatingParams.y;return true;}
-            if(e.getActionMasked()==MotionEvent.ACTION_MOVE){Rect r=wm.getCurrentWindowMetrics().getBounds();floatingParams.x=Math.max(0,Math.min(r.width()-floating.getWidth(),x+(int)(e.getRawX()-sx)));floatingParams.y=Math.max(0,Math.min(r.height()-floating.getHeight(),y+(int)(e.getRawY()-sy)));wm.updateViewLayout(floating,floatingParams);return true;}
-            if(e.getActionMasked()==MotionEvent.ACTION_UP||e.getActionMasked()==MotionEvent.ACTION_CANCEL){final long finishedMove=move;floating.post(()->settleFloating(token,finishedMove));v.performClick();return true;}return true;}});
+            if(e.getActionMasked()==MotionEvent.ACTION_DOWN){synchronized(tapLock){dragging=true;overlayRevision++;move=++moveId;}moved=false;sx=e.getRawX();sy=e.getRawY();x=floatingParams.x;y=floatingParams.y;return true;}
+            if(e.getActionMasked()==MotionEvent.ACTION_MOVE){moved|=Math.hypot(e.getRawX()-sx,e.getRawY()-sy)>ViewConfiguration.get(GameService.this).getScaledTouchSlop();Rect r=wm.getCurrentWindowMetrics().getBounds();floatingParams.x=Math.max(0,Math.min(r.width()-floating.getWidth(),x+(int)(e.getRawX()-sx)));floatingParams.y=Math.max(0,Math.min(r.height()-floating.getHeight(),y+(int)(e.getRawY()-sy)));wm.updateViewLayout(floating,floatingParams);return true;}
+            if(e.getActionMasked()==MotionEvent.ACTION_UP||e.getActionMasked()==MotionEvent.ACTION_CANCEL){final long finishedMove=move;floating.post(()->settleFloating(token,finishedMove));if(!moved&&e.getActionMasked()==MotionEvent.ACTION_UP)v.performClick();return true;}return true;}});
+        floatingFold=new cn.local.winterbear.OverlayFold(this,floating,version,"靶心",width,dp(72),dp(48),newWidth->{
+            final long resizedMove;synchronized(tapLock){overlayRevision++;dragging=true;resizedMove=++moveId;}
+            floatingParams.width=newWidth;floatingParams.x=Math.min(floatingParams.x,wm.getCurrentWindowMetrics().getBounds().width()-newWidth);
+            final View resized=floating;
+            resized.getViewTreeObserver().addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener(){public boolean onPreDraw(){resized.getViewTreeObserver().removeOnPreDrawListener(this);if(floating==resized)settleFloating(token,resizedMove);return true;}});
+            wm.updateViewLayout(floating,floatingParams);
+        });
         wm.addView(floating,floatingParams);floating.post(()->settleFloating(token,initialMove));
     }
     // Only the main thread reads Views. Workers consume immutable screen-pixel bounds.
@@ -79,6 +87,7 @@ public class GameService extends ContextWrapper {
         WindowMetrics metrics=wm.getCurrentWindowMetrics();Rect r=metrics.getBounds();
         Insets insets=metrics.getWindowInsets().getInsetsIgnoringVisibility(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());
         FloatingGuard.Box clear=FloatingGuard.place(floatingBounds,new FloatingGuard.Box(r.left+insets.left,r.top+insets.top,r.right-insets.right,r.bottom-insets.bottom),protectedAreas,dp(8));
+        if(clear==null&&floatingFold!=null&&!floatingFold.isCollapsed()){floatingFold.setCollapsed(true);return;}
         if(clear!=null&&!clear.same(floatingBounds)){
             floatingParams.x+=clear.left-floatingBounds.left;floatingParams.y+=clear.top-floatingBounds.top;
             final View moved=floating;

@@ -133,16 +133,10 @@ public final class MainActivity extends Activity {
         toast(dry?"回游戏地图，点“试识别”":"回游戏地图，点“开始打熊”");
     }
     private void openAccessibility(){
-        new AlertDialog.Builder(this).setTitle("允许截图与点击")
-            .setMessage("助手需要无障碍服务来读取游戏画面、显示悬浮窗和执行你启动的跟车操作。截图只在手机本地处理。\n\n到系统设置找到“无尽冬日助手（打熊 / 正中靶心）”并手动开启。若显示“受限设置”，可点下方帮助。")
-            .setNegativeButton("暂不",null).setNeutralButton("受限设置帮助",(d,w)->permissionHelp())
-            .setPositiveButton("前往开启",(d,w)->startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))).show();
+        PermissionActivity.open(this);
     }
     private void permissionHelp(){
-        new AlertDialog.Builder(this).setTitle("无障碍被限制怎么办")
-            .setMessage("1. 打开“应用信息”。\n2. 点右上角三个点 ⋮，选择“允许受限设置”，按系统提示确认。\n3. 回无障碍设置开启“无尽冬日助手（打熊 / 正中靶心）”。\n\n小米页面若没有该选项，点系统提示中的“了解如何获取权限”。不需要把普通权限列表全部打开。")
-            .setNegativeButton("返回",null).setNeutralButton("无障碍设置",(d,w)->startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)))
-            .setPositiveButton("打开应用信息",(d,w)->startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+getPackageName())))).show();
+        PermissionActivity.open(this);
     }
     private void showHelp(){
         String[] titles={"第一次怎么用 / 地图为什么只需一步","以后每次怎么开打","行军数、红色 X、绿色＋有什么区别","无法识别 / 手动取样","无障碍打不开 / 受限设置","样本测试为什么不用打开游戏"};

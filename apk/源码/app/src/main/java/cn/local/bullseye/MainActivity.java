@@ -55,7 +55,7 @@ public class MainActivity extends Activity {
     void finishAnalysis(){analyzing=false;first.setEnabled(true);second.setEnabled(true);}
     void saveBitmap(String name,Bitmap b)throws IOException{try(FileOutputStream out=openFileOutput(name,MODE_PRIVATE)){b.compress(Bitmap.CompressFormat.PNG,100,out);}}
     void startRun(){if(config==null)return;if(GameService.instance!=null&&GameService.instance.running){toast("运行中，请使用悬浮按钮控制");return;}
-        if(GameService.instance==null){new AlertDialog.Builder(this).setTitle("开启屏幕操作权限").setMessage("请在辅助功能中开启「无尽冬日助手（打熊 / 正中靶心）」。仅在你开始运行后读取屏幕和点击已识别位置；可随时暂停或停止。截图不会上传。").setPositiveButton("去设置",(d,w)->startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))).setNegativeButton("暂不",null).show();return;}
+        if(GameService.instance==null){cn.local.winterbear.PermissionActivity.open(this);return;}
         new AlertDialog.Builder(this).setTitle("准备开始").setMessage("倍率在游戏里设置，每轮回首页读取实际余券。剩 1～4 张时自动切到 1 倍，余券为 0 时停止。\n\n请保持游戏位置与截图一致，停在首页或完整的 12 靶子页。开始后 5 秒执行，请切回游戏，不要手动操作游戏。可用悬浮按钮暂停 / 继续 / 停止。").setPositiveButton("5 秒后开始",(d,w)->{try{String data=config.json();try(FileOutputStream out=openFileOutput("config.json",MODE_PRIVATE)){out.write(data.getBytes(StandardCharsets.UTF_8));}GameService.instance.begin(config);moveTaskToBack(true);}catch(Exception e){toast(e.getMessage());}}).setNegativeButton("返回",null).show();
     }
     void toast(String message){Toast.makeText(this,message,Toast.LENGTH_LONG).show();log.setText(message);}
