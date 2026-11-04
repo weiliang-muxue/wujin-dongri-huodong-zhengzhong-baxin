@@ -17,7 +17,6 @@ final class CounterOcr implements AutoCloseable,Matcher.Numbers {
     public int read(Bitmap screenshot,Rect region){
         return MarchCount.used(text(screenshot,region));
     }
-    public TroopCount troops(Bitmap screenshot,Rect region){return TroopCount.parse(text(screenshot,region));}
     String text(Bitmap screenshot,Rect region){
         if(region.width()<12||region.height()<12||region.left<0||region.top<0||region.right>screenshot.getWidth()||region.bottom>screenshot.getHeight())return "";
         Bitmap crop=Bitmap.createBitmap(screenshot,region.left,region.top,region.width(),region.height());

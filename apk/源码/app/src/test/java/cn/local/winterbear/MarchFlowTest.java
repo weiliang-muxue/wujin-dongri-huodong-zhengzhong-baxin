@@ -64,7 +64,7 @@ public class MarchFlowTest {
     static BearFlow.Frame map(int used){BearFlow.Frame f=new BearFlow.Frame();f.map=true;f.marchUsed=used;f.shortcutX=950;f.shortcutY=800;return f;}
     static BearFlow.Frame hidden(){BearFlow.Frame f=map(-1);f.marchHidden=true;return f;}
     static BearFlow.Frame list(){BearFlow.Frame f=new BearFlow.Frame();f.header=true;f.rallyList=true;f.backX=60;f.backY=300;f.rows.add(new BearFlow.Row(0,900,700,true,60));return f;}
-    static BearFlow.Frame deploy(){BearFlow.Frame f=new BearFlow.Frame();f.formation=true;f.deploy=true;f.deployX=800;f.deployY=2200;f.backX=60;f.backY=300;f.troops=new TroopCount(152810,152810);java.util.Arrays.fill(f.savedPreset,true);return f;}
+    static BearFlow.Frame deploy(){BearFlow.Frame f=new BearFlow.Frame();f.formation=true;f.deploy=true;f.deployX=800;f.deployY=2200;f.backX=60;f.backY=300;java.util.Arrays.fill(f.savedPreset,true);return f;}
     static void enter(MarchFlow f,int used){assertEquals(Kind.WAIT,f.next(map(used),1000).kind);assertEquals(Kind.NAVIGATE,f.next(map(used),1600).kind);f.complete(true,1700);}
     static void sendFromList(MarchFlow f,long t,int preset){
         assertEquals(Kind.JOIN,f.next(list(),t).kind);f.complete(true,t+100);
@@ -104,9 +104,9 @@ public class MarchFlowTest {
     @Test public void startsInListByCheckingMapOnce(){MarchFlow f=flow();assertEquals(Kind.WAIT,f.next(list(),1000).kind);assertEquals(Kind.BACK,f.next(list(),2200).kind);}
     @Test public void departingRallyDetailReturnsToListInsteadOfPausing(){MarchFlow f=flow();enter(f,4);f.next(list(),3000);f.complete(true,3100);BearFlow.Frame d=list();d.rallyList=false;assertEquals(Kind.WAIT,f.next(d,4400).kind);assertEquals(Kind.BACK,f.next(d,5500).kind);f.complete(true,5600);BearFlow.Frame s=list();s.rows.add(new BearFlow.Row(1,900,1400,true,60));assertEquals(1400,f.next(s,7000).y);}
     @Test public void fullRaceSkipsRowWithoutAdvancingPreset(){MarchFlow f=flow();enter(f,4);f.next(list(),3000);f.complete(true,3100);assertEquals(Kind.WAIT,f.next(list(),9200).kind);BearFlow.Frame s=list();s.rows.add(new BearFlow.Row(1,900,1400,true,60));assertEquals(1400,f.next(s,10000).y);assertEquals(0,f.nextPreset);}
-    @Test public void zeroTroopsUsesNextPresetWithoutDeploy(){MarchFlow f=flow();enter(f,4);f.next(list(),3000);f.complete(true,3100);f.next(deploy(),4400);f.complete(true,4500);BearFlow.Frame d=deploy();d.troops=new TroopCount(0,150000);assertEquals(Kind.WAIT,f.next(d,5300).kind);assertEquals(200,f.next(d,6400).x);}
-    @Test public void tinyButExplicitlySavedArmyIsAllowed(){MarchFlow f=flow();enter(f,4);f.next(list(),3000);f.complete(true,3100);f.next(deploy(),4400);f.complete(true,4500);BearFlow.Frame d=deploy();d.troops=new TroopCount(1,139400);assertEquals(Kind.DEPLOY,f.next(d,5300).kind);}
-    @Test public void overflowBeforeSendSkipsPreset(){MarchFlow f=flow();enter(f,4);f.next(list(),3000);f.complete(true,3100);f.next(deploy(),4400);f.complete(true,4500);BearFlow.Frame d=deploy();d.troops=new TroopCount(160000,150000);assertEquals(Kind.WAIT,f.next(d,5300).kind);assertEquals(200,f.next(d,6400).x);}
+    @Test public void presetDeploysDirectlyWithoutTroopData(){MarchFlow f=flow();enter(f,4);f.next(list(),3000);f.complete(true,3100);assertEquals(Kind.PRESET,f.next(deploy(),4400).kind);f.complete(true,4500);assertEquals(Kind.DEPLOY,f.next(deploy(),5300).kind);assertEquals(0,f.submitted);assertEquals(Kind.WAIT,f.next(deploy(),6400).kind);}
+    @Test public void sendStillNeedsVisibleDeployButton(){MarchFlow f=flow();enter(f,4);f.next(list(),3000);f.complete(true,3100);f.next(deploy(),4400);f.complete(true,4500);BearFlow.Frame d=deploy();d.deploy=false;assertEquals(Kind.WAIT,f.next(d,5300).kind);assertEquals(Kind.DEPLOY,f.next(deploy(),6400).kind);}
+    @Test public void overflowPopupBeforeSendIsDismissed(){MarchFlow f=flow();enter(f,4);f.next(list(),3000);f.complete(true,3100);f.next(deploy(),4400);f.complete(true,4500);assertEquals(Kind.NAVIGATE,f.next(overflow(),5300).kind);assertEquals(0,f.submitted);}
     @Test public void recordedOverflowReturnsToListBeforeFreshJoin(){MarchFlow f=flow();enter(f,5);f.next(list(),3000);f.complete(true,3100);f.next(deploy(),4400);f.complete(true,4500);f.next(deploy(),5300);f.complete(true,5400);BearFlow.Frame e=new BearFlow.Frame();e.troopOverflow=true;e.dialogOkX=550;e.dialogOkY=1500;assertEquals(550,f.next(e,6700).x);f.complete(true,6800);assertEquals(Kind.BACK,f.next(deploy(),8100).kind);f.complete(true,8200);assertEquals(Kind.JOIN,f.next(list(),9500).kind);f.complete(true,9600);assertEquals(100,f.next(deploy(),10900).x);assertEquals(0,f.submitted);}
     @Test public void unknownPopupIsNotDismissed(){MarchFlow f=flow();enter(f,5);f.next(list(),3000);f.complete(true,3100);BearFlow.Frame popup=new BearFlow.Frame();assertEquals(Kind.WAIT,f.next(popup,5000).kind);assertEquals(Kind.PAUSE,f.next(popup,21000).kind);}
     @Test public void uncertainDeployNeverClicksDeployTwice(){MarchFlow f=flow();enter(f,3);f.next(list(),3000);f.complete(true,3100);f.next(deploy(),4400);f.complete(true,4500);f.next(deploy(),5300);f.complete(true,5400);assertEquals(Kind.WAIT,f.next(deploy(),13000).kind);assertEquals(Kind.BACK,f.next(deploy(),14000).kind);assertEquals(1,f.nextPreset);}
@@ -116,24 +116,22 @@ public class MarchFlowTest {
         assertEquals(1400,f.next(s,3000).y);f.complete(true,3100);
         BearFlow.Frame d=deploy();d.savedPreset[0]=false;assertEquals(Kind.WAIT,f.next(d,4400).kind);
         assertEquals(100,f.next(deploy(),5500).x);f.complete(true,5600);
-        d=deploy();d.troops=new TroopCount(0,139400);assertEquals(Kind.WAIT,f.next(d,6400).kind);
-        assertEquals(200,f.next(deploy(),7500).x);f.complete(true,7600);
-        assertEquals(Kind.DEPLOY,f.next(deploy(),8400).kind);f.complete(true,8500);
+        assertEquals(Kind.DEPLOY,f.next(deploy(),6400).kind);f.complete(true,6500);
         assertEquals(Kind.NAVIGATE,f.next(overflow(),9800).kind);f.complete(true,9900);
         assertEquals(Kind.WAIT,f.next(overflow(),11000).kind);
         assertEquals(Kind.BACK,f.next(deploy(),12100).kind);f.complete(true,12200);
         assertEquals(Kind.JOIN,f.next(s,13000).kind);f.complete(true,13100);
-        assertEquals(200,f.next(deploy(),14400).x);f.complete(true,14500);
+        assertEquals(100,f.next(deploy(),14400).x);f.complete(true,14500);
         assertEquals(Kind.DEPLOY,f.next(deploy(),15300).kind);f.complete(true,15400);
         assertEquals(Kind.WAIT,f.next(s,16700).kind);assertEquals(MarchFlow.Phase.FIND,f.phase);
         assertEquals(Kind.JOIN,f.next(s,17800).kind);f.complete(true,17900);
         BearFlow.Frame detail=list();detail.rallyList=false;
         assertEquals(Kind.WAIT,f.next(detail,19200).kind);assertEquals(Kind.BACK,f.next(detail,20300).kind);f.complete(true,20400);
         s.rows.add(new BearFlow.Row(2,900,2100,true,60));assertEquals(2100,f.next(s,21700).y);f.complete(true,21800);
-        assertEquals(300,f.next(deploy(),23100).x);f.complete(true,23200);
+        assertEquals(200,f.next(deploy(),23100).x);f.complete(true,23200);
         assertEquals(Kind.DEPLOY,f.next(deploy(),24000).kind);f.complete(true,24100);
         assertEquals(Kind.WAIT,f.next(s,25400).kind);
-        assertTrue(f.running);assertEquals(MarchFlow.Phase.FIND,f.phase);assertEquals(3,f.nextPreset);assertEquals(2,f.submitted);
+        assertTrue(f.running);assertEquals(MarchFlow.Phase.FIND,f.phase);assertEquals(2,f.nextPreset);assertEquals(2,f.submitted);
     }
 
     @Test public void rejectedLastSlotIsRefundedOnceAndOnlyOnce(){

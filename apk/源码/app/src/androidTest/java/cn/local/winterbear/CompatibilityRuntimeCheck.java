@@ -47,7 +47,6 @@ public final class CompatibilityRuntimeCheck {
                 if(verifyCountCrop)require(region.contains(new Rect(320,623,383,651)),"Huawei counter clipped: "+region);
                 return count;
             }
-            public TroopCount troops(Bitmap screenshot,Rect region){return TroopCount.parse("179810/179810");}
             public void close(){}
         };
         try(Matcher matcher=new Matcher(config,annotated)){matcher.frame(bitmap);return matcher.observe();}

@@ -1,4 +1,4 @@
-"""Check the built APK, not just the source, for obsolete multiplier OCR."""
+"""Check the built APK for supported assets, phone ABIs and removed OCR gates."""
 from __future__ import annotations
 
 import argparse
@@ -36,6 +36,11 @@ def verify(apk: Path, version: str) -> dict:
     for text in forbidden:
         if any(text.encode('utf-8') in blob for blob in dex):
             raise ValueError('APK still contains obsolete multiplier recognition: ' + text)
+    direct_deploy = tuple(map(int, version.split('.'))) >= (2, 1, 2)
+    if direct_deploy:
+        for text in ('核对出征兵力', '读取出征兵力'):
+            if any(text.encode('utf-8') in blob for blob in dex):
+                raise ValueError('APK still contains removed troop OCR gate: ' + text)
     for text in ('首页实际余券', '正在切换 1 倍，等待画面确认', '首页确认余券为 0，已全部用完', '结算完成，自动返回首页'):
         if not any(text.encode('utf-8') in blob for blob in dex):
             raise ValueError('APK is missing expected behavior marker: ' + text)
@@ -43,6 +48,7 @@ def verify(apk: Path, version: str) -> dict:
     if not any(label.encode(encoding) in resources for encoding in ('utf-8', 'utf-16-le')):
         raise ValueError('APK is missing the visible version label: ' + label)
     return {'apk': str(apk), 'version_label': label, 'legacy_multiplier_ocr': False,
+            'direct_deploy_without_troop_ocr': direct_deploy,
             'sha256': hashlib.sha256(apk.read_bytes()).hexdigest()}
 
 

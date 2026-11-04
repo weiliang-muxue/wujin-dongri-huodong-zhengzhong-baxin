@@ -8,7 +8,7 @@ public class HuntFlowTest {
     HuntFlow create(Mode m,int cap,int cans){HuntFlow f=new HuntFlow(new Options(m,m==Mode.GIANT?8:30,cap,cans,60));f.start(now);return f;}
     Frame map(int n){Frame f=new Frame();f.page=Page.MAP;f.used=n;if(n>=0){f.marches=new HuntMarches.Row[n];for(int i=0;i<n;i++)f.marches[i]=new HuntMarches.Row(i*0x9e3779b97f4a7c15L,3600+i*1800-(int)((now+2000)/1000));}return f;}
     static Frame search(Mode m,int n){Frame f=new Frame();f.page=Page.SEARCH;f.category=m.ordinal();f.level=n;return f;}
-    static Frame form(){Frame f=new Frame();f.page=Page.FORMATION;java.util.Arrays.fill(f.presets,true);f.knownTroops=f.validTroops=true;return f;}
+    static Frame form(){Frame f=new Frame();f.page=Page.FORMATION;java.util.Arrays.fill(f.presets,true);return f;}
     static Frame page(Page p,int level){Frame f=new Frame();f.page=p;f.level=level;return f;}
     static Frame energy(int stock,int stamina){Frame f=page(Page.ENERGY,-1);f.stock=stock;f.energy=stamina;return f;}
     Action see(HuntFlow f,Frame frame){now+=2000;return f.next(frame,now);}
@@ -35,8 +35,8 @@ public class HuntFlowTest {
     @Test public void wrongTargetTypeNeverAttacked(){HuntFlow f=create(Mode.BEAST,1,0);enter(f,0);click(f,search(Mode.BEAST,30),Kind.SEARCH);assertEquals(Kind.WAIT,see(f,page(Page.GIANT,30)).kind);}
     @Test public void unreadableLevelEventuallyPauses(){HuntFlow f=create(Mode.BEAST,1,0);enter(f,0);assertEquals(Kind.WAIT,see(f,search(Mode.BEAST,-1)).kind);now+=20000;assertEquals(Kind.STOP,see(f,search(Mode.BEAST,-1)).kind);}
     @Test public void failedGestureDoesNotAdvance(){HuntFlow f=create(Mode.BEAST,1,0);see(f,map(0));assertEquals(Kind.OPEN,see(f,map(0)).kind);f.complete(false,now);assertFalse(f.running);assertEquals(0,f.submitted);}
-    @Test public void emptyTroopsSelectNextPreset(){HuntFlow f=create(Mode.BEAST,1,0);toFormation(f);Frame a=form();a.validTroops=false;see(f,a);Action next=see(f,form());assertEquals(Kind.PRESET,next.kind);assertEquals(1,next.preset);}
-    @Test public void unknownTroopsNeverDeploy(){HuntFlow f=create(Mode.BEAST,1,0);toFormation(f);Frame a=form();a.knownTroops=false;assertEquals(Kind.WAIT,see(f,a).kind);}
+    @Test public void bothModesDeployAfterPresetWithoutTroopData(){for(Mode mode:Mode.values()){HuntFlow f=create(mode,1,0);toFormation(f);Action a=see(f,form());assertEquals(Kind.DEPLOY,a.kind);assertEquals(0,a.preset);assertEquals(0,f.submitted);assertEquals(Kind.WAIT,see(f,form()).kind);}}
+    @Test public void errorBeforeDeployIsStillHandledInBothModes(){for(Mode mode:Mode.values()){HuntFlow f=create(mode,1,0);toFormation(f);click(f,page(Page.ERROR,-1),Kind.DISMISS);assertEquals(Phase.RECOVER,f.phase);assertEquals(0,f.submitted);}}
     @Test public void noDispatchCountWithoutMapIncrease(){HuntFlow f=create(Mode.BEAST,1,0);toFormation(f);click(f,form(),Kind.DEPLOY);for(int i=0;i<5;i++)assertEquals(Kind.WAIT,see(f,map(0)).kind);now+=20000;assertEquals(Kind.STOP,see(f,map(0)).kind);assertEquals(0,f.submitted);assertEquals(0,f.nextPreset);}
     @Test public void sixPresetsWrapWithConfirmedDispatches(){HuntFlow f=create(Mode.BEAST,6,0);for(int i=0;i<8;i++){toFormation(f);click(f,form(),Kind.DEPLOY);see(f,map(1));assertEquals((i+1)%6,f.nextPreset);}}
     @Test public void cansDisabledNeverUse(){HuntFlow f=create(Mode.GIANT,1,0);toFormation(f);click(f,form(),Kind.DEPLOY);assertEquals(Kind.STOP,see(f,energy(232,15)).kind);assertEquals(0,f.cansUsed);}

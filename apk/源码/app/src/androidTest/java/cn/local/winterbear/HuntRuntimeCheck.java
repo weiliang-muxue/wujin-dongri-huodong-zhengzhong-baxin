@@ -35,7 +35,7 @@ public final class HuntRuntimeCheck {
                 }
                 try(HuntVision vision=new HuntVision(provider,(b,r)->{
                     double x=r.left*540./b.getWidth();
-                    if(name.contains("formation")||name.equals("low_energy"))return "160810/160810";
+                    if(name.contains("formation")||name.equals("low_energy"))throw new AssertionError("Formation must not call numeric OCR: "+name);
                     if(name.equals("energy"))return x<100?"232":"15/200";
                     if(name.equals("map"))return "";
                     if(name.equals("map_one"))return "1/6";
@@ -45,7 +45,7 @@ public final class HuntRuntimeCheck {
                     require(f.page==expected[index],name+" "+size[0]+" expected "+expected[index]+" got "+f.page);
                     if(f.page==Page.MAP){require(f.used==(name.equals("map")?0:1),"map count");require(f.points[Kind.OPEN.ordinal()][0]>0,"search entry");}
                     if(f.page==Page.SEARCH){require(f.category==(name.startsWith("beast")?1:0),name+" selection="+f.category);require(f.level==(name.startsWith("beast")?30:8),"level");}
-                    if(f.page==Page.FORMATION){for(boolean flag:f.presets)require(flag,"missing flag "+name);require(f.validTroops,"troops");}
+                    if(f.page==Page.FORMATION){for(boolean flag:f.presets)require(flag,"missing flag "+name);require(f.points[Kind.DEPLOY.ordinal()][0]>0,"deploy button");}
                     if(f.page==Page.GIANT||f.page==Page.BEAST)require(f.level==(name.startsWith("beast")?30:8),"detail level");
                     if(f.page==Page.RALLY||f.page==Page.SEARCH||f.page==Page.FORMATION||f.page==Page.GIANT||f.page==Page.BEAST){int[] back=f.points[Kind.BACK.ordinal()];require(back[0]>0&&back[0]<image.getWidth()&&back[1]>0&&back[1]<image.getHeight(),"game return target "+name);}
                     if(f.page==Page.ENERGY){require(f.stock==232&&f.energy==15,"energy numbers "+f.stock+"/"+f.energy);int[] use=f.points[Kind.USE.ordinal()];require(use[0]>0,"only green use");require(f.points[Kind.CLOSE.ordinal()][0]>0,"close energy");}

@@ -10,8 +10,10 @@ p.add_argument('--adb',required=True);p.add_argument('--serial',required=True)
 p.add_argument('--fixtures',type=Path,required=True);p.add_argument('--output',type=Path,required=True)
 p.add_argument('--hunt-fixtures',type=Path);p.add_argument('--hunt-only',action='store_true')
 p.add_argument('--reported-fixtures',type=Path)
+p.add_argument('--dispatch-fixtures',type=Path)
 a=p.parse_args()
 if not a.serial.startswith('emulator-'):p.error('Use a dedicated emulator')
+if (a.reported_fixtures or a.dispatch_fixtures) and not a.hunt_fixtures:p.error('Hunt fixtures are required for reported/dispatch checks')
 root=Path(__file__).resolve().parents[1];a.output.mkdir(parents=True,exist_ok=True)
 main=root/'app/build/outputs/apk/debug/app-debug.apk'
 tests=root/'app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk'
@@ -32,6 +34,8 @@ if a.hunt_fixtures:
 if a.reported_fixtures:
     for name in ('reported-map','reported-level'):
         (bundle/'fixtures'/f'{name}.png').write_bytes((a.reported_fixtures/f'{name}.png').read_bytes())
+if a.dispatch_fixtures:
+    (bundle/'fixtures/reported-deploy.png').write_bytes((a.dispatch_fixtures/'reported-deploy.png').read_bytes())
 def adb(*args,timeout=180):
     r=subprocess.run([a.adb,'-s',a.serial,*args],capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=timeout)
     if r.returncode:raise RuntimeError(r.stdout+r.stderr)
@@ -44,7 +48,7 @@ with (a.output/'android-feedback-runtime.txt').open('w',encoding='utf-8') as log
         command=[a.adb,'-s',a.serial,'shell',f'CLASSPATH={remote}/app.apk:{remote}/tests.apk app_process /system/bin cn.local.winterbear.{entry} '+args]
         process=subprocess.Popen(command,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,encoding='utf-8',errors='replace')
         # Full-resolution Matcher replay is slower under software-only emulation.
-        timer=threading.Timer(900 if entry in ('CompatibilityRuntimeCheck','HuntRuntimeCheck') else 300,process.kill);timer.start();lines=[]
+        timer=threading.Timer(900 if entry in ('CompatibilityRuntimeCheck','HuntRuntimeCheck','DirectDeployRuntimeCheck') else 300,process.kill);timer.start();lines=[]
         try:
             for line in process.stdout:
                 lines.append(line);log.write(line);log.flush();print(line,end='',flush=True)
@@ -54,6 +58,9 @@ with (a.output/'android-feedback-runtime.txt').open('w',encoding='utf-8') as log
         return ''.join(lines)
     core=run('RuntimeCoreCheck',remote+'/simulation')
     if '0 failures' not in core:raise RuntimeError('ART test result missing')
+    if a.dispatch_fixtures:
+        result=run('DirectDeployRuntimeCheck',f'{remote}/lib {remote}/fixtures {remote}/assets {remote}/direct-deploy')
+        if 'ANDROID DIRECT DEPLOY PASS: 18 image checks;' not in result:raise RuntimeError('Direct deployment result missing')
     if a.reported_fixtures:
         result=run('HuntReportedRuntimeCheck',f'{remote}/lib {remote}/fixtures {remote}/assets')
         if 'ANDROID REPORTED PASS:' not in result:raise RuntimeError('Reported regression result missing')

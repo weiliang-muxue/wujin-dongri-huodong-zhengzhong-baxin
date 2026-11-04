@@ -16,7 +16,7 @@ final class HuntFlow {
     static final class Frame {
         Page page=Page.UNKNOWN; int used=-1,level=-1,category=-1,stock=-1,energy=-1;
         HuntMarches.Row[] marches;
-        boolean validTroops,knownTroops,lowEnergy; final boolean[] presets=new boolean[6];
+        boolean lowEnergy; final boolean[] presets=new boolean[6];
         long age; final int[][] points=new int[Kind.values().length][2];final int[][] flags=new int[6][2];
         void point(Kind k,int x,int y){points[k.ordinal()]=new int[]{x,y};}
     }
@@ -26,7 +26,7 @@ final class HuntFlow {
     }
     final Options options; Phase phase=Phase.MAP; boolean running;
     final HuntMarches marches=new HuntMarches();
-    int nextPreset,submitted,cansUsed; private int selected,stableUsed=-2,stableCount,attempted;
+    int nextPreset,submitted,cansUsed; private int selected,stableUsed=-2,stableCount;
     private int lastLevel=-1,levelFailures,categoryAttempts,batchLeft,stockBefore=-1,energyBefore=-1;
     private boolean awaitingCan,closingEnergy;private Kind pending;private long expires,waitUntil,since,unknownSince=-1;
     HuntFlow(Options options){this.options=options;}
@@ -80,7 +80,7 @@ final class HuntFlow {
         }
         if(phase==Phase.VERIFY){
             if(f.page==Page.MAP&&f.used>=0){
-                if(f.marches!=null&&f.marches.length==f.used&&marches.observe(f.marches,now-f.age,true)){submitted++;nextPreset=(selected+1)%6;attempted=0;phase(Phase.MAP,now);stableCount=0;return waitFor(activity()+" "+marches.active()+"/"+options.limit+" 队 · 已出征 "+submitted+" 次");}
+                if(f.marches!=null&&f.marches.length==f.used&&marches.observe(f.marches,now-f.age,true)){submitted++;nextPreset=(selected+1)%6;phase(Phase.MAP,now);stableCount=0;return waitFor(activity()+" "+marches.active()+"/"+options.limit+" 队 · 已出征 "+submitted+" 次");}
                 return now-since>15000?halt("未确认新增任务队伍，已暂停，请检查出征结果"):waitFor("确认本次出征队伍");
             }
             return unknown(now,"等待出征结果");
@@ -130,13 +130,7 @@ final class HuntFlow {
             if(f.page!=Page.FORMATION)return unknown(now,"等待出征编队");
             if(!f.presets[selected])return unknown(now,"读取第 "+(selected+1)+" 个预设旗帜");
             if(phase==Phase.FORMATION)return act(Kind.PRESET,"选择第 "+(selected+1)+" 个预设");
-            if(!f.knownTroops)return unknown(now,"核对出征兵力");
-            if(!f.validTroops){
-                attempted|=1<<selected;int candidate=-1;
-                for(int i=1;i<=6;i++){int s=(selected+i)%6;if((attempted&(1<<s))==0){candidate=s;break;}}
-                if(candidate<0){attempted=0;phase(Phase.RECOVER,now);return waitFor("编队暂不可用，回地图等待");}
-                selected=candidate;phase(Phase.FORMATION,now);return waitFor("尝试下一预设");
-            }
+            // Use the selected preset directly. Troop-number OCR is not a dispatch gate.
             return act(Kind.DEPLOY,f.lowEnergy?"体力不足，打开补充窗口":"出征第 "+(selected+1)+" 个预设");
         }
         return unknown(now,"等待识别游戏页面");

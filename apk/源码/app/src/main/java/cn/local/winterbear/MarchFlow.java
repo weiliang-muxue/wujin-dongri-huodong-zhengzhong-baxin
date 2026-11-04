@@ -48,12 +48,6 @@ final class MarchFlow {
         if(lastNav==node)return now-phaseSince>8000?pause("页面没有切换，请检查入口取样"):waitFor("等待页面切换");
         lastNav=node;phaseSince=now;return act(Kind.NAVIGATE,x,y,Phase.ENTER_LIST,message);
     }
-    private Decision nextFormation(long now,String reason){
-        attemptedMask|=1<<selected;selected=choosePreset();markerMissingSince=-1;
-        if(selected<0){retryAt=now+8000;returnToMap(now);return waitFor(reason+" · 本轮预设都不可用，稍后重查");}
-        phase=Phase.FORMATION;phaseSince=now;unknownSince=-1;
-        return waitFor(reason+" · 尝试第 "+(selected+1)+" 个预设");
-    }
     Decision next(Frame f,long now){
         if(!running)return waitFor("已暂停");
         if(expired(now))return pause("已达到本次运行时长");
@@ -178,8 +172,7 @@ final class MarchFlow {
         if(phase==Phase.SEND){
             if(f.header){returnToList(now);avoidLastRow(now);return waitFor("集结状态已变化，继续下一队");}
             if(f.deploy&&!f.header&&!f.map){
-                if(f.troops!=null&&!f.troops.usable())return nextFormation(now,"当前预设兵力为空或超出上限");
-                if(f.troops==null)return now-phaseSince>6000?nextFormation(now,"编队兵力未读清"):waitFor("检查当前预设的实际兵力");
+                // The chosen preset goes straight to deploy; the game reports any rejection.
                 return act(Kind.DEPLOY,f.deployX,f.deployY,Phase.VERIFY,"提交第 "+(selected+1)+" 个预设出征");
             }
             return unrecognized(now,"等待出征按钮");

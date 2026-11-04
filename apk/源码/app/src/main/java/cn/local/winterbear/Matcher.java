@@ -25,7 +25,7 @@ final class Matcher implements AutoCloseable {
     private final Map<String,Mat> colorTemplates=new HashMap<>();
     private Mat gray,color;
     private double scale;
-    interface Numbers {int read(Bitmap screenshot,Rect region);TroopCount troops(Bitmap screenshot,Rect region);void close();}
+    interface Numbers {int read(Bitmap screenshot,Rect region);void close();}
     private final Numbers counter;
     private Bitmap currentBitmap;
     private String stage="初始化";
@@ -168,10 +168,6 @@ final class Matcher implements AutoCloseable {
             stage="识别预设编队";
             for(int i=0;i<6;i++)f.savedPreset[i]=near("preset_marker"+i,config.p.getInt("presetX"+i,0),config.p.getInt("presetY"+i,0))!=null;
             feedback.formation(gray,color,f,config.width(),config.height(),config);
-            int w=config.width(),hgt=config.height();
-            stage="读取出征兵力";
-            float troopHeight=ReferenceLayout.supported(w,hgt)&&config.p.getBoolean("referenceLayout",false)?w*2400f/1080:hgt;
-            f.troops=counter.troops(currentBitmap,new Rect((int)(w*.10),(int)(troopHeight*.210),(int)(w*.38),(int)(troopHeight*.240)));
         }
         if(f.rallyList && !f.deploy && config.rallyReady() && !config.customRallyReady()) {
             stage="识别巨熊集结";

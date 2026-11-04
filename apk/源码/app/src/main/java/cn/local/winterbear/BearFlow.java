@@ -23,7 +23,6 @@ public final class BearFlow {
         public boolean rallyTooLate;
         public int cancelX,cancelY;
         public long ageMillis;
-        public TroopCount troops;
         public int marchUsed=-1;
         public int shortcutX,shortcutY,allianceX,allianceY,warX,warY,rallyX,rallyY,worldX,worldY,backX,backY;
         public final boolean[] savedPreset=new boolean[SLOTS];

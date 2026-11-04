@@ -97,7 +97,6 @@ final class HuntVision implements AutoCloseable {
                 if(flags>=2){
                     f.page=Page.FORMATION;point(f,Kind.DEPLOY,deploy,s);
                     f.point(Kind.BACK,(int)(35*s),(int)(153*s));
-                    TroopCount troop=TroopCount.parse(read(image,s,49,254,187,282));f.knownTroops=troop!=null;f.validTroops=troop!=null&&troop.usable();
                     double[] red=small.get(rows-38,420);f.lowEnergy=red!=null&&red[0]>red[1]*1.4;return f;
                 }
             }

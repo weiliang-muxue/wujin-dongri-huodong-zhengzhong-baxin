@@ -4,9 +4,9 @@ JDK 17、Gradle 8.9、Android SDK 35 extension 15、Build Tools 35.0.0。设置 
 
 构建：`gradlew.bat :app:testEngine :app:assembleRelease :app:lintRelease`。
 
-将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.1.1.apk。
+将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.1.2.apk。
 
-检查成品：`python tools/verify_android_package.py ../无尽冬日助手-2.1.1.apk --version 2.1.1`。
+检查成品：`python tools/verify_android_package.py ../无尽冬日助手-2.1.2.apk --version 2.1.2`。
 
 一个 launcher：ModeActivity；一个无障碍服务：BearService。cn.local.bullseye.GameService 和 HuntController 是该服务内的模块，不是其他 Android Service。ModeGate、运行代次和输入前检查共同限制旧任务回调。返回活动选择会停止所有模块。
 
@@ -15,6 +15,8 @@ JDK 17、Gradle 8.9、Android SDK 35 extension 15、Build Tools 35.0.0。设置 
 Release 开启 R8 与资源裁剪，仅打包 ARM64 和 ARMv7，四套流程共用 OpenCV / ML Kit。应用合并清单移除联网权限。
 
 HuntFlow 管理巨兽集结、野兽攻击、1～6 活动队数、预设顺序及库存罐头额度；HuntVision 定位游戏控件并读取等级、行军和库存；HuntController 在同一无障碍服务中运行。HuntActivity 的设置仅保留在本次任务内。OverlayFold 为四个活动提供手动收起、点击展开，状态更新不会重新挂载窗口。
+
+2.1.2 中打熊、巨兽、野兽选好预设后直接点击识别到的出征按钮，不再读取或判断兵力数字。保留队列上限、目标识别、打熊少于 10 秒跳过、游戏错误弹窗恢复和出征结果确认。`run_feedback_regression.py --dispatch-fixtures <目录>` 接收私人原图 `reported-deploy.png`（还需原有 `--fixtures` 和 `--hunt-fixtures`），在 Android Bitmap / OpenCV 中回放出征页和遮住兵力数字的样本；出征页一旦调用数字 OCR，测试立即失败。
 
 2.1.1 的 HuntMarches 跟踪本次派出的队伍：已存在的采集等队伍只占总行军空位，不占本次活动额度。使用图标指纹和倒计时结束时间匹配队伍，列表重排不改变归属；多个行的归属不明确时保留最大的可能任务队数，避免多派。缺失或部分识别的行军列表不用于释放额度。HuntGlyphs 单独读取“等级”后的蓝色数字，保留仅数字区域的 OCR 回退，避免整行中文干扰。
 

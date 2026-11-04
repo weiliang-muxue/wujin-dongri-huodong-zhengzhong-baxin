@@ -62,7 +62,7 @@ public final class HuntDeviceCheck extends Instrumentation {
                     f=v.observe(b,name.startsWith("beast")?Mode.BEAST:Mode.GIANT);
                     if(name.equals("energy"))ok=f.page==Page.ENERGY&&f.stock==232&&f.energy==15;
                     else if(name.equals("map_one"))ok=f.page==Page.MAP&&f.used==1;
-                    else if(name.endsWith("formation"))ok=f.page==Page.FORMATION&&f.validTroops;
+                    else if(name.endsWith("formation"))ok=f.page==Page.FORMATION&&f.points[Kind.DEPLOY.ordinal()][0]>0;
                     else ok=f.level==(name.startsWith("beast")?30:8);
                     if(!ok)report("OCR retry "+name+" level="+f.level+" used="+f.used+" stock="+f.stock+" energy="+f.energy);
                 }}finally{b.recycle();}
