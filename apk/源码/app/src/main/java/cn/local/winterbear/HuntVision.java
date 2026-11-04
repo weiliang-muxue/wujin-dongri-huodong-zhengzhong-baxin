@@ -18,10 +18,11 @@ final class HuntVision implements AutoCloseable {
     private final Map<String,Mat> templates=new HashMap<>();
     private final Numbers numbers;
     private final FeedbackVision feedback;
+    private final HuntGlyphs glyphs;
     private static final Pattern INTEGER=Pattern.compile("^[0-9]{1,5}$");
     HuntVision(FeedbackVision.Assets assets,Numbers numbers){
-        this.numbers=numbers;feedback=new FeedbackVision(assets);
-        String[] names={"map_search","map_city","search","tab_beast","tab_giant","selection","level_minus","level_plus","rally_action","attack_action","rally_title","rally_start","formation","deploy","march","energy_title","energy_label","energy_can","energy_use","energy_close","flag0","flag1","flag2","flag3","flag4","flag5"};
+        this.numbers=numbers;feedback=new FeedbackVision(assets);glyphs=new HuntGlyphs(assets);
+        String[] names={"level_label","map_search","map_city","search","tab_beast","tab_giant","selection","level_minus","level_plus","rally_action","attack_action","rally_title","rally_start","formation","deploy","march","energy_title","energy_label","energy_can","energy_use","energy_close","flag0","flag1","flag2","flag3","flag4","flag5"};
         for(String name:names)try(InputStream in=assets.open("hunt/"+name+".png")){
             Bitmap b=BitmapFactory.decodeStream(in);Mat rgba=new Mat(),gray=new Mat();
             try{Utils.bitmapToMat(b,rgba);Imgproc.cvtColor(rgba,gray,Imgproc.COLOR_RGBA2GRAY);templates.put(name,gray);}finally{b.recycle();rgba.release();}
@@ -108,7 +109,8 @@ final class HuntVision implements AutoCloseable {
                 Point action=rally!=null?rally:attack;
                 if(action!=null){
                     f.page=rally!=null?Page.GIANT:Page.BEAST;point(f,Kind.TARGET,action,s);
-                    f.level=level(read(image,s,200,(int)action.y-174,365,(int)action.y-147));
+                    Point prefix=hit(gray,"level_label",165,(int)action.y-183,300,(int)action.y-142);
+                    if(prefix!=null)f.level=glyphs.level(image,s,(int)Math.round(prefix.x+templates.get("level_label").cols()/2.),(int)Math.round(prefix.y),numbers);
                     f.point(Kind.BACK,(int)(15*s),(int)(rows*.45*s));return f;
                 }
             }
@@ -126,11 +128,12 @@ final class HuntVision implements AutoCloseable {
             if(city!=null&&entry!=null){
                 f.page=Page.MAP;point(f,Kind.OPEN,entry,s);
                 Point march=hit(gray,"march",15,230,100,400,.72);
-                if(march!=null){int y=(int)march.y;f.used=MarchCount.used(read(image,s,146,y-16,190,y+16));}
+                if(march!=null){int y=(int)march.y;f.used=MarchCount.used(read(image,s,146,y-16,190,y+16));f.marches=glyphs.marches(image,s,y,f.used);}
                 else{
                     int used=MarchCount.used(read(image,s,146,290,190,320));
                     // The absent header is accepted only with two independently recognized map controls.
                     f.used=used>=0?used:0;
+                    if(f.used==0)f.marches=new HuntMarches.Row[0];
                 }
             }
             return f;

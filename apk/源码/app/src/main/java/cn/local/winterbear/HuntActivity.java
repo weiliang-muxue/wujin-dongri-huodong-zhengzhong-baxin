@@ -25,8 +25,9 @@ public final class HuntActivity extends Activity {
         root.addView(Ui.text(this,mode==HuntFlow.Mode.GIANT?"巨兽集结":"野兽集结",28,Ui.TEXT));
         LinearLayout settings=Ui.card(this,root,"本次任务",null);
         Ui.button(this,settings,"目标等级  "+level,false,()->number("目标等级",level,1,99,n->level=n));
-        Ui.button(this,settings,"同时行军上限  "+limit+" / 6",false,()->new AlertDialog.Builder(this).setTitle("同时行军上限").setSingleChoiceItems(new String[]{"1 队","2 队","3 队","4 队","5 队","6 队"},limit-1,(d,n)->{limit=n+1;d.dismiss();render();}).show());
-        settings.addView(Ui.text(this,"从第 1 个预设开始轮换，回城后继续补队。已有行军也计入上限。",14,Ui.MUTED));
+        String activity=mode==HuntFlow.Mode.GIANT?"巨兽":"野兽";
+        Ui.button(this,settings,activity+"同时派出  "+limit+" 队",false,()->new AlertDialog.Builder(this).setTitle(activity+"同时派出的队数").setSingleChoiceItems(new String[]{"1 队","2 队","3 队","4 队","5 队","6 队"},limit-1,(d,n)->{limit=n+1;d.dismiss();render();}).show());
+        settings.addView(Ui.text(this,"只计算本次任务队伍，回城后自动补队。总行军满 6 队时等待空位。",14,Ui.MUTED));
         Ui.button(this,settings,"运行时长  "+minutes+" 分钟",false,()->number("运行分钟数",minutes,1,240,n->minutes=n));
         LinearLayout energy=Ui.card(this,root,"体力补充",null);Switch on=new Switch(this);on.setText("自动使用库存罐头");on.setTextColor(Ui.TEXT);on.setMinHeight(Ui.dp(this,52));on.setChecked(cans);energy.addView(on);on.setOnCheckedChangeListener((v,b)->{cans=b;render();});
         if(cans){Ui.button(this,energy,"本次罐头上限  "+canLimit+" 个",false,()->number("本次最多使用罐头",canLimit,1,9999,n->canLimit=n));energy.addView(Ui.text(this,"每次补 4 个，最后按剩余额度补齐；库存不足本次数量时停止。",14,Ui.MUTED));}

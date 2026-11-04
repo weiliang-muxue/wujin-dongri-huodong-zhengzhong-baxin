@@ -6,7 +6,7 @@ import static cn.local.winterbear.HuntFlow.*;
 public class HuntFlowTest {
     long now=1000;
     HuntFlow create(Mode m,int cap,int cans){HuntFlow f=new HuntFlow(new Options(m,m==Mode.GIANT?8:30,cap,cans,60));f.start(now);return f;}
-    static Frame map(int n){Frame f=new Frame();f.page=Page.MAP;f.used=n;return f;}
+    Frame map(int n){Frame f=new Frame();f.page=Page.MAP;f.used=n;if(n>=0){f.marches=new HuntMarches.Row[n];for(int i=0;i<n;i++)f.marches[i]=new HuntMarches.Row(i*0x9e3779b97f4a7c15L,3600+i*1800-(int)((now+2000)/1000));}return f;}
     static Frame search(Mode m,int n){Frame f=new Frame();f.page=Page.SEARCH;f.category=m.ordinal();f.level=n;return f;}
     static Frame form(){Frame f=new Frame();f.page=Page.FORMATION;java.util.Arrays.fill(f.presets,true);f.knownTroops=f.validTroops=true;return f;}
     static Frame page(Page p,int level){Frame f=new Frame();f.page=p;f.level=level;return f;}
@@ -22,14 +22,16 @@ public class HuntFlowTest {
     }
     @Test public void giantUsesDefaultRallyThenFirstPreset(){HuntFlow f=create(Mode.GIANT,6,0);toFormation(f);assertEquals(0,f.nextPreset);click(f,form(),Kind.DEPLOY);assertEquals(0,f.submitted);see(f,map(1));assertEquals(1,f.submitted);assertEquals(1,f.nextPreset);}
     @Test public void beastBypassesRallyDialog(){HuntFlow f=create(Mode.BEAST,2,0);toFormation(f);assertEquals(Phase.SEND,f.phase);click(f,form(),Kind.DEPLOY);see(f,map(1));assertEquals(1,f.submitted);}
-    @Test public void existingMarchesCountAgainstLimit(){for(int cap=1;cap<=6;cap++){HuntFlow f=create(Mode.GIANT,cap,0);for(int i=0;i<4;i++)assertEquals(Kind.WAIT,see(f,map(cap)).kind);assertEquals(0,f.submitted);}}
-    @Test public void returnHomeReopensSearch(){HuntFlow f=create(Mode.BEAST,2,0);see(f,map(2));see(f,map(2));assertEquals(Kind.WAIT,see(f,map(1)).kind);click(f,map(1),Kind.OPEN);}
+    @Test public void fourGatheringMarchesDoNotUseActivityQuota(){for(Mode mode:Mode.values()){HuntFlow f=create(mode,1,0);enter(f,4);assertEquals(0,f.marches.active());assertEquals(Phase.SEARCH,f.phase);}}
+    @Test public void fullGameSlotsStillWait(){for(Mode mode:Mode.values()){HuntFlow f=create(mode,1,0);see(f,map(6));assertEquals(Kind.WAIT,see(f,map(6)).kind);assertEquals(Kind.WAIT,see(f,map(5)).kind);click(f,map(5),Kind.OPEN);}}
+    @Test public void ownTaskReturnReopensSearch(){HuntFlow f=create(Mode.BEAST,1,0);toFormation(f);click(f,form(),Kind.DEPLOY);see(f,map(1));assertEquals(1,f.marches.active());see(f,map(1));assertEquals(Kind.WAIT,see(f,map(1)).kind);see(f,map(0));click(f,map(0),Kind.OPEN);assertEquals(0,f.marches.active());}
+    @Test public void unrelatedReturnDoesNotFreeTaskQuota(){HuntFlow f=create(Mode.GIANT,1,0);enter(f,4);click(f,search(Mode.GIANT,8),Kind.SEARCH);click(f,page(Page.GIANT,8),Kind.TARGET);click(f,page(Page.RALLY,-1),Kind.LAUNCH);click(f,form(),Kind.PRESET);click(f,form(),Kind.DEPLOY);see(f,map(5));assertEquals(1,f.marches.active());Frame reduced=map(5);reduced.used=4;reduced.marches=java.util.Arrays.copyOfRange(reduced.marches,1,5);see(f,reduced);assertEquals(Kind.WAIT,see(f,reduced).kind);assertEquals(1,f.marches.active());}
     @Test public void invalidMarchCountNeverAssumesFree(){HuntFlow f=create(Mode.BEAST,6,0);assertEquals(Kind.WAIT,see(f,map(-1)).kind);now+=20000;assertEquals(Kind.STOP,see(f,map(-1)).kind);}
     @Test public void staleFrameCannotClick(){HuntFlow f=create(Mode.BEAST,6,0);Frame a=map(0);a.age=4001;assertEquals(Kind.WAIT,see(f,a).kind);assertEquals(Phase.MAP,f.phase);}
     @Test public void levelAdjustmentsAreObserved(){HuntFlow f=create(Mode.GIANT,1,0);enter(f,0);click(f,search(Mode.GIANT,7),Kind.MORE);click(f,search(Mode.GIANT,8),Kind.SEARCH);}
     @Test public void cannotSearchWrongCategory(){HuntFlow f=create(Mode.GIANT,1,0);enter(f,0);click(f,search(Mode.BEAST,8),Kind.CATEGORY);assertEquals(Phase.SEARCH,f.phase);}
     @Test public void stuckLevelPausesInsteadOfClickingForever(){HuntFlow f=create(Mode.BEAST,1,0);enter(f,0);for(int i=0;i<3;i++)click(f,search(Mode.BEAST,29),Kind.MORE);assertEquals(Kind.STOP,see(f,search(Mode.BEAST,29)).kind);}
-    @Test public void wrongTargetLevelNeverAttacked(){HuntFlow f=create(Mode.BEAST,1,0);enter(f,0);click(f,search(Mode.BEAST,30),Kind.SEARCH);assertEquals(Kind.WAIT,see(f,page(Page.BEAST,29)).kind);now+=20000;assertEquals(Kind.STOP,see(f,page(Page.BEAST,29)).kind);}
+    @Test public void wrongTargetLevelNeverAttacked(){HuntFlow f=create(Mode.BEAST,1,0);enter(f,0);click(f,search(Mode.BEAST,30),Kind.SEARCH);assertEquals(Kind.STOP,see(f,page(Page.BEAST,29)).kind);}
     @Test public void wrongTargetTypeNeverAttacked(){HuntFlow f=create(Mode.BEAST,1,0);enter(f,0);click(f,search(Mode.BEAST,30),Kind.SEARCH);assertEquals(Kind.WAIT,see(f,page(Page.GIANT,30)).kind);}
     @Test public void unreadableLevelEventuallyPauses(){HuntFlow f=create(Mode.BEAST,1,0);enter(f,0);assertEquals(Kind.WAIT,see(f,search(Mode.BEAST,-1)).kind);now+=20000;assertEquals(Kind.STOP,see(f,search(Mode.BEAST,-1)).kind);}
     @Test public void failedGestureDoesNotAdvance(){HuntFlow f=create(Mode.BEAST,1,0);see(f,map(0));assertEquals(Kind.OPEN,see(f,map(0)).kind);f.complete(false,now);assertFalse(f.running);assertEquals(0,f.submitted);}

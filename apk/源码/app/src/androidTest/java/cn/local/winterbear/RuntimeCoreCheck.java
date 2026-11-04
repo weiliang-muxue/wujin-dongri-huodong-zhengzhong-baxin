@@ -23,7 +23,7 @@ public final class RuntimeCoreCheck {
             BearOverlayGuardTest.class,cn.local.bullseye.FloatingGuardTest.class,cn.local.bullseye.SessionGuardTest.class,
             ModeGateTest.class,MarchCountTest.class,MarchFlowTest.class,RallyOrderTest.class,
             GestureGateTest.class,MarchSimulationTest.class,LiveMapCheckTest.class,
-            TroopCountTest.class,ForegroundGateTest.class,HuntFlowTest.class);
+            TroopCountTest.class,ForegroundGateTest.class,HuntFlowTest.class,HuntMarchesTest.class);
         for(Failure failure:tests.getFailures())System.out.println(failure.getTrace());
         System.out.println("ART JUNIT: "+tests.getRunCount()+" tests, "+tests.getFailureCount()+" failures");
         if(!tests.wasSuccessful())throw new AssertionError("Android regression failure");

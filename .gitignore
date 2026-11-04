@@ -2,6 +2,8 @@
 *.exe
 *.apk
 *.aab
+*.aar
+**/libs/*.build.json
 *.msi
 *.zip
 *.mp4

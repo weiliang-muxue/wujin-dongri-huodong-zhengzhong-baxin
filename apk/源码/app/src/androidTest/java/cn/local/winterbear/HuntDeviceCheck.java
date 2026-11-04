@@ -47,7 +47,7 @@ public final class HuntDeviceCheck extends Instrumentation {
     }
     @Override public void onStart(){Bundle output=new Bundle();try{
         screen(ModeActivity.class,true,"ui-modes","打熊","正中靶心","巨兽集结","野兽集结");
-        screen(HuntActivity.class,true,"ui-giant","巨兽集结","目标等级  8","同时行军上限  1 / 6");
+        screen(HuntActivity.class,true,"ui-giant","巨兽集结","目标等级  8","巨兽同时派出  1 队");
         screen(HuntActivity.class,false,"ui-beast","野兽集结","目标等级  30","自动使用库存罐头");
         screen(PermissionActivity.class,true,"ui-permissions","屏幕操作权限","被“敏感权限 / 受限设置”拦住","找不到助手，或设置打不开");
         foldCheck();

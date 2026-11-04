@@ -21,17 +21,28 @@ final class CountdownDigits {
         int width(){return right-left;}int height(){return bottom-top;}
     }
     int read(byte[] gray,int width,int height){
+        return read(gray,width,height,false,190);
+    }
+    int readSmall(byte[] gray,int width,int height){
+        int value=-1;
+        for(int threshold:new int[]{150,170,190,210}){
+            int candidate=read(gray,width,height,true,threshold);
+            if(candidate>=0){if(value>=0&&value!=candidate)return -1;value=candidate;}
+        }
+        return value;
+    }
+    private int read(byte[] gray,int width,int height,boolean smallFont,int threshold){
         if(width<70||height<16||gray.length!=width*height)return -1;
         boolean[] mask=new boolean[gray.length];int[] columns=new int[width];
-        for(int i=0;i<gray.length;i++)if((gray[i]&255)>190){mask[i]=true;columns[i%width]++;}
-        int columnMin=Math.max(2,Math.round(width*4f/195));
+        for(int i=0;i<gray.length;i++)if((gray[i]&255)>threshold){mask[i]=true;columns[i%width]++;}
+        int columnMin=smallFont?2:Math.max(2,Math.round(width*4f/195));
         List<Glyph> groups=new ArrayList<>();
         for(int x=0;x<width;){
             if(columns[x]<columnMin){x++;continue;}
             int left=x;while(x<width&&columns[x]>=columnMin)x++;
             int top=height,bottom=-1;
             for(int y=0;y<height;y++)for(int j=left;j<x;j++)if(mask[y*width+j]){top=Math.min(top,y);bottom=Math.max(bottom,y);}
-            if(x-left>=Math.max(1,Math.round(width/100f))&&bottom-top+1>=Math.max(6,height/8))groups.add(new Glyph(left,x,top,bottom+1));
+            if(x-left>=(smallFont?1:Math.max(1,Math.round(width/100f)))&&bottom-top+1>=Math.max(6,height/8))groups.add(new Glyph(left,x,top,bottom+1));
         }
         if(groups.size()!=8||!colon(groups.get(2),mask,width)||!colon(groups.get(5),mask,width))return -1;
         int[] digits=new int[6];int k=0;
@@ -47,13 +58,13 @@ final class CountdownDigits {
         }
         return runs==2;
     }
-    private byte[] normalize(Glyph g,boolean[] mask,int width){
+    byte[] normalize(Glyph g,boolean[] mask,int width){
         byte[] result=new byte[W*H];int scaled=Math.min(W,Math.round(g.width()*H/(float)g.height())),offset=(W-scaled)/2;
         if(scaled<1)return result;
         for(int y=0;y<H;y++)for(int x=0;x<scaled;x++)if(mask[(g.top+y*g.height()/H)*width+g.left+x*g.width()/scaled])result[y*W+offset+x]=1;
         return result;
     }
-    private int digit(byte[] image){
+    int digit(byte[] image){
         double best=1,second=1;int value=-1;
         for(int d=0;d<10;d++){
             double score=1;

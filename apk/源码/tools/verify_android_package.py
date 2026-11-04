@@ -20,7 +20,15 @@ def verify(apk: Path, version: str) -> dict:
         if tuple(map(int,version.split('.'))) >= (2,1,0):
             for key in ('map_search','search','rally_action','attack_action','rally_start','energy_can','energy_use','energy_close'):
                 if f'assets/hunt/{key}.png' not in names:raise ValueError('Missing hunt asset: '+key)
+        if tuple(map(int,version.split('.'))) >= (2,1,1):
+            for key in ('level_label','level_digits','march_digits'):
+                if f'assets/hunt/{key}.png' not in names:raise ValueError('Missing hunt number asset: '+key)
         if any('/x86' in name for name in names):raise ValueError('Unexpected desktop ABI')
+        abis={name.split('/')[1] for name in names if name.startswith('lib/')}
+        if abis!={'arm64-v8a','armeabi-v7a'}:raise ValueError('Missing supported phone ABI: '+str(abis))
+        for abi in abis:
+            for lib in ('libopencv_java4.so','libc++_shared.so','libmlkit_google_ocr_pipeline.so'):
+                if f'lib/{abi}/{lib}' not in names:raise ValueError('Missing native runtime: '+abi+'/'+lib)
     if not dex:
         raise ValueError('APK contains no DEX bytecode')
     forbidden = ('倍率未识别清楚', '请重传首页截图', '第一张图的倍率按钮不清楚',

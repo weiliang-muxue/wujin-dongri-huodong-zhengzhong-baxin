@@ -15,6 +15,7 @@ final class HuntFlow {
     }
     static final class Frame {
         Page page=Page.UNKNOWN; int used=-1,level=-1,category=-1,stock=-1,energy=-1;
+        HuntMarches.Row[] marches;
         boolean validTroops,knownTroops,lowEnergy; final boolean[] presets=new boolean[6];
         long age; final int[][] points=new int[Kind.values().length][2];final int[][] flags=new int[6][2];
         void point(Kind k,int x,int y){points[k.ordinal()]=new int[]{x,y};}
@@ -24,7 +25,8 @@ final class HuntFlow {
         Action(Kind k,String m,int p){kind=k;message=m;preset=p;}
     }
     final Options options; Phase phase=Phase.MAP; boolean running;
-    int nextPreset,submitted,cansUsed; private int selected,usedBefore=-1,stableUsed=-2,stableCount,attempted;
+    final HuntMarches marches=new HuntMarches();
+    int nextPreset,submitted,cansUsed; private int selected,stableUsed=-2,stableCount,attempted;
     private int lastLevel=-1,levelFailures,categoryAttempts,batchLeft,stockBefore=-1,energyBefore=-1;
     private boolean awaitingCan,closingEnergy;private Kind pending;private long expires,waitUntil,since,unknownSince=-1;
     HuntFlow(Options options){this.options=options;}
@@ -78,8 +80,8 @@ final class HuntFlow {
         }
         if(phase==Phase.VERIFY){
             if(f.page==Page.MAP&&f.used>=0){
-                if(f.used>usedBefore){submitted++;nextPreset=(selected+1)%6;attempted=0;phase(Phase.MAP,now);stableCount=0;return waitFor("已出征 "+submitted+" 次 · 行军 "+f.used+"/6");}
-                return now-since>15000?halt("未确认行军增加，已暂停，请检查出征结果"):waitFor("等待行军数量更新");
+                if(f.marches!=null&&f.marches.length==f.used&&marches.observe(f.marches,now-f.age,true)){submitted++;nextPreset=(selected+1)%6;attempted=0;phase(Phase.MAP,now);stableCount=0;return waitFor(activity()+" "+marches.active()+"/"+options.limit+" 队 · 已出征 "+submitted+" 次");}
+                return now-since>15000?halt("未确认新增任务队伍，已暂停，请检查出征结果"):waitFor("确认本次出征队伍");
             }
             return unknown(now,"等待出征结果");
         }
@@ -87,11 +89,14 @@ final class HuntFlow {
             if(f.page==Page.SEARCH)return act(Kind.BACK,"先回地图检查行军空位");
             if(f.page!=Page.MAP)return unknown(now,"请停在野外地图");
             if(f.used<0)return unknown(now,"读取地图行军数量");
-            unknownSince=-1;
             if(f.used!=stableUsed){stableUsed=f.used;stableCount=1;return waitFor("确认行军 "+f.used+"/6");}
             if(++stableCount<2)return waitFor("再次确认行军数量");
-            if(f.used>=options.limit)return waitFor("行军 "+f.used+"/6 · 等待回城（上限 "+options.limit+"）");
-            usedBefore=f.used;selected=nextPreset;lastLevel=-1;levelFailures=0;categoryAttempts=0;
+            if(f.marches==null||f.marches.length!=f.used)return unknown(now,"读取任务队伍，请保持行军列表可见");
+            unknownSince=-1;
+            marches.observe(f.marches,now-f.age,false);
+            if(marches.active()>=options.limit)return waitFor(activity()+" "+marches.active()+"/"+options.limit+" 队 · 等待本次队伍回城");
+            if(f.used>=6)return waitFor("总行军 6/6 · 等待空位");
+            selected=nextPreset;lastLevel=-1;levelFailures=0;categoryAttempts=0;
             return act(Kind.OPEN,"打开地图搜索");
         }
         if(phase==Phase.SEARCH){
@@ -113,7 +118,8 @@ final class HuntFlow {
         if(phase==Phase.RESULT){
             Page expected=options.mode==Mode.GIANT?Page.GIANT:Page.BEAST;
             if(f.page!=expected)return unknown(now,"等待对应目标搜索结果");
-            if(f.level!=options.level)return unknown(now,"核对目标等级");
+            if(f.level<1)return unknown(now,"目标等级未读清，正在重新识别");
+            if(f.level!=options.level)return halt("目标为 "+f.level+" 级，与设置 "+options.level+" 级不同，已暂停");
             return act(Kind.TARGET,options.mode==Mode.GIANT?"点击集结":"点击攻击");
         }
         if(phase==Phase.RALLY){
@@ -135,6 +141,7 @@ final class HuntFlow {
         }
         return unknown(now,"等待识别游戏页面");
     }
+    private String activity(){return options.mode==Mode.GIANT?"巨兽":"野兽";}
     void complete(boolean success,long now){
         Kind k=pending;pending=null;if(!running||k==null)return;
         if(!success){stop();return;}

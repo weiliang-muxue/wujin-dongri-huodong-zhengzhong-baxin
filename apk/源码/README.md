@@ -4,9 +4,9 @@ JDK 17、Gradle 8.9、Android SDK 35 extension 15、Build Tools 35.0.0。设置 
 
 构建：`gradlew.bat :app:testEngine :app:assembleRelease :app:lintRelease`。
 
-将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.1.0.apk。
+将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.1.1.apk。
 
-检查成品：`python tools/verify_android_package.py ../无尽冬日助手-2.1.0.apk --version 2.1.0`。
+检查成品：`python tools/verify_android_package.py ../无尽冬日助手-2.1.1.apk --version 2.1.1`。
 
 一个 launcher：ModeActivity；一个无障碍服务：BearService。cn.local.bullseye.GameService 和 HuntController 是该服务内的模块，不是其他 Android Service。ModeGate、运行代次和输入前检查共同限制旧任务回调。返回活动选择会停止所有模块。
 
@@ -14,7 +14,23 @@ JDK 17、Gradle 8.9、Android SDK 35 extension 15、Build Tools 35.0.0。设置 
 
 Release 开启 R8 与资源裁剪，仅打包 ARM64 和 ARMv7，四套流程共用 OpenCV / ML Kit。应用合并清单移除联网权限。
 
-2.1.0：HuntFlow 管理巨兽集结、野兽攻击、1～6 行军上限、预设顺序及库存罐头额度；HuntVision 定位游戏控件并读取等级、行军和库存；HuntController 在同一无障碍服务中运行。HuntActivity 的设置仅保留在本次任务内。OverlayFold 为四个活动提供手动收起、点击展开，状态更新不会重新挂载窗口。
+HuntFlow 管理巨兽集结、野兽攻击、1～6 活动队数、预设顺序及库存罐头额度；HuntVision 定位游戏控件并读取等级、行军和库存；HuntController 在同一无障碍服务中运行。HuntActivity 的设置仅保留在本次任务内。OverlayFold 为四个活动提供手动收起、点击展开，状态更新不会重新挂载窗口。
+
+2.1.1 的 HuntMarches 跟踪本次派出的队伍：已存在的采集等队伍只占总行军空位，不占本次活动额度。使用图标指纹和倒计时结束时间匹配队伍，列表重排不改变归属；多个行的归属不明确时保留最大的可能任务队数，避免多派。缺失或部分识别的行军列表不用于释放额度。HuntGlyphs 单独读取“等级”后的蓝色数字，保留仅数字区域的 OCR 回退，避免整行中文干扰。
+
+## 精简图像库
+
+语言保持 Java。2.1.1 按[OpenCV 官方构建选项](https://docs.opencv.org/4.12.0/db/d05/tutorial_config_reference.html)只构建 `core,imgproc,java`，去掉本应用不用的算法、视频、网络模型等模块；保留两个手机 ABI、离线 ML Kit 和原有功能。使用官方 4.12.0 源码提交 `49486f61fb25722cbcf586b7f4320921d46fb38e`、NDK r30、CMake 3.31.6、Ninja 1.11.1.3。具体参数与库 SHA-256 写入生成的本地 `.build.json`。
+
+先从官方渠道准备 OpenCV 源码、NDK 和原版 Maven AAR，设置 JDK/SDK 环境，再运行：
+
+```text
+python tools/build_minimal_opencv.py --source <opencv源码目录> --ndk <NDK目录> --original-aar <opencv-4.12.0.aar> --work <本地构建目录> --output app/libs/opencv-minimal-4.12.0.aar --cmake <cmake路径> --ninja <ninja路径>
+```
+
+打包脚本使用 NDK 的 `llvm-strip --strip-unneeded` 清除本地库调试符号，在副本上处理，不修改 NDK 或原始编译输出。生成的 AAR 不上传 Git。存在该文件时 Gradle 自动使用精简库；缺失时回退到原版 Maven 依赖，源码仍可直接构建，但 APK 会更大。Release 仍仅包含 ARM64/ARMv7；x86_64 只用于 `-PemulatorTest`。精简库须运行原报错、倒计时、屏幕兼容及狩猎图像回归。
+
+`run_feedback_regression.py` 新增 `--reported-fixtures <目录>`：目录包含私人原图 `reported-map.png` 和 `reported-level.png`，另需 `--hunt-fixtures` 提供旧巨兽/野兽原图。HuntReportedRuntimeCheck 直接读取原图等级字形、四个采集队倒计时和新增集结队倒计时，再驱动状态机；仅总行军数字 4/6、1/6 使用标注，等级不允许用标注替代。全图、录屏和测试 APK 不提交仓库。
 
 HuntOverlayGuard 使用当前窗口系统栏/刘海边距，在固定识别区域之外选择浮窗位置。BearService / GameService 放不下展开浮窗时尝试收起后重新避让；收起操作会使旧截图失效。新增宽竖屏检查仅验证窗口几何，未扩宽 ReferenceLayout 的游戏识别比例白名单。
 

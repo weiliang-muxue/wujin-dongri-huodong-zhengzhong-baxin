@@ -9,6 +9,7 @@ p=argparse.ArgumentParser(description=__doc__)
 p.add_argument('--adb',required=True);p.add_argument('--serial',required=True)
 p.add_argument('--fixtures',type=Path,required=True);p.add_argument('--output',type=Path,required=True)
 p.add_argument('--hunt-fixtures',type=Path);p.add_argument('--hunt-only',action='store_true')
+p.add_argument('--reported-fixtures',type=Path)
 a=p.parse_args()
 if not a.serial.startswith('emulator-'):p.error('Use a dedicated emulator')
 root=Path(__file__).resolve().parents[1];a.output.mkdir(parents=True,exist_ok=True)
@@ -28,6 +29,9 @@ for name in ['reported-overflow.png','huawei-map.png','xiaomi-list.png','countdo
 if a.hunt_fixtures:
     for name in ['map','giant_search','giant_detail','rally','giant_formation','map_one','beast_search','beast_detail','beast_formation','low_energy','energy']:
         (bundle/'fixtures'/f'{name}.png').write_bytes((a.hunt_fixtures/f'{name}.png').read_bytes())
+if a.reported_fixtures:
+    for name in ('reported-map','reported-level'):
+        (bundle/'fixtures'/f'{name}.png').write_bytes((a.reported_fixtures/f'{name}.png').read_bytes())
 def adb(*args,timeout=180):
     r=subprocess.run([a.adb,'-s',a.serial,*args],capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=timeout)
     if r.returncode:raise RuntimeError(r.stdout+r.stderr)
@@ -50,6 +54,9 @@ with (a.output/'android-feedback-runtime.txt').open('w',encoding='utf-8') as log
         return ''.join(lines)
     core=run('RuntimeCoreCheck',remote+'/simulation')
     if '0 failures' not in core:raise RuntimeError('ART test result missing')
+    if a.reported_fixtures:
+        result=run('HuntReportedRuntimeCheck',f'{remote}/lib {remote}/fixtures {remote}/assets')
+        if 'ANDROID REPORTED PASS:' not in result:raise RuntimeError('Reported regression result missing')
     if a.hunt_fixtures:
         result=run('HuntRuntimeCheck',f'{remote}/lib {remote}/fixtures {remote}/assets')
         if 'ANDROID HUNT PASS:' not in result:raise RuntimeError('Hunt image test result missing')
