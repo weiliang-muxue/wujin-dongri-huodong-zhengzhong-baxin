@@ -23,6 +23,10 @@ def verify(apk: Path, version: str) -> dict:
         if tuple(map(int,version.split('.'))) >= (2,1,1):
             for key in ('level_label','level_digits','march_digits'):
                 if f'assets/hunt/{key}.png' not in names:raise ValueError('Missing hunt number asset: '+key)
+        stamina_budget = tuple(map(int,version.split('.'))) >= (2,1,4)
+        if stamina_budget:
+            for key in ('meat','wood','coal','iron','rally','return'):
+                if f'assets/hunt/march_{key}.png' not in names:raise ValueError('Missing march identity asset: '+key)
         if any('/x86' in name for name in names):raise ValueError('Unexpected desktop ABI')
         abis={name.split('/')[1] for name in names if name.startswith('lib/')}
         if abis!={'arm64-v8a','armeabi-v7a'}:raise ValueError('Missing supported phone ABI: '+str(abis))
@@ -41,6 +45,13 @@ def verify(apk: Path, version: str) -> dict:
         for text in ('核对出征兵力', '读取出征兵力'):
             if any(text.encode('utf-8') in blob for blob in dex):
                 raise ValueError('APK still contains removed troop OCR gate: ' + text)
+    if stamina_budget:
+        for text in ('运行时长  ', '运行分钟数', '已达到本次时长'):
+            # The bear mode has a longer, unrelated dialog title containing
+            # the same words. Match the old hunt dialog's complete DEX string.
+            needle=text.encode('utf-8')+(b'\0' if text=='运行分钟数' else b'')
+            if any(needle in blob for blob in dex):
+                raise ValueError('APK still contains removed hunt duration: ' + text)
     for text in ('首页实际余券', '正在切换 1 倍，等待画面确认', '首页确认余券为 0，已全部用完', '结算完成，自动返回首页'):
         if not any(text.encode('utf-8') in blob for blob in dex):
             raise ValueError('APK is missing expected behavior marker: ' + text)
@@ -49,6 +60,7 @@ def verify(apk: Path, version: str) -> dict:
         raise ValueError('APK is missing the visible version label: ' + label)
     return {'apk': str(apk), 'version_label': label, 'legacy_multiplier_ocr': False,
             'direct_deploy_without_troop_ocr': direct_deploy,
+            'hunt_stamina_budget_without_duration': stamina_budget,
             'sha256': hashlib.sha256(apk.read_bytes()).hexdigest()}
 
 

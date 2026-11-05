@@ -6,9 +6,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 /** Small game-font readers. Level digits are isolated from the Chinese target name. */
-final class HuntGlyphs {
+final class HuntGlyphs implements AutoCloseable {
     private final CountdownDigits levels,timers;
-    HuntGlyphs(FeedbackVision.Assets assets){levels=load(assets,"level_digits");timers=load(assets,"march_digits");}
+    private final MarchRowVision icons;
+    HuntGlyphs(FeedbackVision.Assets assets){levels=load(assets,"level_digits");timers=load(assets,"march_digits");icons=new MarchRowVision(assets);}
     private static CountdownDigits load(FeedbackVision.Assets assets,String name){
         CountdownDigits d=new CountdownDigits();
         try(InputStream in=assets.open("hunt/"+name+".png")){
@@ -61,12 +62,22 @@ final class HuntGlyphs {
             return HuntVision.number(ocr.text(crop,number));
         }finally{crop.recycle();}
     }
-    HuntMarches.Row[] marches(Bitmap image,double scale,int header,int count){
-        return marches(image,scale,header,count,0);
-    }
-    HuntMarches.Row[] marches(Bitmap image,double scale,int header,int count,int dx){
+    HuntMarches.Row[] marches(Bitmap image,double scale,int header,int count,int dx,org.opencv.core.Mat grayImage){
         if(count==0)return new HuntMarches.Row[0];
         if(count<0||count>6)return null;
+        List<MarchRowVision.Marker> markers=icons.find(grayImage,header,dx);
+        if(markers.size()>count)return null; // Header/list are in different animation frames.
+        if(markers.size()==count){
+            HuntMarches.Row[] result=new HuntMarches.Row[count];int last=header;
+            for(int i=0;i<count;i++){
+                MarchRowVision.Marker m=markers.get(i);
+                if(m.y-last<(i==0?28:35)||m.y-last>65)return null;
+                result[i]=new HuntMarches.Row(icon(image,scale,m.y,dx),timer(image,scale,m.y,dx),m.type);last=m.y;
+            }
+            return result;
+        }
+        // Unknown icon styles retain the previous timer reader. Known resource
+        // anchors still prevent those rows from inheriting a returned hunt slot.
         int top=header+25,height=Math.min(345,(int)(image.getHeight()/scale)-top);
         if(height<32)return null;
         Bitmap strip=region(image,scale,55+dx,top,145+dx,top+height,180,height*2);
@@ -81,13 +92,24 @@ final class HuntGlyphs {
                 int min=32,max=0;for(int i=0;i<band.length;i++)if((band[i]&255)>190){min=Math.min(min,i/180);max=Math.max(max,i/180);}
                 int center=top+(y+(min+max)/2)/2;
                 if(rows.isEmpty()?center-header<35||center-header>65:center-lastY<35||center-lastY>65)continue;
-                rows.add(new HuntMarches.Row(icon(image,scale,center-9,dx),seconds));lastY=center;
+                HuntMarches.Type type=HuntMarches.Type.UNKNOWN;
+                for(MarchRowVision.Marker m:markers)if(Math.abs(m.y-(center-9))<10){type=m.type;break;}
+                rows.add(new HuntMarches.Row(icon(image,scale,center-9,dx),seconds,type));lastY=center;
                 if(rows.size()==count)return rows.toArray(new HuntMarches.Row[0]);
                 y+=60;
             }
             return null; // A partially read list never releases an owned slot.
         }finally{strip.recycle();}
     }
+    private int timer(Bitmap image,double scale,int center,int dx){
+        Bitmap strip=region(image,scale,55+dx,center+1,145+dx,center+20,180,38);
+        if(strip==null)return -1;
+        try{int[] p=new int[180*38];byte[] gray=new byte[p.length];strip.getPixels(p,0,180,0,0,180,38);
+            for(int i=0;i<p.length;i++)gray[i]=(byte)Math.min(Color.red(p[i]),Math.min(Color.green(p[i]),Color.blue(p[i])));
+            return timers.readSmall(gray,180,38);
+        }finally{strip.recycle();}
+    }
+    public void close(){icons.close();}
     private long icon(Bitmap image,double scale,int center,int dx){
         Bitmap b=region(image,scale,12+dx,center-13,39+dx,center+14,8,8);if(b==null)return 0;
         try{

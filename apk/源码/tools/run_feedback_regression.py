@@ -14,7 +14,8 @@ p.add_argument('--dispatch-fixtures',type=Path)
 p.add_argument('--huawei-fixtures',type=Path)
 p.add_argument('--adaptive-layouts',action='store_true')
 p.add_argument('--bullseye-fixtures',type=Path)
-p.add_argument('--suite',action='append',choices=['core','bullseye','adaptive','huawei','direct','reported','hunt','feedback','countdown','compat'],help='Run selected suites; default runs every supplied suite')
+p.add_argument('--return-fixtures',type=Path,help='Private Xiaomi rally / returning / returned screenshots')
+p.add_argument('--suite',action='append',choices=['core','bullseye','adaptive','huawei','direct','reported','marches','return','hunt','feedback','countdown','compat'],help='Run selected suites; default runs every supplied suite')
 p.add_argument('--adaptive-bear-only',action='store_true')
 a=p.parse_args()
 if not a.serial.startswith('emulator-'):p.error('Use a dedicated emulator')
@@ -49,6 +50,9 @@ if a.huawei_fixtures:
 if a.bullseye_fixtures:
     for name in ('bullseye-home','bullseye-board'):
         (bundle/'fixtures'/f'{name}.png').write_bytes((a.bullseye_fixtures/f'{name}.png').read_bytes())
+if a.return_fixtures:
+    for name in ('xiaomi-rally','xiaomi-returning','xiaomi-returned-toast','xiaomi-returned'):
+        (bundle/'fixtures'/f'{name}.jpg').write_bytes((a.return_fixtures/f'{name}.jpg').read_bytes())
 def adb(*args,timeout=180):
     r=subprocess.run([a.adb,'-s',a.serial,*args],capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=timeout)
     if r.returncode:raise RuntimeError(r.stdout+r.stderr)
@@ -88,6 +92,12 @@ with (a.output/'android-feedback-runtime.txt').open('w',encoding='utf-8') as log
     if a.reported_fixtures and wanted('reported'):
         result=run('HuntReportedRuntimeCheck',f'{remote}/lib {remote}/fixtures {remote}/assets')
         if 'ANDROID REPORTED PASS:' not in result:raise RuntimeError('Reported regression result missing')
+    if a.reported_fixtures and a.suite and 'marches' in a.suite:
+        result=run('HuntReportedRuntimeCheck',f'{remote}/lib {remote}/fixtures {remote}/assets maps')
+        if 'ANDROID REPORTED PASS: 12' not in result:raise RuntimeError('March image regression result missing')
+    if a.return_fixtures and wanted('return'):
+        result=run('HuntReturnRuntimeCheck',f'{remote}/lib {remote}/fixtures {remote}/assets')
+        if 'ANDROID RETURN PASS: 32' not in result:raise RuntimeError('Return image regression result missing')
     if a.hunt_fixtures and wanted('hunt'):
         result=run('HuntRuntimeCheck',f'{remote}/lib {remote}/fixtures {remote}/assets')
         if 'ANDROID HUNT PASS:' not in result:raise RuntimeError('Hunt image test result missing')

@@ -18,10 +18,10 @@ public final class HuaweiRuntimeCheck {
     static void detail(Bitmap b,FeedbackVision.Assets assets,String name){
         Frame f=observe(b,assets,Mode.GIANT);
         require(f.page==Page.GIANT&&f.level==8,name+" target="+f.page+" level="+f.level);
-        HuntFlow flow=new HuntFlow(new Options(Mode.GIANT,8,1,0,60));flow.start(0);flow.phase=Phase.RESULT;
+        HuntFlow flow=new HuntFlow(new Options(Mode.GIANT,8,1,0));flow.start(0);flow.phase=Phase.RESULT;
         require(flow.next(f,1000).kind==Kind.TARGET,name+" did not click rally");
         require(flow.next(f,1100).kind==Kind.WAIT,name+" duplicate rally");
-        HuntFlow wrong=new HuntFlow(new Options(Mode.GIANT,7,1,0,60));wrong.start(0);wrong.phase=Phase.RESULT;
+        HuntFlow wrong=new HuntFlow(new Options(Mode.GIANT,7,1,0));wrong.start(0);wrong.phase=Phase.RESULT;
         require(wrong.next(f,1000).kind==Kind.STOP,name+" wrong level accepted");
         checks++;System.out.println("HUAWEI IMAGE PASS: "+name);System.out.flush();
     }
@@ -68,7 +68,7 @@ public final class HuaweiRuntimeCheck {
         Bitmap map=load(fixtures,"huawei-map-video");
         try(HuntVision v=new HuntVision(assets,(b,r)->"")){
             Frame f=v.observe(map,Mode.BEAST);require(f.page==Page.MAP&&f.used==0,"Recording map not recognized");
-            HuntFlow flow=new HuntFlow(new Options(Mode.BEAST,30,1,0,60));flow.start(0);flow.next(f,1000);
+            HuntFlow flow=new HuntFlow(new Options(Mode.BEAST,30,1,0));flow.start(0);flow.next(f,1000);
             require(flow.next(f,2000).kind==Kind.OPEN,"Map did not open search");checks++;
         }finally{map.recycle();}
         BearFlow.Frame bear=CompatibilityRuntimeCheck.read(

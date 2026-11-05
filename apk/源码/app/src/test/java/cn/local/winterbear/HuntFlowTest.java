@@ -5,7 +5,7 @@ import static cn.local.winterbear.HuntFlow.*;
 
 public class HuntFlowTest {
     long now=1000;
-    HuntFlow create(Mode m,int cap,int cans){HuntFlow f=new HuntFlow(new Options(m,m==Mode.GIANT?8:30,cap,cans,60));f.start(now);return f;}
+    HuntFlow create(Mode m,int cap,int cans){HuntFlow f=new HuntFlow(new Options(m,m==Mode.GIANT?8:30,cap,cans));f.start(now);return f;}
     Frame map(int n){Frame f=new Frame();f.page=Page.MAP;f.used=n;if(n>=0){f.marches=new HuntMarches.Row[n];for(int i=0;i<n;i++)f.marches[i]=new HuntMarches.Row(i*0x9e3779b97f4a7c15L,3600+i*1800-(int)((now+2000)/1000));}return f;}
     static Frame search(Mode m,int n){Frame f=new Frame();f.page=Page.SEARCH;f.category=m.ordinal();f.level=n;return f;}
     static Frame form(){Frame f=new Frame();f.page=Page.FORMATION;java.util.Arrays.fill(f.presets,true);return f;}
@@ -25,6 +25,28 @@ public class HuntFlowTest {
     @Test public void fourGatheringMarchesDoNotUseActivityQuota(){for(Mode mode:Mode.values()){HuntFlow f=create(mode,1,0);enter(f,4);assertEquals(0,f.marches.active());assertEquals(Phase.SEARCH,f.phase);}}
     @Test public void fullGameSlotsStillWait(){for(Mode mode:Mode.values()){HuntFlow f=create(mode,1,0);see(f,map(6));assertEquals(Kind.WAIT,see(f,map(6)).kind);assertEquals(Kind.WAIT,see(f,map(5)).kind);click(f,map(5),Kind.OPEN);}}
     @Test public void ownTaskReturnReopensSearch(){HuntFlow f=create(Mode.BEAST,1,0);toFormation(f);click(f,form(),Kind.DEPLOY);see(f,map(1));assertEquals(1,f.marches.active());see(f,map(1));assertEquals(Kind.WAIT,see(f,map(1)).kind);see(f,map(0));click(f,map(0),Kind.OPEN);assertEquals(0,f.marches.active());}
+    Frame typedMap(HuntMarches.Type... types){Frame f=map(types.length);for(int i=0;i<types.length;i++)f.marches[i]=new HuntMarches.Row(0,-1,types[i]);return f;}
+    @Test public void bothModesKeepRefillingWithGatherersAndUnchangedTotal(){
+        for(Mode mode:Mode.values()){
+            HuntFlow f=create(mode,1,100);
+            Frame resources=typedMap(HuntMarches.Type.MEAT,HuntMarches.Type.COAL,HuntMarches.Type.IRON,HuntMarches.Type.WOOD);
+            see(f,resources);click(f,resources,Kind.OPEN);
+            for(int round=0;round<8;round++){
+                click(f,search(mode,f.options.level),Kind.SEARCH);
+                click(f,page(mode==Mode.GIANT?Page.GIANT:Page.BEAST,f.options.level),Kind.TARGET);
+                if(mode==Mode.GIANT)click(f,page(Page.RALLY,-1),Kind.LAUNCH);
+                Action preset=see(f,form());assertEquals(Kind.PRESET,preset.kind);assertEquals(round%6,preset.preset);f.complete(true,now);
+                click(f,form(),Kind.DEPLOY);
+                Frame launched=typedMap(HuntMarches.Type.MEAT,HuntMarches.Type.COAL,HuntMarches.Type.IRON,HuntMarches.Type.WOOD,HuntMarches.Type.RALLY);
+                see(f,launched);assertEquals(round+1,f.submitted);assertEquals(1,f.marches.active());
+                // A gatherer vanishes first, then this hunt returns while a new
+                // resource march takes its place: both later frames remain 4/6.
+                Frame returning=typedMap(HuntMarches.Type.MEAT,HuntMarches.Type.COAL,HuntMarches.Type.IRON,HuntMarches.Type.RETURN);
+                see(f,returning);assertEquals(Kind.WAIT,see(f,returning).kind);assertEquals(1,f.marches.active());
+                now+=60000;click(f,resources,Kind.OPEN);assertEquals(0,f.marches.active());
+            }
+        }
+    }
     @Test public void unrelatedReturnDoesNotFreeTaskQuota(){HuntFlow f=create(Mode.GIANT,1,0);enter(f,4);click(f,search(Mode.GIANT,8),Kind.SEARCH);click(f,page(Page.GIANT,8),Kind.TARGET);click(f,page(Page.RALLY,-1),Kind.LAUNCH);click(f,form(),Kind.PRESET);click(f,form(),Kind.DEPLOY);see(f,map(5));assertEquals(1,f.marches.active());Frame reduced=map(5);reduced.used=4;reduced.marches=java.util.Arrays.copyOfRange(reduced.marches,1,5);see(f,reduced);assertEquals(Kind.WAIT,see(f,reduced).kind);assertEquals(1,f.marches.active());}
     @Test public void invalidMarchCountNeverAssumesFree(){HuntFlow f=create(Mode.BEAST,6,0);assertEquals(Kind.WAIT,see(f,map(-1)).kind);now+=20000;assertEquals(Kind.STOP,see(f,map(-1)).kind);}
     @Test public void staleFrameCannotClick(){HuntFlow f=create(Mode.BEAST,6,0);Frame a=map(0);a.age=4001;assertEquals(Kind.WAIT,see(f,a).kind);assertEquals(Phase.MAP,f.phase);}
@@ -50,5 +72,38 @@ public class HuntFlowTest {
     @Test public void newSessionResetsBudget(){HuntFlow f=create(Mode.GIANT,1,100);f.cansUsed=98;f.stop();assertEquals(0,create(Mode.GIANT,1,100).cansUsed);}
     @Test public void unexpectedEnergyPopupCannotConsume(){HuntFlow f=create(Mode.GIANT,1,100);assertEquals(Kind.STOP,see(f,energy(232,15)).kind);}
     @Test public void knownErrorReturnsMapWithoutClaimingSuccess(){HuntFlow f=create(Mode.GIANT,1,100);toFormation(f);click(f,form(),Kind.DEPLOY);click(f,page(Page.ERROR,-1),Kind.DISMISS);click(f,form(),Kind.BACK);see(f,map(0));assertEquals(0,f.submitted);assertEquals(0,f.nextPreset);}
-    @Test public void elapsedSessionStops(){HuntFlow f=create(Mode.GIANT,6,0);now+=3600001;assertEquals(Kind.STOP,see(f,map(0)).kind);}
+    @Test public void bothModesContinueBeyondPreviousDurationLimits(){
+        for(Mode mode:Mode.values())for(int minutes:new int[]{61,241,2880})for(int cans:new int[]{0,100}){
+            HuntFlow f=create(mode,1,cans);now+=minutes*60000L;enter(f,0);assertTrue(f.running);
+        }
+    }
+    @Test public void bothModesCanUseAll100CansAfterMoreThanAnHour(){
+        for(Mode mode:Mode.values()){
+            HuntFlow f=create(mode,1,100);long started=now;toFormation(f);click(f,form(),Kind.DEPLOY);
+            for(int batch=0;batch<25;batch++){
+                now+=4*60000L; // Simulated travel/combat consumes the previous batch's stamina.
+                for(int can=0;can<4;can++)click(f,energy(200-f.cansUsed,can*10),Kind.USE);
+                click(f,energy(200-f.cansUsed,40),Kind.CLOSE);
+                assertEquals((batch+1)*4,f.cansUsed);click(f,form(),Kind.DEPLOY);
+            }
+            assertTrue(now-started>60*60000L);assertTrue(f.running);assertEquals(100,f.cansUsed);
+            assertEquals(Kind.STOP,see(f,energy(100,0)).kind);assertEquals(100,f.cansUsed);
+        }
+    }
+    @Test public void longPausePreservesRemainingAllowance(){
+        for(Mode mode:Mode.values()){
+            HuntFlow f=create(mode,1,100);f.cansUsed=98;f.stop();now+=8*60*60000L;f.resume(now);
+            toFormation(f);click(f,form(),Kind.DEPLOY);
+            click(f,energy(2,0),Kind.USE);click(f,energy(1,10),Kind.USE);click(f,energy(0,20),Kind.CLOSE);
+            assertEquals(100,f.cansUsed);click(f,form(),Kind.DEPLOY);
+            assertEquals(Kind.STOP,see(f,energy(200,0)).kind);
+        }
+    }
+    @Test public void longSessionStillStopsForAnUnrecognizedPage(){
+        for(Mode mode:Mode.values()){
+            HuntFlow f=create(mode,1,100);now+=2*60*60000L;
+            assertEquals(Kind.WAIT,see(f,page(Page.UNKNOWN,-1)).kind);now+=20000;
+            assertEquals(Kind.STOP,see(f,page(Page.UNKNOWN,-1)).kind);
+        }
+    }
 }

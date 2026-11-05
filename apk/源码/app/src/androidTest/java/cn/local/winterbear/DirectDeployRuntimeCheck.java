@@ -15,7 +15,7 @@ public final class DirectDeployRuntimeCheck {
                 require(frame.page==HuntFlow.Page.FORMATION,"Hunt formation not recognized");
                 int[] tap=frame.points[HuntFlow.Kind.DEPLOY.ordinal()];
                 require(tap[0]>image.getWidth()*.55&&tap[1]>image.getHeight()*.90,"Wrong deploy button");
-                HuntFlow flow=new HuntFlow(new HuntFlow.Options(mode,mode==HuntFlow.Mode.GIANT?8:30,1,0,60));
+                HuntFlow flow=new HuntFlow(new HuntFlow.Options(mode,mode==HuntFlow.Mode.GIANT?8:30,1,0));
                 flow.start(0);flow.phase=HuntFlow.Phase.FORMATION;
                 require(flow.next(frame,1000).kind==HuntFlow.Kind.PRESET,"Preset must be selected first");flow.complete(true,1100);
                 require(flow.next(frame,2100).kind==HuntFlow.Kind.DEPLOY,"Troop-free hunt deploy blocked");

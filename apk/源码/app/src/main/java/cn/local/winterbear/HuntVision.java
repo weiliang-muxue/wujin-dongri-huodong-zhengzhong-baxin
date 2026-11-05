@@ -167,17 +167,21 @@ final class HuntVision implements AutoCloseable {
             Point city=unique(gray,"map_city",390,rows*2/3,540,rows),entry=unique(gray,"map_search",0,rows/2,120,rows-100);
             if(city!=null&&entry!=null&&city.x-entry.x>300&&city.y-entry.y>150&&city.y-entry.y<450){
                 f.page=Page.MAP;point(f,Kind.OPEN,entry,s);
-                Point march=hit(gray,"march",0,100,180,rows/2,.72);
-                if(march!=null){int y=(int)march.y,dx=(int)Math.round(march.x-52);f.used=MarchCount.used(read(image,s,146+dx,y-16,190+dx,y+16));f.marches=glyphs.marches(image,s,y,f.used,dx);}
-                else{
-                    int used=MarchCount.used(read(image,s,146,290,190,320));
-                    // The absent header is accepted only with two independently recognized map controls.
-                    f.used=used>=0?used:0;
-                    if(f.used==0)f.marches=new HuntMarches.Row[0];
-                }
+                observeMarchPanel(image,s,gray,f);
             }
             return f;
         }finally{rgba.release();small.release();gray.release();}
     }
-    public void close(){for(Mat m:templates.values())m.release();feedback.close();}
+    /** Called after map identification; the list has its own movable header anchor. */
+    void observeMarchPanel(Bitmap image,double scale,Mat gray,Frame f){
+        Point march=hit(gray,"march",0,100,180,gray.rows()/2,.72);
+        if(march!=null){int y=(int)march.y,dx=(int)Math.round(march.x-52);f.used=MarchCount.used(read(image,scale,146+dx,y-16,190+dx,y+16));f.marches=glyphs.marches(image,scale,y,f.used,dx,gray);}
+        else{
+            int used=MarchCount.used(read(image,scale,146,290,190,320));
+            // The caller has already identified the map using two independent controls.
+            f.used=used>=0?used:0;
+            if(f.used==0)f.marches=new HuntMarches.Row[0];
+        }
+    }
+    public void close(){for(Mat m:templates.values())m.release();feedback.close();glyphs.close();}
 }

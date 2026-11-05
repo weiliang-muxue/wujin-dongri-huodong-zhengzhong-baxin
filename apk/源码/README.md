@@ -4,9 +4,9 @@ JDK 17、Gradle 8.9、Android SDK 35 extension 15、Build Tools 35.0.0。设置 
 
 构建：`gradlew.bat :app:testEngine :app:assembleRelease :app:lintRelease`。
 
-将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.1.3.apk。
+将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.1.4.apk。
 
-检查成品：`python tools/verify_android_package.py ../无尽冬日助手-2.1.3.apk --version 2.1.3`。
+检查成品：`python tools/verify_android_package.py ../无尽冬日助手-2.1.4.apk --version 2.1.4`。
 
 一个 launcher：ModeActivity；一个无障碍服务：BearService。cn.local.bullseye.GameService 和 HuntController 是该服务内的模块，不是其他 Android Service。ModeGate、运行代次和输入前检查共同限制旧任务回调。返回活动选择会停止所有模块。
 
@@ -15,6 +15,10 @@ JDK 17、Gradle 8.9、Android SDK 35 extension 15、Build Tools 35.0.0。设置 
 Release 开启 R8 与资源裁剪，仅打包 ARM64 和 ARMv7，四套流程共用 OpenCV / ML Kit。应用合并清单移除联网权限。
 
 HuntFlow 管理巨兽集结、野兽攻击、1～6 活动队数、预设顺序及库存罐头额度；HuntVision 定位游戏控件并读取等级、行军和库存；HuntController 在同一无障碍服务中运行。HuntActivity 的设置仅保留在本次任务内。OverlayFold 为四个活动提供手动收起、点击展开，状态更新不会重新挂载窗口。
+
+2.1.4 移除巨兽／野兽的运行分钟设置与总时长截止。任务使用现有体力，按需每批补 4 个库存罐头；最后一批补齐剩余额度，用满额度后继续消耗剩余体力，下一次体力不足时停止。暂停保留已用额度，结束／退出后重新设置。截图时效、动作响应和异常恢复的短超时仍保留。
+
+`MarchRowVision` 共用 `VisualLocator`，在已找到的行军标题下定位资源、集结、返程图标。六个 24×24 局部素材仅包含游戏通用图标；完整私人截图不入库。已识别的资源类型不会因倒计时开始、重置或误读而变成本次狩猎队伍。图标行完整时倒计时可未知；未知图标仍走原有倒计时读法，部分列表和遮挡不释放额度。这也处理总数始终为 4/6、巨兽回城后新增采集行的情况。`HuntReturnRuntimeCheck` 使用私人小米截图验证两种活动的回城补队、六种尺寸、倒计时遮挡和行军面板位移；图像回放仍只标注总行军数，不代替真实手势与 ML Kit 测试。
 
 ## 公共识别逻辑与新增活动
 

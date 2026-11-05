@@ -7,10 +7,10 @@ final class HuntFlow {
     enum Kind { WAIT, STOP, OPEN, CATEGORY, LESS, MORE, SEARCH, TARGET, LAUNCH, PRESET, DEPLOY, BACK, DISMISS, USE, CLOSE }
     enum Phase { MAP, SEARCH, RESULT, RALLY, FORMATION, SEND, VERIFY, RECOVER }
     static final class Options {
-        final Mode mode; final int level,limit,canLimit,minutes;
-        Options(Mode mode,int level,int limit,int canLimit,int minutes){
-            if(mode==null||level<1||level>99||limit<1||limit>6||canLimit<0||canLimit>9999||minutes<1||minutes>240)throw new IllegalArgumentException("设置超出范围");
-            this.mode=mode;this.level=level;this.limit=limit;this.canLimit=canLimit;this.minutes=minutes;
+        final Mode mode; final int level,limit,canLimit;
+        Options(Mode mode,int level,int limit,int canLimit){
+            if(mode==null||level<1||level>99||limit<1||limit>6||canLimit<0||canLimit>9999)throw new IllegalArgumentException("设置超出范围");
+            this.mode=mode;this.level=level;this.limit=limit;this.canLimit=canLimit;
         }
     }
     static final class Frame {
@@ -28,9 +28,10 @@ final class HuntFlow {
     final HuntMarches marches=new HuntMarches();
     int nextPreset,submitted,cansUsed; private int selected,stableUsed=-2,stableCount;
     private int lastLevel=-1,levelFailures,categoryAttempts,batchLeft,stockBefore=-1,energyBefore=-1;
-    private boolean awaitingCan,closingEnergy;private Kind pending;private long expires,waitUntil,since,unknownSince=-1;
+    private boolean awaitingCan,closingEnergy;private Kind pending;private long waitUntil,since,unknownSince=-1;
     HuntFlow(Options options){this.options=options;}
-    void start(long now){running=true;phase=Phase.MAP;since=now;expires=now+options.minutes*60000L;waitUntil=now;stableCount=0;pending=null;}
+    // The session ends on stamina/can allowance or a manual stop, not elapsed time.
+    void start(long now){running=true;phase=Phase.MAP;since=now;waitUntil=now;stableCount=0;pending=null;}
     // Pausing invalidates callbacks in the controller. Resume preserves the session's limits.
     void stop(){running=false;pending=null;}
     void resume(long now){running=true;pending=null;waitUntil=now;unknownSince=-1;}
@@ -43,7 +44,6 @@ final class HuntFlow {
     static int batch(int cap,int used,int stock){int n=Math.min(4,Math.max(0,cap-used));return n>0&&stock>=n?n:0;}
     Action next(Frame f,long now){
         if(!running||pending!=null)return waitFor("已暂停");
-        if(now>=expires)return halt("已达到本次时长");
         if(f.age<0||f.age>4000)return unknown(now,"画面更新较慢，等待新截图");
         if(now<waitUntil)return waitFor("等待游戏响应");
         if(f.page==Page.ENERGY){

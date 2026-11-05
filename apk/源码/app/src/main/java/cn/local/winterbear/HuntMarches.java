@@ -7,10 +7,16 @@ import java.util.List;
 
 /** Tracks this task's marches, not the total occupied slots. Ambiguous rows keep their quota. */
 final class HuntMarches {
+    enum Type {
+        UNKNOWN, MEAT, WOOD, COAL, IRON, RALLY, RETURN;
+        boolean resource(){return this==MEAT||this==WOOD||this==COAL||this==IRON;}
+    }
     static final class Row {
         final long icon;
         final int seconds;
-        Row(long icon,int seconds){this.icon=icon;this.seconds=seconds;}
+        final Type type;
+        Row(long icon,int seconds){this(icon,seconds,Type.UNKNOWN);}
+        Row(long icon,int seconds,Type type){this.icon=icon;this.seconds=seconds;this.type=type;}
     }
     private Row[] previous;
     private long observedAt;
@@ -20,7 +26,7 @@ final class HuntMarches {
 
     boolean observe(Row[] rows,long at,boolean confirmingDispatch){
         if(rows==null||rows.length>6)return false;
-        for(Row r:rows)if(r==null||r.seconds<0)return false;
+        for(Row r:rows)if(r==null||r.type==null||(r.seconds<0&&r.type==Type.UNKNOWN))return false;
         if(previous==null){
             if(confirmingDispatch)return false;
             previous=rows;observedAt=at;owners.add(0);return true;
@@ -33,13 +39,19 @@ final class HuntMarches {
         // A new row is evidence of dispatch. A click or a changed total alone is not.
         if(confirmingDispatch&&rows.length-best[0]<=unobserved)return false;
         Set<Integer> next=new HashSet<>();
+        int eligible=0;
+        for(int j=0;j<rows.length;j++)if(!rows[j].type.resource())eligible|=1<<j;
         for(int[] match:alignments){
           int matchedNew=0;for(int j:match)if(j>=0)matchedNew|=1<<j;
-          int free=((1<<rows.length)-1)&~matchedNew;
+          // A harvest timer can restart without changing the occupied-slot total.
+          // Such a row must never inherit the hunt team's quota when it returns.
+          int free=eligible&~matchedNew;
+          if(confirmingDispatch&&free==0)continue;
           for(int old:owners){
             int fixed=0,unmatchedOwned=0;
             for(int i=0;i<previous.length;i++)if((old&(1<<i))!=0){
-                if(match[i]>=0)fixed|=1<<match[i];else unmatchedOwned++;
+                if(match[i]>=0){if(!rows[match[i]].type.resource())fixed|=1<<match[i];}
+                else unmatchedOwned++;
             }
             int keep=Math.min(Integer.bitCount(free),unmatchedOwned+(confirmingDispatch?1:0));
             // Keep the largest possible task count until actual disappearance proves return.
@@ -50,6 +62,7 @@ final class HuntMarches {
             }
           }
         }
+        if(next.isEmpty())return false;
         owners=next;previous=rows;observedAt=at;return true;
     }
     private void align(Row[] rows,long at,int i,int used,int[] mapping,List<int[]> all,int[] best){
@@ -64,6 +77,16 @@ final class HuntMarches {
         mapping[i]=-1;align(rows,at,i+1,used,mapping,all,best);
     }
     private static boolean same(Row a,long aAt,Row b,long bAt){
+        if(a.type!=Type.UNKNOWN&&b.type!=Type.UNKNOWN){
+            if(a.type!=b.type)return false;
+            // Resource identity survives arrival / harvesting / return. A bad
+            // countdown must not transfer the hunt's identity onto this row.
+            if(a.type.resource())return true;
+            // A generic return flag can belong to either an old external team
+            // or our rally after a phase change. Without clocks, do not force
+            // it to match the external team and release our slot prematurely.
+            if(a.seconds<0||b.seconds<0)return false;
+        }
         return Long.bitCount(a.icon^b.icon)<=8&&Math.abs(aAt+a.seconds*1000L-bAt-b.seconds*1000L)<=5500;
     }
 }
