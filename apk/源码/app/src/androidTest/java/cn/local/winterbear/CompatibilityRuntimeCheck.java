@@ -17,11 +17,13 @@ public final class CompatibilityRuntimeCheck {
     static void require(boolean ok,String message){if(!ok)throw new AssertionError(message);}
     static SharedPreferences preferences(){
         Map<String,Object> values=new HashMap<>();
+        Map<String,Object> pending=new HashMap<>();java.util.Set<String> removed=new java.util.HashSet<>();boolean[] clear={false};
         Object editor=Proxy.newProxyInstance(SharedPreferences.Editor.class.getClassLoader(),new Class[]{SharedPreferences.Editor.class},(proxy,method,args)->{
             String name=method.getName();
-            if(name.startsWith("put")){values.put((String)args[0],args[1]);return proxy;}
-            if(name.equals("remove")){values.remove(args[0]);return proxy;}
-            if(name.equals("clear")){values.clear();return proxy;}
+            if(name.startsWith("put")){pending.put((String)args[0],args[1]);removed.remove(args[0]);return proxy;}
+            if(name.equals("remove")){pending.remove(args[0]);removed.add((String)args[0]);return proxy;}
+            if(name.equals("clear")){clear[0]=true;return proxy;}
+            if(name.equals("apply")||name.equals("commit")){if(clear[0])values.clear();for(String key:removed)values.remove(key);values.putAll(pending);pending.clear();removed.clear();clear[0]=false;}
             return name.equals("commit")?true:null;
         });
         return (SharedPreferences)Proxy.newProxyInstance(SharedPreferences.class.getClassLoader(),new Class[]{SharedPreferences.class},(proxy,method,args)->{

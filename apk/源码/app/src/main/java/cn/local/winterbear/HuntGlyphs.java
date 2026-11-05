@@ -62,11 +62,14 @@ final class HuntGlyphs {
         }finally{crop.recycle();}
     }
     HuntMarches.Row[] marches(Bitmap image,double scale,int header,int count){
+        return marches(image,scale,header,count,0);
+    }
+    HuntMarches.Row[] marches(Bitmap image,double scale,int header,int count,int dx){
         if(count==0)return new HuntMarches.Row[0];
         if(count<0||count>6)return null;
         int top=header+25,height=Math.min(345,(int)(image.getHeight()/scale)-top);
         if(height<32)return null;
-        Bitmap strip=region(image,scale,55,top,145,top+height,180,height*2);
+        Bitmap strip=region(image,scale,55+dx,top,145+dx,top+height,180,height*2);
         if(strip==null)return null;
         try{
             int[] p=new int[180*height*2];strip.getPixels(p,0,180,0,0,180,height*2);
@@ -78,15 +81,15 @@ final class HuntGlyphs {
                 int min=32,max=0;for(int i=0;i<band.length;i++)if((band[i]&255)>190){min=Math.min(min,i/180);max=Math.max(max,i/180);}
                 int center=top+(y+(min+max)/2)/2;
                 if(rows.isEmpty()?center-header<35||center-header>65:center-lastY<35||center-lastY>65)continue;
-                rows.add(new HuntMarches.Row(icon(image,scale,center-9),seconds));lastY=center;
+                rows.add(new HuntMarches.Row(icon(image,scale,center-9,dx),seconds));lastY=center;
                 if(rows.size()==count)return rows.toArray(new HuntMarches.Row[0]);
                 y+=60;
             }
             return null; // A partially read list never releases an owned slot.
         }finally{strip.recycle();}
     }
-    private long icon(Bitmap image,double scale,int center){
-        Bitmap b=region(image,scale,12,center-13,39,center+14,8,8);if(b==null)return 0;
+    private long icon(Bitmap image,double scale,int center,int dx){
+        Bitmap b=region(image,scale,12+dx,center-13,39+dx,center+14,8,8);if(b==null)return 0;
         try{
             int[] p=new int[64],light=new int[64];b.getPixels(p,0,8,0,0,8,8);int sum=0;
             for(int i=0;i<64;i++){light[i]=Color.red(p[i])+Color.green(p[i])+Color.blue(p[i]);sum+=light[i];}

@@ -8,6 +8,7 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.SystemClock;
 import android.provider.Settings;
 import android.view.WindowInsets;
 import android.view.accessibility.AccessibilityManager;
@@ -16,8 +17,12 @@ import android.widget.*;
 /** Opens supported system settings; never grants privileges or changes security settings. */
 public final class PermissionActivity extends Activity {
     private TextView status;
+    private Button accessButton;
+    private long connectingSince=-1;
+    private String routeError="";
     private boolean waitingForSettings,leftForSettings;
     private final Handler handler=new Handler();
+    private final Runnable refresh=new Runnable(){@Override public void run(){refreshStatus();handler.postDelayed(this,500);}};
     public static void open(Activity activity){activity.startActivity(new Intent(activity,PermissionActivity.class));}
     @Override public void onCreate(Bundle state){
         super.onCreate(state);
@@ -28,24 +33,57 @@ public final class PermissionActivity extends Activity {
         root.addView(Ui.text(this,"屏幕操作权限",26,Ui.TEXT));
         status=Ui.text(this,"",16,Ui.ACCENT);root.addView(status);
         root.addView(Ui.text(this,"用于识别游戏画面、显示控制浮窗和点击。画面在本机处理。只有你启动任务后才操作，可随时暂停或结束。",15,Ui.TEXT));
-        Ui.button(this,root,"打开无障碍设置",true,this::accessibility);
+        accessButton=Ui.button(this,root,"打开无障碍设置",true,()->{if(BearService.current()!=null)finish();else accessibility();});
         Ui.button(this,root,"被“敏感权限 / 受限设置”拦住",false,this::restrictionHelp);
         Ui.button(this,root,"找不到助手，或设置打不开",false,this::capabilityHelp);
         root.addView(Ui.text(this,"无须额外授予通讯录、存储、定位或后台弹窗权限。",14,Ui.MUTED));
     }
     @Override public void onResume(){
         super.onResume();
-        if(BearService.current()!=null)status.setText("已开启，可以返回活动开始。");
-        else if(waitingForSettings&&leftForSettings)status.setText("尚未连接。若开关被锁住，请先查看下方“敏感权限 / 受限设置”。");
-        else status.setText("由你在系统中开启“无尽冬日助手”。");
+        handler.removeCallbacks(refresh);refresh.run();
         if(waitingForSettings&&leftForSettings)waitingForSettings=false;
     }
-    @Override public void onPause(){if(waitingForSettings)leftForSettings=true;super.onPause();}
+    @Override public void onPause(){handler.removeCallbacks(refresh);if(waitingForSettings)leftForSettings=true;super.onPause();}
     @Override public void onDestroy(){handler.removeCallbacksAndMessages(null);super.onDestroy();}
+    private Boolean enabledInSystem(){
+        ComponentName component=new ComponentName(this,BearService.class);
+        try{
+            String enabled=Settings.Secure.getString(getContentResolver(),Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+            if(enabled!=null){
+                for(String item:enabled.split(":"))if(component.equals(ComponentName.unflattenFromString(item)))return true;
+                return false;
+            }
+            AccessibilityManager manager=getSystemService(AccessibilityManager.class);
+            if(manager!=null){
+                for(AccessibilityServiceInfo info:manager.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK))
+                    if(component.equals(ComponentName.unflattenFromString(info.getId())))return true;
+                return false;
+            }
+        }catch(RuntimeException unavailable){}
+        return null;
+    }
+    private void refreshStatus(){
+        ServiceConnectionState.State state=ServiceConnectionState.of(BearService.current()!=null,enabledInSystem());
+        String message,label;
+        if(state!=ServiceConnectionState.State.CONNECTING)connectingSince=-1;
+        switch(state){
+            case READY:message="服务已连接，可以开始活动。";label="返回活动";break;
+            case CONNECTING:
+                if(connectingSince<0)connectingSince=SystemClock.elapsedRealtime();
+                message=SystemClock.elapsedRealtime()-connectingSince<5000?"无障碍已开启，正在等待系统连接。":"无障碍已开启，服务尚未连接。请在系统中关闭后重新开启助手。";
+                label="检查无障碍服务";break;
+            case DISABLED:message="请在系统中开启“无尽冬日助手”。";label="打开无障碍设置";break;
+            default:message="暂时无法读取服务状态，请到系统设置检查。";label="检查系统设置";break;
+        }
+        if(state==ServiceConnectionState.State.READY)routeError="";
+        else if(!routeError.isEmpty())message=routeError;
+        if(!message.contentEquals(status.getText()))status.setText(message);
+        if(!label.contentEquals(accessButton.getText()))accessButton.setText(label);
+    }
     private boolean launch(Intent intent){
         try{
-            waitingForSettings=true;leftForSettings=false;startActivity(intent);
-            handler.postDelayed(()->{if(!isFinishing()&&waitingForSettings&&!leftForSettings){waitingForSettings=false;status.setText("系统没有打开设置入口，请查看“设置打不开”。");}},1500);
+            routeError="";waitingForSettings=true;leftForSettings=false;startActivity(intent);
+            handler.postDelayed(()->{if(!isFinishing()&&waitingForSettings&&!leftForSettings){waitingForSettings=false;routeError="系统没有打开设置入口，请查看“设置打不开”。";refreshStatus();}},1500);
             return true;
         }catch(android.content.ActivityNotFoundException|SecurityException e){waitingForSettings=false;return false;}
     }
@@ -72,6 +110,8 @@ public final class PermissionActivity extends Activity {
         new AlertDialog.Builder(this).setTitle("检查系统支持")
             .setMessage((registered?"系统已列出助手服务。":"当前系统暂未列出助手服务；这不等于用户拒绝了权限。")
                 +"\n\n可以打开系统无障碍列表检查。若卓易通中找不到该服务，或点设置后仍返回助手，需要确认兼容环境是否提供无障碍、截屏和跨应用点击能力。仅允许“后台弹窗”不能替代这些能力。")
-            .setNegativeButton("返回",null).setPositiveButton("系统无障碍列表",(d,w)->{if(!launch(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)))status.setText("系统未提供可打开的无障碍入口。请从手机系统设置检查。");}).show();
+            .setNegativeButton("返回",null).setPositiveButton("系统无障碍列表",(d,w)->{
+                if(!launch(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))){routeError="系统未提供可打开的无障碍入口。请从手机系统设置检查。";refreshStatus();}
+            }).show();
     }
 }

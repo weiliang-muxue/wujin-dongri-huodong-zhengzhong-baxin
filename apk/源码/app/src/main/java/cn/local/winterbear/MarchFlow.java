@@ -163,7 +163,9 @@ final class MarchFlow {
                     return now-markerMissingSince>=6000?pause("第 "+(selected+1)+" 个预设旗帜持续未匹配，请检查旗帜栏位置"):waitFor("等待第 "+(selected+1)+" 个预设旗帜显示清晰");
                 }
                 markerMissingSince=-1;
-                return act(Kind.PRESET,presetX[selected],presetY[selected],Phase.SEND,"选择顶部第 "+(selected+1)+" 个预设");
+                int px=f.presetX[selected]>0?f.presetX[selected]:presetX[selected];
+                int py=f.presetY[selected]>0?f.presetY[selected]:presetY[selected];
+                return act(Kind.PRESET,px,py,Phase.SEND,"选择顶部第 "+(selected+1)+" 个预设");
             }
             if(f.header&&!f.rallyList){avoidLastRow(now);returnToList(now);return waitFor("集结已发车或进入详情，换下一队");}
             if(now-phaseSince>5000&&f.header){avoidLastRow(now);phase=Phase.FIND;return waitFor("未进入出征页，跳过刚才的集结");}

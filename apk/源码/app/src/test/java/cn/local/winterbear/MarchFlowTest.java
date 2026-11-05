@@ -4,6 +4,12 @@ import static org.junit.Assert.*;
 import static cn.local.winterbear.BearFlow.Kind;
 
 public class MarchFlowTest {
+    @Test public void presetTapUsesItsObservedPositionAfterLayoutMoves(){
+        MarchFlow flow=flow();enter(flow,4);flow.next(list(),3000);flow.complete(true,3100);
+        BearFlow.Frame moved=deploy();moved.presetX[0]=144;moved.presetY[0]=527;
+        BearFlow.Decision action=flow.next(moved,4400);
+        assertEquals(Kind.PRESET,action.kind);assertEquals(144,action.x);assertEquals(527,action.y);
+    }
     static BearFlow.Frame timed(int... seconds){
         BearFlow.Frame f=list();f.rows.clear();
         for(int i=0;i<seconds.length;i++)f.rows.add(new BearFlow.Row(i,900,700+i*600,true,seconds[i]));return f;

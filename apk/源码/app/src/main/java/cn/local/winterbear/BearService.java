@@ -110,9 +110,7 @@ public final class BearService extends AccessibilityService {
         }
     }
     private String activePackage() {
-        AccessibilityNodeInfo root=getRootInActiveWindow();
-        if(root==null)return "";
-        CharSequence name=root.getPackageName();String value=name==null?"":name.toString();root.recycle();return value;
+        return ForegroundProbe.read(this);
     }
     void pause(String reason) {
         generation++;checkingMap=false;previewCheck.reset();gestureGate.cancel();flow.stop();main.removeCallbacks(tick);setStatus(reason);
@@ -442,8 +440,8 @@ public final class BearService extends AccessibilityService {
     }
     private boolean gameAvailable(){
         boolean target=activePackage().equals(config.target());
-        if(foregroundGate.timedOut(target,SystemClock.elapsedRealtime())){pause("已离开目标游戏，自动暂停");return false;}
-        if(!target){setStatus("临时遮挡，等待游戏回到前台");main.postDelayed(tick,500);return false;}
+        if(foregroundGate.timedOut(target,SystemClock.elapsedRealtime())){pause("暂时无法确认游戏窗口，已暂停");return false;}
+        if(!target){setStatus("等待游戏窗口恢复");main.postDelayed(tick,500);return false;}
         return true;
     }
     private void openPicker(Bitmap bitmap,String mode,int slot,String app){

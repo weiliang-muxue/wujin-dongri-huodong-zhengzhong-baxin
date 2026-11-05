@@ -8,8 +8,8 @@ android {
         applicationId 'cn.local.winterbear'
         minSdk 30
         targetSdk 35
-        versionCode 212
-        versionName '2.1.2'
+        versionCode 213
+        versionName '2.1.3'
         testInstrumentationRunner 'cn.local.winterbear.RuntimeRegression'
         // Opt in only for local emulator checks; delivered APKs keep the two ARM ABIs.
         ndk { abiFilters.addAll(project.hasProperty('emulatorTest') ? ['x86_64'] : ['arm64-v8a', 'armeabi-v7a']) }
@@ -45,6 +45,8 @@ tasks.register('testEngine', JavaExec) {
     ) + configurations.engineTestRuntime
     mainClass = 'org.junit.runner.JUnitCore'
     args 'cn.local.winterbear.HuntMarchesTest'
+    args 'cn.local.automation.LayoutTransformTest'
+    args 'cn.local.winterbear.ForegroundWindowsTest', 'cn.local.winterbear.OverlayRecoveryTest', 'cn.local.winterbear.ServiceConnectionStateTest'
     args 'cn.local.winterbear.BearOverlayGuardTest', 'cn.local.bullseye.FloatingGuardTest', 'cn.local.bullseye.SessionGuardTest', 'cn.local.winterbear.ModeGateTest', 'cn.local.winterbear.MarchCountTest', 'cn.local.winterbear.MarchFlowTest', 'cn.local.winterbear.RallyOrderTest', 'cn.local.winterbear.GestureGateTest', 'cn.local.winterbear.MarchSimulationTest', 'cn.local.winterbear.LiveMapCheckTest', 'cn.local.winterbear.TroopCountTest', 'cn.local.winterbear.ForegroundGateTest', 'cn.local.winterbear.HuntFlowTest'
     systemProperty 'simulationReportDir', layout.buildDirectory.dir('reports/simulation').get().asFile.absolutePath
 }

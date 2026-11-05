@@ -25,9 +25,14 @@ final class CountdownVision {
         }catch(Exception e){throw new IllegalStateException("无法读取集结倒计时模板",e);}
     }
     int read(Mat gray,int screenWidth,int joinY,double scale){
-        int left=(int)(screenWidth*.79*scale),right=(int)(screenWidth*.97*scale);
-        int top=(int)((joinY-screenWidth*.27)*scale),bottom=(int)Math.ceil((joinY-screenWidth*.21)*scale);
-        if(left<0||right>gray.cols()||top<0||bottom>gray.rows()||right<=left||bottom<=top)return -1;
+        return read(gray,screenWidth,(int)Math.round(screenWidth*.89),joinY,scale);
+    }
+    int read(Mat gray,int screenWidth,int joinX,int joinY,double scale){
+        int left=Math.max(0,(int)((joinX-screenWidth*.10)*scale)),right=Math.min(gray.cols(),(int)((joinX+screenWidth*.08)*scale));
+        int top=Math.max(0,(int)((joinY-screenWidth*.27)*scale)),bottom=Math.min(gray.rows(),(int)Math.ceil((joinY-screenWidth*.21)*scale));
+        // Padding can cross a screen edge while all six digits are still visible.
+        // The digit reader itself rejects genuinely clipped or incomplete timers.
+        if(right<=left||bottom<=top)return -1;
         Mat crop=gray.submat(new Rect(left,top,right-left,bottom-top));
         try{byte[] pixels=new byte[(int)crop.total()];crop.get(0,0,pixels);return digits.read(pixels,crop.cols(),crop.rows());}
         finally{crop.release();}

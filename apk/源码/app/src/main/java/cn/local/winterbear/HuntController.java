@@ -20,6 +20,7 @@ final class HuntController {
     private final WindowManager wm;
     private LinearLayout panel;private TextView status;private Button run;
     private OverlayFold folding;
+    private final OverlayRecovery overlayRecovery=new OverlayRecovery();
     private WindowManager.LayoutParams layout;private Box bounds;
     private HuntFlow flow;private HuntVision vision;private CounterOcr ocr;
     private long generation,revision,modeToken,captureId;private boolean busy,dragging,started,destroyed;
@@ -51,10 +52,14 @@ final class HuntController {
             if(!OpenCVLoader.initLocal())throw new IllegalStateException("OpenCV");
             ocr=new CounterOcr();vision=new HuntVision(host.getAssets()::open,ocr::text);
         }catch(Exception e){update("识别组件未就绪，请重新打开助手");return;}
-        generation++;if(started)flow.resume(SystemClock.elapsedRealtime());else{flow.start(SystemClock.elapsedRealtime());started=true;}
+        generation++;overlayRecovery.reset();if(started)flow.resume(SystemClock.elapsedRealtime());else{flow.start(SystemClock.elapsedRealtime());started=true;}
         update("正在检查地图");tick();
     }
-    private void update(String text){if(status!=null)status.setText(text);if(run!=null)run.setText(flow!=null&&flow.running?"暂停":started?"继续":"开始");}
+    private void update(String text){
+        if(status!=null&&!text.contentEquals(status.getText()))status.setText(text);
+        String label=flow!=null&&flow.running?"暂停":started?"继续":"开始";
+        if(run!=null&&!label.contentEquals(run.getText()))run.setText(label);
+    }
     private void show(){
         WindowMetrics metrics=wm.getCurrentWindowMetrics();Rect screen=metrics.getBounds();
         Insets insets=metrics.getWindowInsets().getInsetsIgnoringVisibility(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());
@@ -81,7 +86,10 @@ final class HuntController {
     }
     private void publish(){if(panel==null||panel.getWidth()==0)return;int[] xy=new int[2];panel.getLocationOnScreen(xy);Box b=new Box(xy[0],xy[1],xy[0]+panel.getWidth(),xy[1]+panel.getHeight());if(!b.same(bounds)){bounds=b;revision++;}}
     private boolean safePosition(){
-        if(panel==null||dragging||panel.isLayoutRequested())return false;publish();if(bounds==null)return false;
+        if(panel==null)return false;
+        if(dragging){overlayRecovery.reset();return false;}
+        if(panel.isLayoutRequested()){recoverOverlay();return false;}
+        publish();if(bounds==null){recoverOverlay();return false;}
         WindowMetrics metrics=wm.getCurrentWindowMetrics();Rect r=metrics.getBounds();
         Insets i=metrics.getWindowInsets().getInsetsIgnoringVisibility(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());
         Box clear=HuntOverlayGuard.place(bounds,r.width(),r.height(),i.left,i.top,i.right,i.bottom);
@@ -90,14 +98,23 @@ final class HuntController {
             pause("当前屏幕没有可用浮窗位置，请退出分屏后继续");return false;
         }
         if(clear.same(bounds))return true;
-        layout.x+=clear.left-bounds.left;layout.y+=clear.top-bounds.top;revision++;wm.updateViewLayout(panel,layout);return false;
+        if(recoverOverlay())return false;
+        int x=Math.max(0,layout.x+clear.left-bounds.left),y=Math.max(0,layout.y+clear.top-bounds.top);
+        if(x!=layout.x||y!=layout.y){layout.x=x;layout.y=y;revision++;wm.updateViewLayout(panel,layout);}
+        return false;
+    }
+    private boolean recoverOverlay(){
+        OverlayRecovery.Action action=overlayRecovery.blocked(SystemClock.elapsedRealtime(),folding!=null&&folding.isCollapsed());
+        if(action==OverlayRecovery.Action.STOP){pause("浮窗位置未稳定，请拖到顶部空白处后继续");return true;}
+        if(action==OverlayRecovery.Action.COLLAPSE&&folding!=null){folding.setCollapsed(true);update("浮窗已收起，继续识别");return true;}
+        update("正在调整浮窗位置");return false;
     }
     private void later(long delay){main.postDelayed(this::tick,delay);}
     private boolean foreground(){return host.getSystemService(PowerManager.class).isInteractive()&&target.equals(host.foregroundPackage());}
     private void tick(){
         if(!owns()||flow==null||!flow.running||busy)return;
         if(!foreground()){pause("已离开游戏或锁屏，任务暂停");return;}
-        if(!safePosition()){later(250);return;}
+        if(!safePosition()){if(flow.running)later(250);return;}
         busy=true;long token=generation,viewRevision=revision,id=++captureId,at=SystemClock.elapsedRealtime();Box mask=bounds.padded(6);
         final HuntVision reader=vision;
         try{host.takeScreenshot(Display.DEFAULT_DISPLAY,host.getMainExecutor(),new AccessibilityService.TakeScreenshotCallback(){
@@ -117,8 +134,12 @@ final class HuntController {
                     main.post(()->{
                         if(id!=captureId||token!=generation||!owns())return;busy=false;
                         if(error!=null){pause(error);return;}
-                        publish();if(dragging||revision!=viewRevision){later(250);return;}
+                        publish();if(dragging||revision!=viewRevision){
+                            if(dragging)overlayRecovery.reset();else recoverOverlay();
+                            if(flow.running)later(250);return;
+                        }
                         if(!foreground()){pause("已离开游戏，任务暂停");return;}
+                        overlayRecovery.reset();
                         f.age=SystemClock.elapsedRealtime()-at;Action a=flow.next(f,SystemClock.elapsedRealtime());update(a.message);
                         if(a.kind==Kind.WAIT){later(800);return;}if(a.kind==Kind.STOP)return;
                         gesture(a,f,token,viewRevision,at);

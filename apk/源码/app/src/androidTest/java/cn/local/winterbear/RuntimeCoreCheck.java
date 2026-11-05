@@ -20,10 +20,12 @@ public final class RuntimeCoreCheck {
             throw new AssertionError("Unknown/march count was accepted as troop count");
         System.out.println("FIX VERIFIED ON ART: 179810/179810 usable; unreadable count stays unknown");
         Result tests=JUnitCore.runClasses(
+            cn.local.automation.LayoutTransformTest.class,
             BearOverlayGuardTest.class,cn.local.bullseye.FloatingGuardTest.class,cn.local.bullseye.SessionGuardTest.class,
             ModeGateTest.class,MarchCountTest.class,MarchFlowTest.class,RallyOrderTest.class,
             GestureGateTest.class,MarchSimulationTest.class,LiveMapCheckTest.class,
-            TroopCountTest.class,ForegroundGateTest.class,HuntFlowTest.class,HuntMarchesTest.class);
+            TroopCountTest.class,ForegroundGateTest.class,HuntFlowTest.class,HuntMarchesTest.class,
+            ForegroundWindowsTest.class,OverlayRecoveryTest.class,ServiceConnectionStateTest.class);
         for(Failure failure:tests.getFailures())System.out.println(failure.getTrace());
         System.out.println("ART JUNIT: "+tests.getRunCount()+" tests, "+tests.getFailureCount()+" failures");
         if(!tests.wasSuccessful())throw new AssertionError("Android regression failure");

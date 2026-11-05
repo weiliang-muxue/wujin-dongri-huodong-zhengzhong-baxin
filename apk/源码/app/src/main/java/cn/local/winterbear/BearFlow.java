@@ -26,6 +26,7 @@ public final class BearFlow {
         public int marchUsed=-1;
         public int shortcutX,shortcutY,allianceX,allianceY,warX,warY,rallyX,rallyY,worldX,worldY,backX,backY;
         public final boolean[] savedPreset=new boolean[SLOTS];
+        public final int[] presetX=new int[SLOTS],presetY=new int[SLOTS];
         public int deployX, deployY;
         public final List<Row> rows = new ArrayList<>();
     }

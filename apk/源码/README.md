@@ -4,9 +4,9 @@ JDK 17、Gradle 8.9、Android SDK 35 extension 15、Build Tools 35.0.0。设置 
 
 构建：`gradlew.bat :app:testEngine :app:assembleRelease :app:lintRelease`。
 
-将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.1.2.apk。
+将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.1.3.apk。
 
-检查成品：`python tools/verify_android_package.py ../无尽冬日助手-2.1.2.apk --version 2.1.2`。
+检查成品：`python tools/verify_android_package.py ../无尽冬日助手-2.1.3.apk --version 2.1.3`。
 
 一个 launcher：ModeActivity；一个无障碍服务：BearService。cn.local.bullseye.GameService 和 HuntController 是该服务内的模块，不是其他 Android Service。ModeGate、运行代次和输入前检查共同限制旧任务回调。返回活动选择会停止所有模块。
 
@@ -15,6 +15,24 @@ JDK 17、Gradle 8.9、Android SDK 35 extension 15、Build Tools 35.0.0。设置 
 Release 开启 R8 与资源裁剪，仅打包 ARM64 和 ARMv7，四套流程共用 OpenCV / ML Kit。应用合并清单移除联网权限。
 
 HuntFlow 管理巨兽集结、野兽攻击、1～6 活动队数、预设顺序及库存罐头额度；HuntVision 定位游戏控件并读取等级、行军和库存；HuntController 在同一无障碍服务中运行。HuntActivity 的设置仅保留在本次任务内。OverlayFold 为四个活动提供手动收起、点击展开，状态更新不会重新挂载窗口。
+
+## 公共识别逻辑与新增活动
+
+`cn.local.automation` 不依赖活动名称，供现有四个活动与后续活动复用：
+
+- `VisualLocator` 负责模板匹配、边界裁剪、重复候选去重和唯一性检查；返回本帧的实际中心坐标与匹配分数。全色块模板被拒绝，弱匹配只在原分数接近阈值时尝试轻微平滑。
+- `LayoutTransform` 根据两个已观察到的标记求缩放和平移，拒绝旋转、过近、矛盾或非法坐标。
+- `ReferenceAnchors` 从两张参考图选取相同且有辨识度的局部标记，排除券数等变化区域，至少三个标记一致才接受当前布局。
+
+打熊的 `Matcher`、公共弹窗识别 `FeedbackVision`、巨兽/野兽的 `HuntVision` 和正中靶心的 `LiveLayout` 均调用 `VisualLocator`。搜索范围只用于排除不相关内容，识别成功后使用匹配到的坐标；等级、倒计时、旗帜跟随对应标记定位。`LiveLayout` 每帧重新定位靶心页面标记和开始按钮，完整靶盘可重新建立位置，部分靶子消失后保留编号；票数及结算区域随布局变化，浮窗避让区域同步更新。已有手动取样保留。
+
+新增活动应增加页面标记和活动状态机，复用上述定位、`BearService` 的单一无障碍服务、`ForegroundProbe`、`ModeGate` 与 `OverlayFold`。识别层只输出本帧观察结果和实际坐标，不发手势；状态机决定下一步；控制器检查前台、截图代次、时效和浮窗遮挡后发送。不要在新活动里复制一套固定屏幕点击坐标，也不要让某个活动的特殊弹窗或罐头额度混入公共匹配器。
+
+回归需包括原始画面、尺寸变化、内容偏移、关键标记被遮挡和相似按钮负例。`run_feedback_regression.py --adaptive-layouts` 增加狩猎/打熊偏移回放；`--bullseye-fixtures <目录>` 接收 `bullseye-home.png`、`bullseye-board.png`，验证靶心标记、开始按钮、靶盘和余券区域的实时坐标。`--suite` 可选择已有测试组。参考图、私人录屏和完整游戏截图不进入 Git。
+
+2.1.3 的目标详情用橙色集结/攻击按钮和相对位置上的“等级”识别，不依赖背后的 Search 标签；预设模板仅保留旗帜图案。`ForegroundProbe` 根据交互窗口类型区分自身无障碍浮窗与实际应用/系统窗口，不缓存游戏包名来推断前台。`OverlayRecovery` 对定位和截图布局失效统一限时：1200 ms 后收起，6000 ms 仍不稳定则暂停；成功处理新画面或用户拖动时重置。`PermissionActivity` 每 500 ms 刷新系统启用状态与本地服务连接状态，不写系统设置。
+
+本次私有原图回放：`run_feedback_regression.py --huawei-fixtures <目录>`（连同原 `--fixtures`）。目录包括 `huawei-giant.png`、`huawei-formation.png`、`huawei-bear-list.png`、`huawei-giant-video.png` 和 `huawei-map-video.png`。测试覆盖详情遮住 Search、改名/遮住编队名字、直接出征、等级不符停止、关键标记缺失负例和录屏地图。完整截图不进入 Git；缩放变体和被压缩录屏重采样明确属于合成回放，不当作真机点击验证。
 
 2.1.2 中打熊、巨兽、野兽选好预设后直接点击识别到的出征按钮，不再读取或判断兵力数字。保留队列上限、目标识别、打熊少于 10 秒跳过、游戏错误弹窗恢复和出征结果确认。`run_feedback_regression.py --dispatch-fixtures <目录>` 接收私人原图 `reported-deploy.png`（还需原有 `--fixtures` 和 `--hunt-fixtures`），在 Android Bitmap / OpenCV 中回放出征页和遮住兵力数字的样本；出征页一旦调用数字 OCR，测试立即失败。
 

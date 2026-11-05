@@ -1,6 +1,7 @@
 package cn.local.winterbear;
 
 import android.graphics.Bitmap;
+import cn.local.automation.VisualLocator;
 import android.graphics.Rect;
 import org.opencv.android.OpenCVLoader;
 import org.opencv.android.Utils;
@@ -87,20 +88,8 @@ final class Matcher implements AutoCloseable {
             right=Math.min(right,(int)Math.ceil(region.right*scale)); bottom=Math.min(bottom,(int)Math.ceil(region.bottom*scale));
         }
         if(right-left<tpl.cols() || bottom-top<tpl.rows()) return hits;
-        Mat roi=gray.submat(top,bottom,left,right), score=new Mat();
-        try {
-            Imgproc.matchTemplate(roi,tpl,score,Imgproc.TM_CCOEFF_NORMED);
-            for(int i=0;i<limit;i++) {
-                Core.MinMaxLocResult mm=Core.minMaxLoc(score);
-                if(!Double.isFinite(mm.maxVal) || mm.maxVal<config.threshold()) break;
-                int x=(int)mm.maxLoc.x,y=(int)mm.maxLoc.y;
-                hits.add(new Hit((int)Math.round((left+x+tpl.cols()/2.0)/scale),
-                    (int)Math.round((top+y+tpl.rows()/2.0)/scale),mm.maxVal));
-                Mat suppress=score.submat(Math.max(0,y-tpl.rows()/2),Math.min(score.rows(),y+tpl.rows()/2+1),
-                    Math.max(0,x-tpl.cols()/2),Math.min(score.cols(),x+tpl.cols()/2+1));
-                suppress.setTo(new Scalar(-1)); suppress.release();
-            }
-        } finally { roi.release(); score.release(); }
+        for(VisualLocator.Match m:VisualLocator.find(gray,tpl,new org.opencv.core.Rect(left,top,right-left,bottom-top),config.threshold(),limit,false))
+            hits.add(new Hit((int)Math.round(m.x/scale),(int)Math.round(m.y/scale),m.confidence));
         return hits;
     }
     Hit near(String key,int x,int y) {
@@ -126,11 +115,14 @@ final class Matcher implements AutoCloseable {
         BearFlow.Frame f=new BearFlow.Frame();
         feedback.observe(gray,f,config.width(),config.height());
         if(f.troopOverflow||f.rallyTooLate)return f;
-        f.header=near("header",config.p.getInt("headerX",0),config.p.getInt("headerY",0))!=null;
-        Hit deploy=near("deploy",config.p.getInt("deployX",0),config.p.getInt("deployY",0));
+        int w=config.width(),height=config.height();
+        Hit header=locate("header",new Rect(0,0,w*3/4,height/2));
+        f.header=header!=null;
+        Hit deploy=locate("deploy",new Rect(w/2,height/2,w,height));
         f.deploy=deploy!=null;
         if(deploy!=null) { f.deployX=deploy.x; f.deployY=deploy.y; }
-        f.formation=f.formation||near("formation",config.p.getInt("formationX",0),config.p.getInt("formationY",0))!=null;
+        Hit formation=locateFormation(new Rect(0,height/12,w*2/3,height*2/3));
+        f.formation=f.formation||formation!=null;
         f.autoJoin=near("auto_join",config.p.getInt("auto_joinX",0),config.p.getInt("auto_joinY",0))!=null;
         Hit march=nearConfigured("march_anchor");
         if(march==null){
@@ -143,7 +135,7 @@ final class Matcher implements AutoCloseable {
             List<Hit> core=find("march_anchor_core",new Rect(0,(int)(config.height()*.18),(int)(config.width()*.30),(int)(config.height()*.39)),1);
             if(!core.isEmpty())march=core.get(0);
         }
-        boolean mapChrome=f.worldMapChrome||(nearConfigured("map_city")!=null&&nearConfigured("alliance")!=null);
+        boolean mapChrome=f.worldMapChrome||(locate("map_city",new Rect(w*2/3,height*2/3,w,height))!=null&&locate("alliance",new Rect(w/2,height*2/3,w,height))!=null);
         f.map=!f.header&&!f.formation&&!f.deploy&&(march!=null||mapChrome);
         if(f.map&&config.marchReady()){
             stage="读取行军数量";
@@ -154,10 +146,10 @@ final class Matcher implements AutoCloseable {
         }
         f.marchHidden=f.map&&march==null&&mapChrome&&!MarchCount.valid(f.marchUsed);
         stage="识别页面入口";
-        Hit h=nearConfigured("back");if(h!=null){f.backX=h.x;f.backY=h.y;}
-        h=nearConfigured("world");if(h!=null){f.worldX=h.x;f.worldY=h.y;}
+        Hit h=locate("back",new Rect(0,0,w/3,height/2));if(h!=null){f.backX=h.x;f.backY=h.y;}
+        h=locate("world",new Rect(w*2/3,height*2/3,w,height));if(h!=null){f.worldX=h.x;f.worldY=h.y;}
         h=nearConfigured("war");if(h!=null){f.warX=h.x;f.warY=h.y;}
-        h=nearConfigured("rally_tab");if(h!=null){f.rallyX=h.x;f.rallyY=h.y;}
+        h=header==null?nearConfigured("rally_tab"):locate("rally_tab",new Rect(0,header.y,w/2,Math.min(height,header.y+w/3)));if(h!=null){f.rallyX=h.x;f.rallyY=h.y;}
         f.rallyList=f.header&&h!=null;
         if(f.map){
             List<Hit> shortcuts=find("shortcut",new Rect((int)(config.width()*.8),(int)(config.height()*.15),config.width(),(int)(config.height()*.8)),1);
@@ -166,14 +158,22 @@ final class Matcher implements AutoCloseable {
         }
         if(f.formation||f.deploy){
             stage="识别预设编队";
-            for(int i=0;i<6;i++)f.savedPreset[i]=near("preset_marker"+i,config.p.getInt("presetX"+i,0),config.p.getInt("presetY"+i,0))!=null;
+            int dx=automatic()&&formation!=null?formation.x-config.p.getInt("formationX",0):0;
+            int dy=automatic()&&formation!=null?formation.y-config.p.getInt("formationY",0):0;
+            for(int i=0;i<6;i++){
+                Hit flag=near("preset_marker"+i,config.p.getInt("presetX"+i,0)+dx,config.p.getInt("presetY"+i,0)+dy);
+                f.savedPreset[i]=flag!=null;
+                if(flag!=null){f.presetX[i]=flag.x;f.presetY[i]=flag.y;}
+            }
             feedback.formation(gray,color,f,config.width(),config.height(),config);
         }
         if(f.rallyList && !f.deploy && config.rallyReady() && !config.customRallyReady()) {
             stage="识别巨熊集结";
             List<RallyOrder.Detection> detections=new ArrayList<>();
-            Rect targetColumn=new Rect(0,(int)(config.height()*.20),(int)(config.width()*.37),(int)(config.height()*.91));
-            for(String factor:new String[]{"0.85","0.90","0.95","1.00","1.05","1.10","1.15"}){
+            Rect targetColumn=new Rect(0,(int)(config.height()*.16),(int)(config.width()*.45),(int)(config.height()*.94));
+            // Width normalization still leaves 1–2% font rasterization differences on
+            // Huawei screenshots. Keep the confidence threshold and refine near 1:1.
+            for(String factor:new String[]{"0.85","0.90","0.95","0.98","0.99","1.00","1.01","1.02","1.05","1.10","1.15"}){
                 String key="bear_label@"+factor;
                 Mat tpl=template(key);if(tpl==null)continue;
                 int halfWidth=(int)Math.ceil(tpl.cols()/scale/2),halfHeight=(int)Math.ceil(tpl.rows()/scale/2);
@@ -205,13 +205,31 @@ final class Matcher implements AutoCloseable {
             stage="读取每条集结倒计时";
             for(int i=0;i<f.rows.size();i++){
                 BearFlow.Row row=f.rows.get(i);
-                int seconds=row.available&&row.x>0&&row.y>0?countdown.read(gray,config.width(),row.y,scale):-1;
+                int seconds=row.available&&row.x>0&&row.y>0?countdown.read(gray,config.width(),row.x,row.y,scale):-1;
                 f.rows.set(i,new BearFlow.Row(row.order,row.x,row.y,row.available,seconds));
             }
         }
         return f;
     }
     private Hit nearConfigured(String key){return near(key,config.p.getInt(key+"X",0),config.p.getInt(key+"Y",0));}
+    private boolean automatic(){return config.p.getBoolean("referenceLayout",false)&&!config.p.getBoolean("manualCalibration",false);}
+    private Hit locateFormation(Rect region){
+        Hit local=nearConfigured("formation");if(local!=null||!automatic())return local;
+        List<Hit> candidates=find("formation",region,4);candidates.sort(java.util.Comparator.comparingInt(h->h.x));
+        for(Hit candidate:candidates){
+            int dx=candidate.x-config.p.getInt("formationX",0),dy=candidate.y-config.p.getInt("formationY",0),flags=0;
+            for(int i=0;i<2;i++)if(near("preset_marker"+i,config.p.getInt("presetX"+i,0)+dx,config.p.getInt("presetY"+i,0)+dy)!=null)flags++;
+            if(flags==2)return candidate;
+        }
+        return null;
+    }
+    private Hit locate(String key,Rect region){
+        Hit fixed=nearConfigured(key);if(fixed!=null||!automatic())return fixed;
+        // Search the page region only after the quick local match misses. Multiple
+        // lookalikes are ambiguous; never select an arbitrary one to click.
+        List<Hit> matches=find(key,region,2);if(matches.size()!=1)return null;
+        Hit h=matches.get(0);return near(key,h.x,h.y);
+    }
     Hit joinBeside(Rect target){
         if(!config.has("join_reference"))return null;
         int band=(int)(config.height()*.13);

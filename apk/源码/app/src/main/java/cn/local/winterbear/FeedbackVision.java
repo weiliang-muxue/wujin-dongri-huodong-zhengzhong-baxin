@@ -1,6 +1,7 @@
 package cn.local.winterbear;
 
 import android.graphics.Bitmap;
+import cn.local.automation.VisualLocator;
 import android.graphics.BitmapFactory;
 import org.opencv.android.Utils;
 import org.opencv.core.*;
@@ -10,7 +11,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Fixed map, bear and error cues from the recording. No player text or arbitrary confirmation. */
+/** Related map, bear and error landmarks from the recording; no arbitrary confirmation. */
 final class FeedbackVision implements AutoCloseable {
     private final Mat body,title,button,city,search,bear,plus,plusColor,bearTop,plusTop,plusTopColor;
     private final Mat deploy,deployColor;
@@ -32,34 +33,31 @@ final class FeedbackVision implements AutoCloseable {
         }catch(Exception e){return new Mat();}
     }
     private Point hit(Mat screen,Mat template,Rect region){
-        if(template.empty()||region.width<template.cols()||region.height<template.rows())return null;
-        Mat roi=screen.submat(region),scores=new Mat();
-        try{Imgproc.matchTemplate(roi,template,scores,Imgproc.TM_CCOEFF_NORMED);Core.MinMaxLocResult mm=Core.minMaxLoc(scores);
-            return Double.isFinite(mm.maxVal)&&mm.maxVal>=.88?new Point(region.x+mm.maxLoc.x+template.cols()/2.0,region.y+mm.maxLoc.y+template.rows()/2.0):null;
-        }finally{roi.release();scores.release();}
+        List<VisualLocator.Match> found=VisualLocator.find(screen,template,region,.88,1,true);
+        return found.isEmpty()?null:new Point(found.get(0).x,found.get(0).y);
     }
     void observe(Mat fullGray,BearFlow.Frame frame,int width,int height){
-        // The recording was compressed to 324x720. Matching at that resolution avoids upscaled artifacts.
         if(!ReferenceLayout.supported(width,height))return;
-        int rows=new ReferenceLayout(width,height).feedbackHeight(),middle=(rows-720)/2;
+        int rows=Math.round(height*324f/width);
+        observeAt(fullGray,frame,width,height,rows);
+        int legacy=new ReferenceLayout(width,height).feedbackHeight();
+        if(rows!=legacy&&!frame.troopOverflow&&!frame.rallyTooLate)observeAt(fullGray,frame,width,height,legacy);
+    }
+    private void observeAt(Mat fullGray,BearFlow.Frame frame,int width,int height,int rows){
         Mat small=new Mat();
         try{
             Imgproc.resize(fullGray,small,new Size(324,rows),0,0,Imgproc.INTER_AREA);
-            Point warning=hit(small,lateBody,new Rect(30,320+middle,270,110));
-            Point cancelButton=hit(small,cancel,new Rect(20,420+middle,150,100));
+            Point warning=hit(small,lateBody,new Rect(0,rows/4,324,rows/2));
+            Point cancelButton=warning==null?null:hit(small,cancel,new Rect((int)warning.x-140,(int)warning.y+35,150,100));
             if(warning!=null&&cancelButton!=null&&warning.x-cancelButton.x>20&&warning.x-cancelButton.x<110&&cancelButton.y-warning.y>40&&cancelButton.y-warning.y<125){
                 frame.rallyTooLate=true;frame.cancelX=(int)Math.round(cancelButton.x*width/324);frame.cancelY=(int)Math.round(cancelButton.y*height/rows);return;
             }
-            frame.worldMapChrome=hit(small,city,new Rect(275,rows-25,47,25))!=null&&hit(small,search,new Rect(92,rows-120,38,42))!=null;
-            if(hit(small,formationLabel,new Rect(29,179,58,24))!=null){
-                int markers=0;int[] xs={29,63,96,129,163,196};
-                for(int i=0;i<6;i++)if(hit(small,preset[i],new Rect(xs[i]-10,117,20,21))!=null)markers++;
-                frame.formation=markers>=2;
-            }
+            frame.worldMapChrome|=hit(small,city,new Rect(220,rows*2/3,104,rows-rows*2/3))!=null&&hit(small,search,new Rect(55,rows*2/3,150,rows-rows*2/3))!=null;
+            frame.formation|=formationAnchor(small,rows)!=null;
             Mat[] bodies={body,bodyV2},buttons={button,buttonV2};
             for(int i=0;i<bodies.length;i++){
-                Point text=hit(small,bodies[i],new Rect(50,330+middle,235,110));
-                Point ok=hit(small,buttons[i],new Rect(80,425+middle,165,90));
+                Point text=hit(small,bodies[i],new Rect(0,rows/4,324,rows/2));
+                Point ok=text==null?null:hit(small,buttons[i],new Rect((int)text.x-82,(int)text.y+35,165,100));
                 // Specific error + aligned button; the title may be covered by a floating control.
                 if(text!=null&&ok!=null&&Math.abs(text.x-ok.x)<30&&ok.y-text.y>40&&ok.y-text.y<125){
                     frame.troopOverflow=true;frame.dialogOkX=(int)Math.round(ok.x*width/324);frame.dialogOkY=(int)Math.round(ok.y*height/rows);break;
@@ -69,24 +67,19 @@ final class FeedbackVision implements AutoCloseable {
     }
     private List<Point> hits(Mat screen,Mat template,Rect region){
         List<Point> result=new ArrayList<>();
-        if(template.empty()||region.width<template.cols()||region.height<template.rows())return result;
-        Mat roi=screen.submat(region),scores=new Mat();
-        try{
-            Imgproc.matchTemplate(roi,template,scores,Imgproc.TM_CCOEFF_NORMED);
-            for(int n=0;n<8;n++){
-                Core.MinMaxLocResult mm=Core.minMaxLoc(scores);if(!Double.isFinite(mm.maxVal)||mm.maxVal<.88)break;
-                int x=(int)mm.maxLoc.x,y=(int)mm.maxLoc.y;
-                result.add(new Point(region.x+x+template.cols()/2.0,region.y+y+template.rows()/2.0));
-                Mat suppress=scores.submat(Math.max(0,y-template.rows()/2),Math.min(scores.rows(),y+template.rows()/2+1),Math.max(0,x-template.cols()/2),Math.min(scores.cols(),x+template.cols()/2+1));
-                suppress.setTo(new Scalar(-1));suppress.release();
-            }
-        }finally{roi.release();scores.release();}
+        for(VisualLocator.Match m:VisualLocator.find(screen,template,region,.88,8,true))result.add(new Point(m.x,m.y));
         return result;
     }
     List<RallyOrder.Detection> rallies(Mat fullGray,Mat fullColor,int width,int height){
+        if(!ReferenceLayout.supported(width,height))return new ArrayList<>();
+        int rows=Math.round(height*324f/width);
+        List<RallyOrder.Detection> found=ralliesAt(fullGray,fullColor,width,height,rows);
+        int legacy=new ReferenceLayout(width,height).feedbackHeight();
+        return found.isEmpty()&&legacy!=rows?ralliesAt(fullGray,fullColor,width,height,legacy):found;
+    }
+    private List<RallyOrder.Detection> ralliesAt(Mat fullGray,Mat fullColor,int width,int height,int rows){
         List<RallyOrder.Detection> result=new ArrayList<>();
         if(!ReferenceLayout.supported(width,height)||plusColor.empty())return result;
-        int rows=new ReferenceLayout(width,height).feedbackHeight();
         Mat gray=new Mat(),color=new Mat();
         try{
             Imgproc.resize(fullGray,gray,new Size(324,rows),0,0,Imgproc.INTER_AREA);
@@ -115,17 +108,36 @@ final class FeedbackVision implements AutoCloseable {
         }
         return result;
     }
+    private Point formationAnchor(Mat gray,int rows){
+        List<Point> labels=hits(gray,formationLabel,new Rect(0,80,200,Math.max(0,rows*2/3-80)));
+        labels.sort(java.util.Comparator.comparingDouble(p->p.x));
+        for(Point label:labels){
+            int dx=(int)Math.round(label.x-54),dy=(int)Math.round(label.y-190.5);
+            if(hit(gray,preset[0],new Rect(19+dx,117+dy,20,21))!=null&&hit(gray,preset[1],new Rect(53+dx,117+dy,20,21))!=null)return label;
+        }return null;
+    }
     void formation(Mat fullGray,Mat fullColor,BearFlow.Frame frame,int width,int height,Config config){
         if(!frame.formation||frame.header||!ReferenceLayout.supported(width,height))return;
-        int rows=new ReferenceLayout(width,height).feedbackHeight();
+        int rows=Math.round(height*324f/width);
+        formationAt(fullGray,fullColor,frame,width,height,config,rows);
+        int legacy=new ReferenceLayout(width,height).feedbackHeight();
+        if(rows!=legacy)formationAt(fullGray,fullColor,frame,width,height,config,legacy);
+    }
+    private void formationAt(Mat fullGray,Mat fullColor,BearFlow.Frame frame,int width,int height,Config config,int rows){
         Mat gray=new Mat(),color=new Mat();
         try{
             Imgproc.resize(fullGray,gray,new Size(324,rows),0,0,Imgproc.INTER_AREA);
             Imgproc.resize(fullColor,color,new Size(324,rows),0,0,Imgproc.INTER_AREA);
-            List<Point> buttons=greenHits(gray,color,deploy,deployColor,new Rect(228,rows-42,39,24));
+            List<Point> buttons=greenHits(gray,color,deploy,deployColor,new Rect(180,rows/2,144,rows-rows/2));
             if(!frame.deploy&&buttons.size()==1){Point p=buttons.get(0);frame.deploy=true;frame.deployX=(int)Math.round(p.x*width/324);frame.deployY=(int)Math.round(p.y*height/rows);}
+            Point anchor=formationAnchor(gray,rows);if(anchor==null)return;
+            int dx=(int)Math.round(anchor.x-54),dy=(int)Math.round(anchor.y-190.5);
             int[] x={29,63,96,129,163,196};
-            for(int i=0;i<6;i++)if(!frame.savedPreset[i]&&Math.abs(config.p.getInt("presetX"+i,0)*324.0/width-x[i])<6&&Math.abs(config.p.getInt("presetY"+i,0)*rows/(double)height-128)<6&&hit(gray,preset[i],new Rect(x[i]-10,117,20,21))!=null)frame.savedPreset[i]=true;
+            boolean automatic=config.p.getBoolean("referenceLayout",false)&&!config.p.getBoolean("manualCalibration",false);
+            for(int i=0;i<6;i++)if(!frame.savedPreset[i]&&(automatic||(Math.abs(config.p.getInt("presetX"+i,0)*324.0/width-x[i])<6&&Math.abs(config.p.getInt("presetY"+i,0)*rows/(double)height-128)<6))){
+                Point p=hit(gray,preset[i],new Rect(x[i]-10+dx,117+dy,20,21));
+                if(p!=null){frame.savedPreset[i]=true;frame.presetX[i]=(int)Math.round(p.x*width/324);frame.presetY[i]=(int)Math.round(p.y*height/rows);}
+            }
         }finally{gray.release();color.release();}
     }
     public void close(){body.release();title.release();button.release();bodyV2.release();buttonV2.release();formationLabel.release();lateBody.release();cancel.release();city.release();search.release();bear.release();plus.release();plusColor.release();bearTop.release();plusTop.release();plusTopColor.release();deploy.release();deployColor.release();for(Mat p:preset)p.release();}

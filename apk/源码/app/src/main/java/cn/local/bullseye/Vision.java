@@ -18,7 +18,11 @@ public class Vision implements AutoCloseable {
         try{for(Text.Line l:text(big)){String s=l.getText().replace("O","0").replace("o","0").replace(" ","");if(s.matches("\\d{1,5}"))return Integer.parseInt(s);}}finally{if(big!=b)big.recycle();}
         int w=b.getWidth(),h=b.getHeight();int[] pixels=new int[w*h];b.getPixels(pixels,0,w,0,0,w,h);return TicketDigits.single(pixels,w,h);
     }
-    public static Bitmap crop(Bitmap b,float[] r){int x=Math.max(0,(int)(r[0]*b.getWidth())),y=Math.max(0,(int)(r[1]*b.getHeight()));int w=Math.max(1,Math.min(b.getWidth(),(int)(r[2]*b.getWidth()))-x),h=Math.max(1,Math.min(b.getHeight(),(int)(r[3]*b.getHeight()))-y);return Bitmap.createBitmap(b,x,y,w,h);}
+    public static Bitmap crop(Bitmap b,float[] r){
+        int x=Math.max(0,Math.min(b.getWidth()-1,(int)(r[0]*b.getWidth()))),y=Math.max(0,Math.min(b.getHeight()-1,(int)(r[1]*b.getHeight())));
+        int right=Math.max(x+1,Math.min(b.getWidth(),(int)(r[2]*b.getWidth()))),bottom=Math.max(y+1,Math.min(b.getHeight(),(int)(r[3]*b.getHeight())));
+        return Bitmap.createBitmap(b,x,y,right-x,bottom-y);
+    }
     public static Bitmap patch(Bitmap b,PointF p,float radius){return crop(b,new float[]{Math.max(0,p.x-radius),Math.max(0,p.y-radius),Math.min(1,p.x+radius),Math.min(1,p.y+radius)});}
     public static class MultiplierButton {
         public final int value;public final PointF point;
@@ -31,9 +35,21 @@ public class Vision implements AutoCloseable {
         return hit==null?null:new MultiplierButton(hit.value,new PointF(hit.x,hit.y));
     }
     public static float[] exitRegion(List<PointF> ps){float dx=ps.get(1).x-ps.get(0).x,dy=ps.get(4).y-ps.get(0).y,y=ps.get(8).y;return new float[]{Math.max(0,ps.get(0).x-.75f*dx),Math.max(0,y+.5f*dy),Math.min(1,ps.get(3).x+.75f*dx),Math.min(1,y+1.65f*dy)};}
+    /** An off-screen result prompt is absent, not a one-pixel image for OCR. */
+    public static Rect textRegion(Bitmap frame,float[] region){
+        if(region==null||region.length!=4)return null;
+        for(float value:region)if(!Float.isFinite(value))return null;
+        int w=frame.getWidth(),h=frame.getHeight();
+        Rect r=new Rect((int)(Math.max(0,Math.min(1,region[0]))*w),
+                (int)(Math.max(0,Math.min(1,region[1]))*h),
+                (int)(Math.max(0,Math.min(1,region[2]))*w),
+                (int)(Math.max(0,Math.min(1,region[3]))*h));
+        return r.width()>=32&&r.height()>=32?r:null;
+    }
     public PointF dismissPoint(Bitmap frame,float[] region)throws Exception {
-        Bitmap clipped=crop(frame,region);float scale=Math.max(1,Math.min(3,1200f/clipped.getWidth()));Bitmap big=Bitmap.createScaledBitmap(clipped,Math.round(clipped.getWidth()*scale),Math.round(clipped.getHeight()*scale),true);
-        try{StringBuilder message=new StringBuilder();for(Text.Line line:text(big))message.append(line.getText());String s=message.toString().replaceAll("\\s+","");if(s.contains("点击")&&(s.contains("任意")||s.contains("空白")||s.contains("退出")||s.contains("关闭")))return new PointF((region[0]+region[2])/2,(region[1]+region[3])/2);return null;}finally{if(big!=clipped)big.recycle();clipped.recycle();}
+        Rect r=textRegion(frame,region);if(r==null)return null;
+        Bitmap clipped=Bitmap.createBitmap(frame,r.left,r.top,r.width(),r.height());float scale=Math.max(1,Math.min(3,1200f/clipped.getWidth()));Bitmap big=Bitmap.createScaledBitmap(clipped,Math.round(clipped.getWidth()*scale),Math.round(clipped.getHeight()*scale),true);
+        try{StringBuilder message=new StringBuilder();for(Text.Line line:text(big))message.append(line.getText());String s=message.toString().replaceAll("\\s+","");if(s.contains("点击")&&(s.contains("任意")||s.contains("空白")||s.contains("退出")||s.contains("关闭")))return new PointF(r.exactCenterX()/frame.getWidth(),r.exactCenterY()/frame.getHeight());return null;}finally{if(big!=clipped)big.recycle();if(clipped!=frame)clipped.recycle();}
     }
     public static double similarity(Bitmap a,Bitmap b){
         Bitmap aa=Bitmap.createScaledBitmap(a,32,32,true),bb=Bitmap.createScaledBitmap(b,32,32,true);int[] pa=new int[1024],pb=new int[1024];aa.getPixels(pa,0,32,0,0,32,32);bb.getPixels(pb,0,32,0,0,32,32);

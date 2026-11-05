@@ -25,7 +25,7 @@ public class GameService extends ContextWrapper {
     boolean dispatchGesture(GestureDescription gesture,GestureResultCallback callback,Handler handler){return host.dispatchGesture(gesture,callback,handler);}
     public volatile boolean running=false,paused=false;volatile boolean busy=false,captureInFlight=false,gestureInFlight=false;
     final Handler main=new Handler(Looper.getMainLooper());final ExecutorService worker=Executors.newSingleThreadExecutor();final Object tapLock=new Object();
-    Config config;Vision vision;Bitmap home,board;WindowManager wm;LinearLayout floating;TextView status;Button pauseButton;
+    Config config,referenceConfig;LiveLayout liveLayout;Vision vision;Bitmap home,board;WindowManager wm;LinearLayout floating;TextView status;Button pauseButton;
     int remaining,rounds,pending=-1,retries=0,failures=0;boolean starting=false,inRound=false;long lastAction=0,lastKnown=0;Set<Integer> visited=new HashSet<>();
     boolean allowInitialBoard=true;final TicketPolicy tickets=new TicketPolicy();
     int exitSeen=0,exitAttempts=0;
@@ -34,13 +34,13 @@ public class GameService extends ContextWrapper {
     volatile FloatingGuard.Box floatingBounds;
     volatile long overlayRevision;long frameRevision=-1,moveId;
     volatile boolean dragging;
-    List<FloatingGuard.Box> protectedAreas=Collections.emptyList();
+    volatile List<FloatingGuard.Box> protectedAreas=Collections.emptyList();
     protected void onServiceConnected(){instance=this;vision=new Vision();wm=(WindowManager)getSystemService(WINDOW_SERVICE);}
     public void onAccessibilityEvent(AccessibilityEvent e){}
     public void onInterrupt(){pause("系统中断，已暂停");}
-    public void onDestroy(){stopRun("服务已关闭");instance=null;worker.shutdownNow();if(vision!=null)vision.close();}
+    public void onDestroy(){stopRun("服务已关闭");instance=null;worker.execute(()->{if(liveLayout!=null){liveLayout.close();liveLayout=null;}if(vision!=null)vision.close();});worker.shutdown();}
     int dp(int n){return Math.round(n*getResources().getDisplayMetrics().density);}
-    public void begin(Config c){if(running||busy){Toast.makeText(this,"上次运行尚未结束，请稍后再开始",Toast.LENGTH_LONG).show();return;}host.activateBullseye();generation++;targetPackage="";config=c;if(home!=null)home.recycle();if(board!=null)board.recycle();home=BitmapFactory.decodeFile(new File(getFilesDir(),"home.png").toString());board=BitmapFactory.decodeFile(new File(getFilesDir(),"board.png").toString());if(home==null||board==null){Toast.makeText(this,"请重新上传两张截图",Toast.LENGTH_LONG).show();return;}
+    public void begin(Config c){if(running||busy){Toast.makeText(this,"上次运行尚未结束，请稍后再开始",Toast.LENGTH_LONG).show();return;}host.activateBullseye();generation++;targetPackage="";config=c;referenceConfig=c;if(liveLayout!=null){liveLayout.close();liveLayout=null;}if(home!=null)home.recycle();if(board!=null)board.recycle();home=BitmapFactory.decodeFile(new File(getFilesDir(),"home.png").toString());board=BitmapFactory.decodeFile(new File(getFilesDir(),"board.png").toString());if(home==null||board==null){Toast.makeText(this,"请重新上传两张截图",Toast.LENGTH_LONG).show();return;}
         float[] xs=new float[c.targets.size()],ys=new float[c.targets.size()];
         for(int i=0;i<xs.length;i++){xs[i]=c.targets.get(i).x;ys[i]=c.targets.get(i).y;}
         protectedAreas=FloatingGuard.protectedAreas(c.width,c.height,c.countRect,c.exitRect,c.start.x,c.start.y,xs,ys);
@@ -114,7 +114,6 @@ public class GameService extends ContextWrapper {
         if(foreground.isEmpty()||foreground.equals(getPackageName())||foreground.startsWith("com.android.")||(!targetPackage.isEmpty()&&!foreground.equals(targetPackage))){pause("已离开游戏，请回游戏后继续");next();return;}
         if(targetPackage.isEmpty())targetPackage=foreground;
         publishFloatingBounds();
-        if(FloatingGuard.blocked(floatingBounds,protectedAreas,dp(8))){pause("悬浮条挡住游戏，请拖到空白处后继续");next();return;}
         busy=true;captureInFlight=true;
         final long token=generation,captureRevision=overlayRevision;
         final FloatingGuard.Box mask=floatingBounds.padded(dp(8));
@@ -139,14 +138,34 @@ public class GameService extends ContextWrapper {
           @Override public void onCompleted(GestureDescription d){finish();}
           @Override public void onCancelled(GestureDescription d){finish();if(token==generation&&running)pause("点击被中断，请确认后继续");}
         },main);if(!accepted){gestureInFlight=false;pause("点击未被系统接受");}return accepted;}}
-    double match(Bitmap frame,Bitmap ref,PointF p,float radius){Bitmap a=Vision.patch(frame,p,radius),b=Vision.patch(ref,p,radius);try{return Vision.similarity(a,b);}finally{a.recycle();b.recycle();}}
+    double match(Bitmap frame,Bitmap ref,PointF actual,PointF original,float radius){Bitmap a=Vision.patch(frame,actual,radius),b=Vision.patch(ref,original,radius);try{return Vision.similarity(a,b);}finally{a.recycle();b.recycle();}}
+    boolean protectLayout(Config c){
+        float[] xs=new float[c.targets.size()],ys=new float[c.targets.size()];
+        for(int i=0;i<xs.length;i++){xs[i]=c.targets.get(i).x;ys[i]=c.targets.get(i).y;}
+        protectedAreas=FloatingGuard.protectedAreas(c.width,c.height,c.countRect,c.exitRect,c.start.x,c.start.y,xs,ys);
+        synchronized(tapLock){
+            if(!frameCurrent())return false;
+            if(!FloatingGuard.blocked(floatingBounds,protectedAreas,dp(8)))return true;
+            dragging=true;overlayRevision++;final long token=generation,move=++moveId;
+            main.post(()->settleFloating(token,move));return false;
+        }
+    }
     void process(Bitmap frame)throws Exception {
-        if(!frameCurrent())return;if(frame.getWidth()!=config.width||frame.getHeight()!=config.height){pause("屏幕方向或尺寸改变，请恢复原方向");return;}
+        if(!frameCurrent())return;
+        if(liveLayout==null){
+            if(!org.opencv.android.OpenCVLoader.initLocal())throw new IllegalStateException("图像组件未就绪");
+            liveLayout=new LiveLayout(referenceConfig,home,board);
+        }
+        LiveLayout.Result layout=liveLayout.observe(frame);
+        if(!frameCurrent())return;
+        if(layout==null){if(SystemClock.uptimeMillis()-lastKnown>18000)pause("活动标记暂未识别，请保持活动页面可见后继续");return;}
+        config=layout.config;
+        if(!protectLayout(config))return;
         PointF exit=vision.dismissPoint(frame,config.exitRect);if(!frameCurrent())return;
         if(exit!=null){lastKnown=SystemClock.uptimeMillis();if(++exitSeen<2)return;if(exitAttempts>=3){exitAttempts=0;pause("结算退出没有响应，请检查画面后继续");return;}if(tap(exit)){exitSeen=0;exitAttempts++;update("结算完成，自动返回首页");}return;}exitSeen=0;
         Bitmap roi=Vision.crop(frame,config.region);List<Text.Line> lines;try{lines=vision.text(roi);}finally{roi.recycle();}if(!frameCurrent())return;
         for(Text.Line line:lines){String t=line.getText().replace(" ","");if(t.contains("点击任意位置")||t.contains("点击屏幕退出")){Rect r=line.getBoundingBox();tap(new PointF(config.region[0]+r.exactCenterX()/config.width,config.region[1]+r.exactCenterY()/config.height));lastKnown=SystemClock.uptimeMillis();return;}}
-        if(match(frame,home,config.start,.025f)>.68){
+        if(layout.home){
             exitAttempts=0;
             allowInitialBoard=false;
             lastKnown=SystemClock.uptimeMillis();if(inRound){inRound=false;rounds++;pending=-1;visited.clear();tickets.reset();}
@@ -168,7 +187,7 @@ public class GameService extends ContextWrapper {
             if(starting&&++retries>3){retries=0;pause("开始按钮没有响应，请检查游戏");return;}
             if(tap(config.start)){starting=true;tickets.started();update("按游戏当前倍率开始，回首页后更新余券");}return;
         }
-        List<Integer> available=new ArrayList<>();for(int i=0;i<config.targets.size();i++)if(match(frame,board,config.targets.get(i),.018f)>.72)available.add(i);
+        List<Integer> available=new ArrayList<>();for(int i=0;i<config.targets.size();i++)if(match(frame,board,config.targets.get(i),referenceConfig.targets.get(i),.018f)>.72)available.add(i);
         if(!available.isEmpty()){
             lastKnown=SystemClock.uptimeMillis();if(starting){starting=false;inRound=true;retries=0;}
             if(!inRound){if(allowInitialBoard&&available.size()==12){inRound=true;allowInitialBoard=false;update("继续已开启的一轮，结束后读取券数");}else{pause("请回到首页或完整的 12 靶子页再运行");return;}}
