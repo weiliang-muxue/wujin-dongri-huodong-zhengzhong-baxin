@@ -30,7 +30,7 @@ final class TaskChooser {
     void show(){
         host.pauseForTaskSelection();
         LinearLayout content=content("选择任务");
-        Ui.button(host,content,"打熊",true,()->{dismiss();host.startBearInGame();});
+        Ui.button(host,content,"打熊",true,this::configureBear);
         Ui.button(host,content,"正中靶心",true,()->{dismiss();host.startBullseyeInGame();});
         Ui.button(host,content,"巨兽集结",true,()->configureHunt(HuntFlow.Mode.GIANT));
         Ui.button(host,content,"野兽集结",true,()->configureHunt(HuntFlow.Mode.BEAST));
@@ -44,10 +44,25 @@ final class TaskChooser {
         return result;
     }
 
+    private void configureBear(){
+        LinearLayout form=content("打熊");
+        PresetPicker presets=new PresetPicker(host,host.bearPresetSelection(),null);
+        form.addView(presets);
+        Ui.button(host,form,"开始",true,()->{
+            if(!presets.validateSelection())return;
+            dismiss();
+            host.startBearInGame(presets.selection());
+        });
+        Ui.button(host,form,"返回",false,this::show);
+        show(form);
+    }
+
     private void configureHunt(HuntFlow.Mode mode){
         LinearLayout form=content(mode==HuntFlow.Mode.GIANT?"巨兽集结":"野兽集结");
         EditText level=number(host,form,"目标等级",mode==HuntFlow.Mode.GIANT?8:30);
         EditText queues=number(host,form,"同时派出几队（1–6）",1);
+        PresetPicker presets=new PresetPicker(host,PresetOrder.ALL,null);
+        form.addView(presets);
         Switch cans=new Switch(host);
         cans.setText("自动使用库存罐头");cans.setTextColor(Ui.TEXT);
         cans.setMinHeight(Ui.dp(host,48));form.addView(cans);
@@ -57,9 +72,9 @@ final class TaskChooser {
         Ui.button(host,form,"开始",true,()->{
             Integer target=read(level,1,99),count=read(queues,1,6);
             Integer allowance=cans.isChecked()?read(cap,1,9999):0;
-            if(target==null||count==null||allowance==null)return;
+            if(!presets.validateSelection()||target==null||count==null||allowance==null)return;
             dismiss();
-            host.startHuntInGame(new HuntFlow.Options(mode,target,count,allowance));
+            host.startHuntInGame(new HuntFlow.Options(mode,target,count,allowance,presets.selection()));
         });
         Ui.button(host,form,"返回",false,this::show);
         show(form);

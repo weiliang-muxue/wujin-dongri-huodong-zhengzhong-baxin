@@ -47,6 +47,9 @@ public final class OverlayUiRuntimeCheck {
         return null;
     }
     private static void save(View root,File file)throws Exception{
+        // Capture the settled checked state; the headless runner has no display
+        // manager to drive AnimatedVectorDrawable's intermediate frames.
+        root.jumpDrawablesToCurrentState();
         Bitmap bitmap=Bitmap.createBitmap(root.getWidth(),root.getHeight(),Bitmap.Config.ARGB_8888);
         root.draw(new Canvas(bitmap));
         try(FileOutputStream output=new FileOutputStream(file)){bitmap.compress(Bitmap.CompressFormat.PNG,100,output);}
@@ -68,7 +71,7 @@ public final class OverlayUiRuntimeCheck {
             });
             java.lang.reflect.Field managerField=Class.forName("android.view.WindowManagerGlobal").getDeclaredField("sWindowManagerService");
             managerField.setAccessible(true);managerField.set(null,manager);
-            File output=new File(args[0]);output.mkdirs();int checks=0;
+            File output=new File(args[0]);output.mkdirs();int checks=0,presetChecks=0;
             for(int width:new int[]{620,720,1080,1152,1260,1344})for(float font:new float[]{1f,1.3f}){
                 Configuration configuration=new Configuration(system.getResources().getConfiguration());
                 configuration.densityDpi=Math.round(width/360f*160);configuration.fontScale=font;
@@ -86,6 +89,28 @@ public final class OverlayUiRuntimeCheck {
                 configurations.setAccessible(true);
                 @SuppressWarnings("unchecked") SparseArray<ViewConfiguration> cached=(SparseArray<ViewConfiguration>)configurations.get(null);
                 cached.put((int)(100*context.getResources().getDisplayMetrics().density),new ViewConfiguration());
+                int[] chosen={-1};
+                PresetPicker presets=new PresetPicker(context,PresetOrder.ALL,value->chosen[0]=value);
+                int pickerWidth=width-Ui.dp(context,40);
+                layout(presets,pickerWidth);
+                require(presets.selection()==PresetOrder.ALL,"Initial preset selection lost");
+                for(int preset=1;preset<=6;preset++){
+                    TextView choice=(TextView)text(presets,"第 "+preset+" 个");
+                    require(choice.getHeight()>=Ui.dp(context,48),"Preset touch area too small at "+width+"/"+font+": "+choice.getHeight());
+                    require(choice.getLayout()!=null&&choice.getLayout().getEllipsisCount(0)==0,"Preset label clipped");
+                    choice.performClick();
+                }
+                require(chosen[0]==0&&!presets.validateSelection(),"Empty preset selection accepted");
+                text(presets,"第 5 个").performClick();
+                require(chosen[0]==16&&presets.selection()==16&&presets.validateSelection(),"Chosen preset changed");
+                text(presets,"第 2 个").performClick();
+                require(presets.selection()==18,"Multiple preset selection lost");
+                text(presets,"全选").performClick();require(presets.selection()==63,"Select all failed");
+                text(presets,"清空").performClick();require(presets.selection()==0,"Clear selection failed");
+                text(presets,"第 2 个").performClick();text(presets,"第 5 个").performClick();
+                layout(presets,pickerWidth);
+                if(width==1080&&font==1f)save(presets,new File(output,"preset-picker.png"));
+                presetChecks++;
                 int expectedHeight=-1,expectedCollapsed=-1;
                 for(String label:new String[]{"打熊","靶心","巨兽","野兽"}){
                     int[] calls=new int[3];
@@ -116,6 +141,7 @@ public final class OverlayUiRuntimeCheck {
                 }
             }
             System.out.println("ANDROID OVERLAY UI PASS: "+checks+" actual View layouts; pause/start/end/switch/fold callbacks; no game gestures");
+            System.out.println("ANDROID PRESET PICKER PASS: "+presetChecks+" layouts; single, multiple, empty selection and callbacks");
         }catch(Throwable error){error.printStackTrace(System.out);System.exit(1);}
     }
 }

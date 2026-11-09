@@ -4,6 +4,48 @@ import static org.junit.Assert.*;
 import static cn.local.winterbear.HuntFlow.*;
 
 public class HuntFlowTest {
+    @Test public void bothHuntsCycleOnlySelectedPresetsAcrossReturns(){
+        for(Mode mode:Mode.values())for(int selection=1;selection<=63;selection++){
+            now=1000;
+            HuntFlow flow=new HuntFlow(new Options(mode,mode==Mode.GIANT?8:30,6,100,selection));
+            flow.start(now);
+            int expected=0;
+            for(int round=0;round<8;round++){
+                while((selection&(1<<expected))==0)expected=(expected+1)%6;
+                toFormation(flow);
+                Action deploy=see(flow,form());
+                assertEquals(Kind.DEPLOY,deploy.kind);assertEquals(expected,deploy.preset);
+                flow.complete(true,now);see(flow,map(1));
+                assertEquals(round+1,flow.submitted);
+                expected=(expected+1)%6;
+            }
+        }
+    }
+    @Test public void chosenFormationAndMarchLimitAreIndependent(){
+        for(Mode mode:Mode.values()){
+            HuntFlow flow=new HuntFlow(new Options(mode,mode==Mode.GIANT?8:30,1,0,1<<5));
+            flow.start(now);toFormation(flow);
+            Action deploy=see(flow,form());assertEquals(5,deploy.preset);assertEquals(Kind.DEPLOY,deploy.kind);
+            flow.complete(true,now);see(flow,map(1));see(flow,map(1));
+            assertEquals(Kind.WAIT,see(flow,map(1)).kind);assertEquals(1,flow.marches.active());
+            assertEquals(5,flow.nextPreset);
+        }
+    }
+    @Test public void pauseAndStaminaRefillKeepTheChosenFormation(){
+        for(Mode mode:Mode.values()){
+            HuntFlow flow=new HuntFlow(new Options(mode,mode==Mode.GIANT?8:30,1,4,1<<3));
+            flow.start(now);toFormation(flow);flow.stop();flow.resume(now);
+            assertEquals(3,flow.nextPreset);click(flow,form(),Kind.DEPLOY);
+            for(int can=0;can<4;can++)click(flow,energy(8-can,can*10),Kind.USE);
+            click(flow,energy(4,40),Kind.CLOSE);
+            Action deploy=see(flow,form());assertEquals(Kind.DEPLOY,deploy.kind);assertEquals(3,deploy.preset);
+        }
+    }
+    @Test public void invalidSelectionCannotStartAHunt(){
+        for(Mode mode:Mode.values())for(int selection:new int[]{0,-1,64,65}){
+            assertThrows(IllegalArgumentException.class,()->new Options(mode,8,1,0,selection));
+        }
+    }
     @Test public void switchingTaskFromAnotherHuntPageReturnsBeforeSending(){
         for(Mode mode:Mode.values())for(Page oldPage:new Page[]{Page.SEARCH,Page.GIANT,Page.BEAST,Page.RALLY,Page.FORMATION}){
             HuntFlow flow=create(mode,1,100);

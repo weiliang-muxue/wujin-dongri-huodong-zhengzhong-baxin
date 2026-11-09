@@ -29,6 +29,16 @@ final class MarchFlow {
     }
     void stop(){session=false;running=false;pending=null;checkedAt=-1;remaining=0;resetEvidence();}
     boolean canResume(long now){return session&&!expired(now);}
+    void setPresets(int selection){
+        if(!PresetOrder.valid(selection))throw new IllegalArgumentException("请至少选择一个有效编队");
+        boolean changed=false;
+        for(int preset=0;preset<enabled.length;preset++){
+            boolean selected=(selection&(1<<preset))!=0;
+            changed|=enabled[preset]!=selected;
+            enabled[preset]=selected;
+        }
+        if(changed)stop();
+    }
     void deferPending(){
         if(pending==Kind.SCROLL)lastScroll=0;
         if(pending==Kind.NAVIGATE)lastNav=-1;
@@ -55,7 +65,11 @@ final class MarchFlow {
     private Decision pause(String message){stop();return new Decision(Kind.PAUSE,0,0,message);}
     private Decision act(Kind kind,int x,int y,Phase next,String message){pending=kind;afterAction=next;return new Decision(kind,x,y,message);}
     private int choosePreset(){
-        for(int n=0;n<6;n++){int i=(nextPreset+n)%6;if((attemptedMask&(1<<i))==0&&enabled[i]&&presetX[i]>0&&presetY[i]>0)return i;}return -1;
+        int available=0;
+        for(int preset=0;preset<6;preset++){
+            if(enabled[preset]&&presetX[preset]>0&&presetY[preset]>0)available|=1<<preset;
+        }
+        return PresetOrder.next(available&~attemptedMask,nextPreset);
     }
     private void returnToMap(long now){phase=Phase.RETURN_MAP;returnSince=now;backAttempts=0;checkedAt=-1;remaining=0;resetEvidence();}
     private void returnToList(long now){phase=Phase.RETURN_LIST;returnSince=now;backAttempts=0;unknownSince=-1;}

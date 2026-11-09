@@ -4,6 +4,38 @@ import static org.junit.Assert.*;
 import static cn.local.winterbear.BearFlow.Kind;
 
 public class MarchFlowTest {
+    @Test public void everySelectionSendsOnlyItsEnabledPresetsThenWraps(){
+        for(int selection=1;selection<=63;selection++){
+            MarchFlow flow=flow();flow.setPresets(selection);flow.start(1000);enter(flow,0);
+            long time=3000;
+            for(int preset=0;preset<6;preset++)if((selection&(1<<preset))!=0){
+                sendFromList(flow,time,preset);time+=5000;
+            }
+            assertEquals(Integer.bitCount(selection),flow.submitted);
+            assertEquals(MarchFlow.Phase.RETURN_MAP,flow.phase);
+            flow.next(map(0),time);flow.next(map(0),time+1000);
+            assertEquals(Kind.NAVIGATE,flow.next(map(0),time+1600).kind);flow.complete(true,time+1700);
+            sendFromList(flow,time+3000,Integer.numberOfTrailingZeros(selection));
+        }
+    }
+    @Test public void changingSelectionInvalidatesThePausedFormation(){
+        MarchFlow flow=flow();enter(flow,4);
+        flow.next(list(),3000);flow.complete(true,3100);flow.suspend(4000,false);
+        assertTrue(flow.canResume(4100));flow.setPresets(1<<4);
+        assertFalse(flow.canResume(4200));flow.start(5000);
+        assertEquals(MarchFlow.Phase.MAP,flow.phase);
+        assertTrue(flow.enabled[4]);assertFalse(flow.enabled[0]);
+    }
+    @Test public void unchangedSelectionPreservesPauseResume(){
+        MarchFlow flow=flow();enter(flow,4);flow.suspend(3000,false);
+        flow.setPresets(PresetOrder.ALL);assertTrue(flow.canResume(4000));
+    }
+    @Test public void missingChosenFlagDoesNotSelectAnotherFormation(){
+        MarchFlow flow=flow();flow.setPresets(1<<5);flow.start(1000);enter(flow,5);
+        flow.next(list(),3000);flow.complete(true,3100);
+        BearFlow.Frame formation=deploy();formation.savedPreset[5]=false;
+        assertEquals(Kind.WAIT,flow.next(formation,4400).kind);assertEquals(0,flow.submitted);
+    }
     @Test public void shortRalliesScrollImmediatelyAndStayInList(){
         MarchFlow flow=flow();enter(flow,3);
         for(int attempt=0;attempt<8;attempt++){

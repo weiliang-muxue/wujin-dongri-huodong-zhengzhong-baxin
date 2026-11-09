@@ -61,6 +61,19 @@ final class Config {
         return has("preset_marker"+slot)&&x>0&&y>0&&x<width()&&y<height();
     }
     boolean enabled(int slot) { return p.getBoolean("enabled" + slot, false); }
+    int presetSelection() {
+        int selection=0;
+        for(int preset=0;preset<SLOTS;preset++){
+            if(p.getBoolean("enabled"+preset,true))selection|=1<<preset;
+        }
+        return selection;
+    }
+    void setPresetSelection(int selection) {
+        if(selection<0||(selection&~PresetOrder.ALL)!=0)throw new IllegalArgumentException("编队编号超出范围");
+        SharedPreferences.Editor edit=p.edit().putInt("nextPreset",Math.max(0,PresetOrder.next(selection,0)));
+        for(int preset=0;preset<SLOTS;preset++)edit.putBoolean("enabled"+preset,(selection&(1<<preset))!=0);
+        edit.apply();
+    }
     boolean dry() { return p.getBoolean("dry", true); }
     boolean mapVerified(){return !target().isEmpty()&&marchReady()&&p.getBoolean("mapVerified",false);}
     void markMapVerified(String app,int w,int h,int used){p.edit().putString("target",app).putInt("width",w).putInt("height",h).putBoolean("mapVerified",true).putInt("lastMapUsed",used).apply();}

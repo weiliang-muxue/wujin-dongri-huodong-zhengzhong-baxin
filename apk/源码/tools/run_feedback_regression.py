@@ -16,7 +16,7 @@ p.add_argument('--adaptive-layouts',action='store_true')
 p.add_argument('--bullseye-fixtures',type=Path)
 p.add_argument('--return-fixtures',type=Path,help='Private Xiaomi rally / returning / returned screenshots')
 p.add_argument('--paging-fixtures',type=Path,help='Private short-countdown recording frames')
-p.add_argument('--suite',action='append',choices=['core','bullseye','adaptive','huawei','direct','reported','marches','return','paging','overlay','hunt','feedback','countdown','compat'],help='Run selected suites; default runs every supplied suite')
+p.add_argument('--suite',action='append',choices=['core','presets','bullseye','adaptive','huawei','direct','reported','marches','return','paging','overlay','hunt','feedback','countdown','compat'],help='Run selected suites; default runs every supplied suite')
 p.add_argument('--adaptive-bear-only',action='store_true')
 a=p.parse_args()
 if not a.serial.startswith('emulator-'):p.error('Use a dedicated emulator')
@@ -71,7 +71,7 @@ with (a.output/'android-feedback-runtime.txt').open('w',encoding='utf-8') as log
         process=subprocess.Popen(command,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,encoding='utf-8',errors='replace')
         # All pixel suites are slower under software-only emulation, including
         # the reported-level/glyph checks. Keep a bounded timeout for every suite.
-        limit=120 if entry=='OverlayUiRuntimeCheck' else 600 if entry=='RuntimeCoreCheck' else 1800
+        limit=300 if entry=='OverlayUiRuntimeCheck' else 600 if entry=='RuntimeCoreCheck' else 1800
         timer=threading.Timer(limit,process.kill);timer.start();lines=[]
         try:
             for line in process.stdout:
@@ -83,6 +83,9 @@ with (a.output/'android-feedback-runtime.txt').open('w',encoding='utf-8') as log
     if wanted('core'):
         core=run('RuntimeCoreCheck',remote+'/simulation')
         if '0 failures' not in core:raise RuntimeError('ART test result missing')
+    if wanted('presets'):
+        result=run('PresetSettingsRuntimeCheck',f'{remote}/assets {remote}/preset-config')
+        if 'ANDROID PRESET SETTINGS PASS: 68' not in result:raise RuntimeError('Preset settings regression result missing')
     if a.bullseye_fixtures and wanted('bullseye'):
         result=run('BullseyeLayoutRuntimeCheck',f'{remote}/lib {remote}/fixtures')
         if 'ANDROID BULLSEYE LAYOUT PASS:' not in result:raise RuntimeError('Bullseye layout result missing')
@@ -110,14 +113,17 @@ with (a.output/'android-feedback-runtime.txt').open('w',encoding='utf-8') as log
     if a.suite and 'overlay' in a.suite:
         result=run('OverlayUiRuntimeCheck',f'{remote}/overlay-ui')
         if 'ANDROID OVERLAY UI PASS: 48' not in result:raise RuntimeError('Overlay UI regression result missing')
+        if 'ANDROID PRESET PICKER PASS: 12' not in result:raise RuntimeError('Preset picker regression result missing')
         overlay_output=a.output/'overlay-ui'
         overlay_output.mkdir(parents=True,exist_ok=True)
+        render_names=['preset-picker.png']
         for label in ('打熊','靶心','巨兽','野兽'):
             for state in ('expanded','collapsed'):
-                name=f'{label}-{state}.png'
-                transfer=subprocess.run([a.adb,'-s',a.serial,'exec-out','cat',f'{remote}/overlay-ui/{name}'],
-                                        capture_output=True,timeout=30,check=True)
-                (overlay_output/name).write_bytes(transfer.stdout)
+                render_names.append(f'{label}-{state}.png')
+        for name in render_names:
+            transfer=subprocess.run([a.adb,'-s',a.serial,'exec-out','cat',f'{remote}/overlay-ui/{name}'],
+                                    capture_output=True,timeout=30,check=True)
+            (overlay_output/name).write_bytes(transfer.stdout)
         print(f'Overlay renders saved to {overlay_output}',flush=True)
     if a.hunt_fixtures and wanted('hunt'):
         result=run('HuntRuntimeCheck',f'{remote}/lib {remote}/fixtures {remote}/assets')

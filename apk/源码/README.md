@@ -4,11 +4,13 @@ JDK 17、Gradle 8.9、Android SDK 35 extension 15、Build Tools 35.0.0。设置 
 
 构建：`gradlew.bat :app:testEngine :app:assembleRelease :app:lintRelease`。
 
-将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.1.5.apk。
+将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.1.6.apk。
 
-检查成品使用 `python tools/verify_android_package.py ../无尽冬日助手-2.1.5.apk --version 2.1.5`。
+检查成品使用 `python tools/verify_android_package.py ../无尽冬日助手-2.1.6.apk --version 2.1.6`。
 
 一个 launcher：ModeActivity；一个无障碍服务：BearService。cn.local.bullseye.GameService 和 HuntController 是该服务内的模块，不是其他 Android Service。ModeGate、运行代次和输入前检查共同限制旧任务回调。返回活动选择会停止所有模块。
+
+2.1.6 的 `PresetPicker` 共用于打熊、巨兽、野兽的主界面和游戏内菜单。`PresetOrder` 按所选编号循环，巨兽、野兽的 `Options` 默认构造仍选中全部六个编队。打熊继续读写旧的 `enabled0`～`enabled5` 配置，重新选择时从最小编号开始，改变勾选会废弃旧的暂停步骤。编队选择与活动队数分别传入流程。
 
 2.1.5 的 `TaskChooser` 由这个无障碍服务显示游戏内任务选择与狩猎参数弹窗。四个活动通过 `OverlayFold.Controls` 共享尺寸、按钮和状态行，通过 `OverlayFold` 共享收起、展开和任务切换入口。切换前暂停旧任务，确认新任务后撤销旧任务回调，等游戏窗口恢复后启动。靶心首次仍需在助手中保存两张参考截图。
 

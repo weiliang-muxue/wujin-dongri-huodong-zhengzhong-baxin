@@ -16,14 +16,14 @@ import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
-import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
 public final class MainActivity extends Activity {
     private Config config;
     private TextView status;
-    private boolean checkingOcr,advancedOpen,teamsOpen,lastServiceState;
+    private boolean checkingOcr,advancedOpen,lastServiceState;
+    private PresetPicker presets;
     private ScrollView page;
     private final Handler handler=new Handler(Looper.getMainLooper());
     private final Runnable refresh=new Runnable(){public void run(){
@@ -66,22 +66,10 @@ public final class MainActivity extends Activity {
             Ui.button(this,live,"去游戏打熊",true,()->chooseMode(false));
             Ui.button(this,live,"试识别",false,()->chooseMode(true));
         }
-        LinearLayout settings=Ui.card(this,content,"编队与时长","默认使用前 6 个已保存预设；本次最多 "+config.minutes()+" 分钟。下一次使用第 "+(config.p.getInt("nextPreset",0)+1)+" 个。");
-        Ui.button(this,settings,teamsOpen?"收起调整":"调整编队与时长",false,()->{teamsOpen=!teamsOpen;render();});
-        if(teamsOpen){
-            Ui.button(this,settings,"本次时长："+config.minutes()+" 分钟",false,()->number("本次运行分钟数（1–30）","minutes",config.minutes(),1,30));
-            Ui.button(this,settings,"下次使用第 "+(config.p.getInt("nextPreset",0)+1)+" 个预设",false,()->number("下次预设编号（1–6）","nextPreset",config.p.getInt("nextPreset",0)+1,1,6));
-            note(settings,"旗帜栏保持最左端。位置已载入不代表英雄已回城；正式出征时仍会检查画面。");
-            for(int i=0;i<6;i++){
-                final int slot=i;
-                Switch enabled=new Switch(this);enabled.setText(config.label(i));enabled.setTextSize(16);enabled.setTextColor(Ui.TEXT);enabled.setMinHeight(Ui.dp(this,52));
-                enabled.setChecked(config.enabled(i));settings.addView(enabled);
-                enabled.setOnCheckedChangeListener((v,on)->{
-                    if(on&&!config.ready(slot)){enabled.setChecked(false);toast("先连接游戏自动载入位置，或在高级设置录入旗帜");return;}
-                    config.p.edit().putBoolean("enabled"+slot,on).apply();
-                });
-            }
-        }
+        LinearLayout settings=Ui.card(this,content,"本次任务",null);
+        presets=new PresetPicker(this,config.presetSelection(),config::setPresetSelection);
+        settings.addView(presets);
+        Ui.button(this,settings,"本次时长  "+config.minutes()+" 分钟",false,()->number("本次运行分钟数（1–30）","minutes",config.minutes(),1,30));
         LinearLayout advanced=Ui.card(this,content,"高级设置与排查","只有自动连接失败、画面错位或数字读不清时才需要。");
         Ui.button(this,advanced,advancedOpen?"收起高级设置":"展开高级设置",false,()->{advancedOpen=!advancedOpen;render();});
         if(advancedOpen){
@@ -117,6 +105,7 @@ public final class MainActivity extends Activity {
     private void connectMap(){BearService svc=service();if(svc==null)return;svc.prepareCapture("auto_map",0);moveTaskToBack(true);toast("打开真实游戏的野外地图，再点悬浮窗“连接游戏”");}
     private void calibrate(String mode,int slot){BearService svc=service();if(svc==null)return;svc.prepareCapture(mode,slot);moveTaskToBack(true);}
     private void chooseMode(boolean dry){
+        if(!presets.validateSelection())return;
         BearService svc=service();if(svc==null)return;
         if(!config.mapVerified()){connectMap();return;}
         if(!dry){
@@ -143,8 +132,8 @@ public final class MainActivity extends Activity {
         new AlertDialog.Builder(this).setTitle("使用说明与常见问题").setItems(titles,(d,which)->{
             switch(which){
                 case 0:message(titles[which],"① 手动开启无障碍服务。\n② 点“连接游戏地图”，打开真实野外地图，点悬浮窗“连接游戏”。没有行军栏也可以连接，无需手动展开。\n③ 固定的“等级1 变异巨熊”、绿色＋和前六个预设位置会自动载入，正常情况不用手动取样。\n\n选择“去游戏打熊”，回地图点开始。出征后继续留在列表加入下一队；本批空位用完、全部预设暂不可用或信息过期时才回地图。");break;
-                case 1:message(titles[which],"提前保存好前 6 个预设，旗帜栏保持最左端。游戏自带的自动加入可以保留。\n\n打开助手 → 去游戏打熊 → 回野外地图 → 悬浮窗开始。运行时自动收起多余按钮，暂停键始终可见。\n\n按 1→6 使用预设；空兵、超编会换下一个，不改你的预设配置。即使只有 1 个士兵，只要游戏显示编队有效，也按保存的配置使用。\n\n默认本次 30 分钟。可调整剩余分钟数。暂停后重新开始会重新计时，手动操作游戏前请先暂停。");break;
-                case 2:message(titles[which],"行军 x/6：自己的总行军数量。0～5 表示还有位置，6 表示已满。\n红色 X：进入联盟集结列表的快捷入口，它本身不能证明有空队列。\n绿色＋：这一行别人的巨熊集结可以尝试加入，灰色或满队跳过。\n\n同一张地图截图可以同时找行军数和红色入口。进入列表、选编队和出征后，助手会继续自动截取新画面，不需要你逐张截图。\n\n自己的预设按 1→6 轮换。行军数只说明总空位，不能保证某个预设的英雄已返回。");break;
+                case 1:message(titles[which],"提前保存好前 6 个预设，旗帜栏保持最左端。游戏自带的自动加入可以保留。\n\n打开助手 → 去游戏打熊 → 回野外地图 → 悬浮窗开始。运行时自动收起多余按钮，暂停键始终可见。\n\n按勾选的编队编号循环使用；空兵、超编会换下一个，不改你的预设配置。即使只有 1 个士兵，只要游戏显示编队有效，也按保存的配置使用。\n\n默认本次 30 分钟。可调整剩余分钟数。暂停后继续当前流程，手动操作游戏前请先暂停。");break;
+                case 2:message(titles[which],"行军 x/6：自己的总行军数量。0～5 表示还有位置，6 表示已满。\n红色 X：进入联盟集结列表的快捷入口，它本身不能证明有空队列。\n绿色＋：这一行别人的巨熊集结可以尝试加入，灰色或满队跳过。\n\n同一张地图截图可以同时找行军数和红色入口。进入列表、选编队和出征后，助手会继续自动截取新画面，不需要你逐张截图。\n\n自己的预设按选中的编号轮换。行军数只说明总空位，不能保证某个预设的英雄已返回。");break;
                 case 3:message(titles[which],"连接失败：确认是真实野外地图，不要停在相册或截图预览。正常情况不需要展开左侧队列。\n\n地图标记不匹配时，才需要在有行军栏的画面手动框选“行军”和完整 x/6。\n\n明明有巨熊但识别不到：在高级设置补录巨熊固定标记和绿色＋。预设位置不匹配时补录对应旗帜。内置布局会按本机屏幕适配；手动取样按原位置保留。\n\n已知的“士兵超出出征上限”提示会关闭后返回列表，重新点绿色＋。集结倒计时不足 10 秒或读不清会跳过；选编队时不足 10 秒会返回。出现“没时间了”提示会点取消、返回列表换队。集结满员、发车或进入详情会返回列表换队；未知弹窗不会乱点。\n\n“已提交”表示点出征后回到了列表，不保证服务器已经上车成功；不会再要求地图数字必须净增加。");break;
                 case 4:permissionHelp();break;
                 default:message(titles[which],"“检查内置测试图片”读取的是应用内固定的 5/6 图片，用来检查手机的数字识别功能。不开游戏也能运行。\n\n它不会读取当前游戏，不会绑定游戏，不会证明还有空位，也不会开启点击。\n\n首页“连接游戏地图”和“只看实时识别”读取的才是当前画面。");

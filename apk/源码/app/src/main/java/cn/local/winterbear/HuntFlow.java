@@ -7,10 +7,15 @@ final class HuntFlow {
     enum Kind { WAIT, STOP, OPEN, CATEGORY, LESS, MORE, SEARCH, TARGET, LAUNCH, PRESET, DEPLOY, BACK, DISMISS, USE, CLOSE }
     enum Phase { MAP, SEARCH, RESULT, RALLY, FORMATION, SEND, VERIFY, RECOVER }
     static final class Options {
-        final Mode mode; final int level,limit,canLimit;
+        final Mode mode; final int level,limit,canLimit,presetSelection;
         Options(Mode mode,int level,int limit,int canLimit){
+            this(mode,level,limit,canLimit,PresetOrder.ALL);
+        }
+        Options(Mode mode,int level,int limit,int canLimit,int presetSelection){
             if(mode==null||level<1||level>99||limit<1||limit>6||canLimit<0||canLimit>9999)throw new IllegalArgumentException("设置超出范围");
+            if(!PresetOrder.valid(presetSelection))throw new IllegalArgumentException("请至少选择一个有效编队");
             this.mode=mode;this.level=level;this.limit=limit;this.canLimit=canLimit;
+            this.presetSelection=presetSelection;
         }
     }
     static final class Frame {
@@ -29,7 +34,7 @@ final class HuntFlow {
     int nextPreset,submitted,cansUsed; private int selected,stableUsed=-2,stableCount;
     private int lastLevel=-1,levelFailures,categoryAttempts,batchLeft,stockBefore=-1,energyBefore=-1;
     private boolean awaitingCan,closingEnergy;private Kind pending;private long waitUntil,since,unknownSince=-1;
-    HuntFlow(Options options){this.options=options;}
+    HuntFlow(Options options){this.options=options;nextPreset=PresetOrder.next(options.presetSelection,0);}
     // The session ends on stamina/can allowance or a manual stop, not elapsed time.
     void start(long now){running=true;phase=Phase.MAP;since=now;waitUntil=now;stableCount=0;pending=null;}
     // Pausing invalidates callbacks in the controller. Resume preserves the session's limits.
@@ -80,7 +85,7 @@ final class HuntFlow {
         }
         if(phase==Phase.VERIFY){
             if(f.page==Page.MAP&&f.used>=0){
-                if(f.marches!=null&&f.marches.length==f.used&&marches.observe(f.marches,now-f.age,true)){submitted++;nextPreset=(selected+1)%6;phase(Phase.MAP,now);stableCount=0;return waitFor(activity()+" "+marches.active()+"/"+options.limit+" 队 · 已出征 "+submitted+" 次");}
+                if(f.marches!=null&&f.marches.length==f.used&&marches.observe(f.marches,now-f.age,true)){submitted++;nextPreset=PresetOrder.next(options.presetSelection,selected+1);phase(Phase.MAP,now);stableCount=0;return waitFor(activity()+" "+marches.active()+"/"+options.limit+" 队 · 已出征 "+submitted+" 次");}
                 return now-since>15000?halt("未确认新增任务队伍，已暂停，请检查出征结果"):waitFor("确认本次出征队伍");
             }
             return unknown(now,"等待出征结果");

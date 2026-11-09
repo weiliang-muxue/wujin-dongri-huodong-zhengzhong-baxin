@@ -22,7 +22,7 @@ public final class RuntimeCoreCheck {
         Result tests=JUnitCore.runClasses(
             cn.local.automation.LayoutTransformTest.class,
             BearOverlayGuardTest.class,cn.local.bullseye.FloatingGuardTest.class,cn.local.bullseye.SessionGuardTest.class,
-            ModeGateTest.class,MarchCountTest.class,MarchFlowTest.class,RallyOrderTest.class,
+            ModeGateTest.class,MarchCountTest.class,MarchFlowTest.class,RallyOrderTest.class,PresetOrderTest.class,
             GestureGateTest.class,MarchSimulationTest.class,LiveMapCheckTest.class,
             TroopCountTest.class,ForegroundGateTest.class,HuntFlowTest.class,HuntMarchesTest.class,
             ForegroundWindowsTest.class,OverlayRecoveryTest.class,ServiceConnectionStateTest.class);

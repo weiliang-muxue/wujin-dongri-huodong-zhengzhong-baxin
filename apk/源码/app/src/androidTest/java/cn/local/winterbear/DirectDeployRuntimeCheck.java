@@ -15,12 +15,22 @@ public final class DirectDeployRuntimeCheck {
                 require(frame.page==HuntFlow.Page.FORMATION,"Hunt formation not recognized");
                 int[] tap=frame.points[HuntFlow.Kind.DEPLOY.ordinal()];
                 require(tap[0]>image.getWidth()*.55&&tap[1]>image.getHeight()*.90,"Wrong deploy button");
-                HuntFlow flow=new HuntFlow(new HuntFlow.Options(mode,mode==HuntFlow.Mode.GIANT?8:30,1,0));
-                flow.start(0);flow.phase=HuntFlow.Phase.FORMATION;
-                require(flow.next(frame,1000).kind==HuntFlow.Kind.PRESET,"Preset must be selected first");flow.complete(true,1100);
-                require(flow.next(frame,2100).kind==HuntFlow.Kind.DEPLOY,"Troop-free hunt deploy blocked");
-                require(flow.next(frame,2400).kind==HuntFlow.Kind.WAIT,"Repeated pending deploy");flow.complete(true,2500);
-                require(flow.next(frame,4000).kind==HuntFlow.Kind.WAIT&&flow.submitted==0,"Click alone must not count as dispatch");
+                for(int preset=0;preset<6;preset++){
+                    HuntFlow flow=new HuntFlow(new HuntFlow.Options(mode,mode==HuntFlow.Mode.GIANT?8:30,1,0,1<<preset));
+                    HuntFlow.Frame map=new HuntFlow.Frame();map.page=HuntFlow.Page.MAP;map.used=0;map.marches=new HuntMarches.Row[0];
+                    flow.start(0);flow.next(map,1000);
+                    require(flow.next(map,2000).kind==HuntFlow.Kind.OPEN,"Preset selection did not reach search");flow.complete(true,2100);
+                    flow.phase=HuntFlow.Phase.FORMATION;
+                    HuntFlow.Action selected=flow.next(frame,3100);
+                    require(selected.kind==HuntFlow.Kind.PRESET&&selected.preset==preset,"Wrong selected hunt preset");
+                    int[] flag=frame.flags[selected.preset];
+                    require(flag[0]>0&&flag[0]<image.getWidth()&&flag[1]>0&&flag[1]<image.getHeight(),"Invalid preset coordinates");
+                    if(preset>0)require(flag[0]>frame.flags[preset-1][0],"Preset flags out of order");
+                    flow.complete(true,3200);
+                    require(flow.next(frame,4200).kind==HuntFlow.Kind.DEPLOY,"Troop-free hunt deploy blocked");
+                    require(flow.next(frame,4500).kind==HuntFlow.Kind.WAIT,"Repeated pending deploy");flow.complete(true,4600);
+                    require(flow.next(frame,6000).kind==HuntFlow.Kind.WAIT&&flow.submitted==0,"Click alone must not count as dispatch");
+                }
             }
         }
     }
@@ -33,14 +43,17 @@ public final class DirectDeployRuntimeCheck {
         try(Matcher reader=new Matcher(config,noOcr)){
             reader.frame(image);BearFlow.Frame frame=reader.observe();
             require(frame.formation&&frame.deploy,"Bear formation not recognized");
-            MarchFlow flow=MarchFlowTest.flow();
-            for(int i=0;i<6;i++){flow.presetX[i]=config.p.getInt("presetX"+i,0);flow.presetY[i]=config.p.getInt("presetY"+i,0);}
-            MarchFlowTest.enter(flow,4);flow.next(MarchFlowTest.list(),3000);flow.complete(true,3100);
-            require(flow.next(frame,4400).kind==BearFlow.Kind.PRESET,"Bear preset missing");flow.complete(true,4500);
-            BearFlow.Decision tap=flow.next(frame,5300);
-            require(tap.kind==BearFlow.Kind.DEPLOY&&tap.x==frame.deployX&&tap.y==frame.deployY,"Troop-free bear deploy blocked");
-            require(flow.next(frame,5350).kind==BearFlow.Kind.WAIT,"Repeated pending bear deploy");flow.complete(true,5400);
-            require(flow.next(frame,6700).kind==BearFlow.Kind.WAIT&&flow.submitted==0,"Unconfirmed bear dispatch counted");
+            for(int preset=0;preset<6;preset++){
+                MarchFlow flow=MarchFlowTest.flow();flow.setPresets(1<<preset);flow.start(1000);
+                for(int i=0;i<6;i++){flow.presetX[i]=config.p.getInt("presetX"+i,0);flow.presetY[i]=config.p.getInt("presetY"+i,0);}
+                MarchFlowTest.enter(flow,4);flow.next(MarchFlowTest.list(),3000);flow.complete(true,3100);
+                BearFlow.Decision selected=flow.next(frame,4400);
+                require(selected.kind==BearFlow.Kind.PRESET&&selected.x==frame.presetX[preset]&&selected.y==frame.presetY[preset],"Wrong selected bear preset");flow.complete(true,4500);
+                BearFlow.Decision tap=flow.next(frame,5300);
+                require(tap.kind==BearFlow.Kind.DEPLOY&&tap.x==frame.deployX&&tap.y==frame.deployY,"Troop-free bear deploy blocked");
+                require(flow.next(frame,5350).kind==BearFlow.Kind.WAIT,"Repeated pending bear deploy");flow.complete(true,5400);
+                require(flow.next(frame,6700).kind==BearFlow.Kind.WAIT&&flow.submitted==0,"Unconfirmed bear dispatch counted");
+            }
         }
     }
     static void run(String[] args)throws Exception{
@@ -67,6 +80,6 @@ public final class DirectDeployRuntimeCheck {
                 }finally{image.recycle();}
             }original.recycle();
         }
-        System.out.println("ANDROID DIRECT DEPLOY PASS: "+checks+" image checks; all three modes; zero formation numeric OCR; no gestures");
+        System.out.println("ANDROID DIRECT DEPLOY PASS: "+checks+" image checks; all six presets in all three modes; zero formation numeric OCR; no gestures");
     }
 }

@@ -140,8 +140,11 @@ public final class BearService extends AccessibilityService {
         if(hunt!=null)hunt.pause("选择任务");
         if(bullseye!=null)bullseye.pauseForTaskSelection();
     }
-    void startBearInGame(){
+    int bearPresetSelection(){return config.presetSelection();}
+    void startBearInGame(int presetSelection){
+        if(!PresetOrder.valid(presetSelection))throw new IllegalArgumentException("请至少选择一个有效编队");
         stopAllModes();
+        config.setPresetSelection(presetSelection);
         if(config.mapVerified()&&config.validate()==null){
             prepareRun(false);
             final int token=generation;
@@ -189,11 +192,12 @@ public final class BearService extends AccessibilityService {
         String foreground=activePackage();
         if(!foreground.isEmpty()&&!foreground.equals(config.target())){setStatus("请先切回目标游戏");return;}
         if(!interactive()){setStatus("屏幕未点亮");return;}
+        if(!PresetOrder.valid(config.presetSelection())){setStatus("请至少选择一个编队");return;}
         activateBear();
         try { matcher=new Matcher(config); } catch(Exception e){setStatus("图像组件无法启动："+e.getMessage());return;}
         generation++;flow.dry=config.dry();flow.maxMinutes=config.minutes();flow.nextPreset=config.p.getInt("nextPreset",0);
+        flow.setPresets(config.presetSelection());
         for(int i=0;i<Config.SLOTS;i++){
-            flow.enabled[i]=config.enabled(i);
             flow.presetX[i]=config.p.getInt("presetX"+i,0);flow.presetY[i]=config.p.getInt("presetY"+i,0);
         }
         long now=SystemClock.elapsedRealtime();
