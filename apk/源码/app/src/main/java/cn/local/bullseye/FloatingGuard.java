@@ -5,6 +5,11 @@ import java.util.List;
 
 /** Screen-pixel geometry shared by overlay placement, capture masking and input checks. */
 public final class FloatingGuard {
+    /** Shared dimensions for the compact activity controls. */
+    public static float controlScale(int width,int topInset,float density){
+        float available=Math.max(1,width*.33f-topInset-12);
+        return Math.min(Math.min(density,width/440f),available/106f);
+    }
     public static final class Box {
         public final int left,top,right,bottom;
         public Box(int l,int t,int r,int b){left=l;top=t;right=r;bottom=b;}

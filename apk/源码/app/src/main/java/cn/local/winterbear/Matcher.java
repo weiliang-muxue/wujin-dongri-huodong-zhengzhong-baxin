@@ -62,8 +62,10 @@ final class Matcher implements AutoCloseable {
         if(templates.containsKey(key)) return templates.get(key);
         boolean referenceScale=key.startsWith("bear_label@");
         boolean marchCore=key.equals("march_anchor_core");
-        String sourceKey=referenceScale?"bear_label":marchCore?"march_anchor":key;
-        double factor=referenceScale?Double.parseDouble(key.substring(key.indexOf('@')+1))*config.width()/1080.0:config.p.getFloat(sourceKey+"Scale",1f);
+        int variant=key.indexOf('@');
+        String sourceKey=marchCore?"march_anchor":variant>=0?key.substring(0,variant):key;
+        double factor=referenceScale?config.width()/1080.0:config.p.getFloat(sourceKey+"Scale",1f);
+        if(variant>=0)factor*=Double.parseDouble(key.substring(variant+1));
         Bitmap bitmap=config.image(sourceKey); if(bitmap==null) return null;
         Mat rgba=new Mat(), original=new Mat(), result=new Mat(),rgb=new Mat();
         try {
@@ -223,23 +225,41 @@ final class Matcher implements AutoCloseable {
         }
         return null;
     }
-    private Hit locate(String key,Rect region){
+    Hit locate(String key,Rect region){
         Hit fixed=nearConfigured(key);if(fixed!=null||!automatic())return fixed;
         // Search the page region only after the quick local match misses. Multiple
         // lookalikes are ambiguous; never select an arbitrary one to click.
-        List<Hit> matches=find(key,region,2);if(matches.size()!=1)return null;
-        Hit h=matches.get(0);return near(key,h.x,h.y);
+        List<Hit> matches=find(key,region,2);
+        if(matches.size()==1){Hit h=matches.get(0);return near(key,h.x,h.y);}
+        if(!matches.isEmpty()||(!key.equals("header")&&!key.equals("rally_tab")))return null;
+        // Recorded phone text is about 2% larger than the reference after width
+        // normalization. Keep the normal confidence and require one location.
+        Hit result=null;
+        for(String factor:new String[]{"0.98","1.02"}){
+            List<Hit> adjusted=find(key+"@"+factor,region,2);
+            if(adjusted.size()>1)return null;
+            if(adjusted.isEmpty())continue;
+            Hit hit=adjusted.get(0);
+            if(result!=null&&Math.hypot(result.x-hit.x,result.y-hit.y)>config.width()*.02)return null;
+            if(result==null||hit.confidence>result.confidence)result=hit;
+        }
+        return result;
     }
     Hit joinBeside(Rect target){
         if(!config.has("join_reference"))return null;
         int band=(int)(config.height()*.13);
-        List<Hit> hits=find("join_reference",new Rect(Math.max(target.right,(int)(config.width()*.70)),Math.max(0,target.centerY()-band),config.width(),Math.min(config.height(),target.centerY()+band)),4);
+        Rect area=new Rect(Math.max(target.right,(int)(config.width()*.70)),Math.max(0,target.centerY()-band),config.width(),Math.min(config.height(),target.centerY()+band));
         Hit result=null;
-        for(Hit hit:hits){
-            Hit colored=near("join_reference",hit.x,hit.y);
-            if(colored==null)continue;
-            if(result!=null)return null; // Ambiguous rows require a user choice.
-            result=colored;
+        for(String key:new String[]{"join_reference","join_reference@0.98","join_reference@1.02","join_reference@1.05"}){
+            for(Hit hit:find(key,area,4)){
+                Hit colored=near(key,hit.x,hit.y);
+                if(colored==null)continue;
+                if(result!=null&&Math.hypot(result.x-colored.x,result.y-colored.y)>config.width()*.025)return null;
+                if(result==null||colored.confidence>result.confidence)result=colored;
+            }
+            // The original size is the fast path. Nearby sizes are used only
+            // when it did not confirm a green button in this row.
+            if(result!=null&&key.equals("join_reference"))return result;
         }
         return result;
     }

@@ -4,6 +4,71 @@ import static org.junit.Assert.*;
 import static cn.local.winterbear.BearFlow.Kind;
 
 public class MarchFlowTest {
+    @Test public void shortRalliesScrollImmediatelyAndStayInList(){
+        MarchFlow flow=flow();enter(flow,3);
+        for(int attempt=0;attempt<8;attempt++){
+            long now=3000+attempt*1500;
+            assertEquals(Kind.SCROLL,flow.next(timed(9,4,0),now).kind);
+            assertEquals(Kind.WAIT,flow.next(timed(9,4,0),now+50).kind);
+            flow.complete(true,now+100);
+            assertEquals(MarchFlow.Phase.FIND,flow.phase);
+        }
+        assertEquals(0,flow.submitted);assertEquals(0,flow.nextPreset);
+        assertEquals(Kind.JOIN,flow.next(timed(8,33),16000).kind);
+    }
+    @Test public void shortRalliesDoNotRefreshTheListWhenCapacityReadingAges(){
+        MarchFlow flow=flow();enter(flow,3);
+        flow.next(timed(9),3000);flow.complete(true,3100);
+        assertEquals(Kind.SCROLL,flow.next(timed(5,2),200000).kind);
+        assertEquals(MarchFlow.Phase.FIND,flow.phase);
+        flow.complete(true,200100);
+        assertEquals(Kind.WAIT,flow.next(timed(33),201000).kind);
+        assertEquals(MarchFlow.Phase.RETURN_MAP,flow.phase);
+    }
+    @Test public void deferredScrollReadsTheNewScreenBeforeChoosingAgain(){
+        MarchFlow flow=flow();enter(flow,4);
+        assertEquals(Kind.SCROLL,flow.next(timed(5),3000).kind);
+        flow.deferPending();
+        assertFalse(flow.pending());assertEquals(Kind.JOIN,flow.next(timed(33),3500).kind);
+        assertEquals(0,flow.submitted);
+    }
+    @Test public void pauseAndResumeKeepListPositionAndRemainingSlots(){
+        MarchFlow flow=flow();enter(flow,4);
+        flow.next(timed(5),3000);flow.complete(true,3100);
+        flow.suspend(4000,false);assertTrue(flow.canResume(5000));flow.resume(5000);
+        assertEquals(MarchFlow.Phase.FIND,flow.phase);
+        assertEquals(Kind.JOIN,flow.next(timed(33),5000).kind);
+    }
+    @Test public void pauseBeforeUnsentJoinUsesFreshTimerOnResume(){
+        MarchFlow flow=flow();enter(flow,4);
+        assertEquals(Kind.JOIN,flow.next(timed(13),3000).kind);
+        flow.suspend(3100,false);flow.resume(7000);
+        assertEquals(Kind.SCROLL,flow.next(timed(9),7000).kind);
+        assertEquals(0,flow.nextPreset);assertEquals(0,flow.submitted);
+    }
+    @Test public void pauseDuringDeployDoesNotSubmitTwiceAfterResume(){
+        MarchFlow flow=flow();enter(flow,3);
+        flow.next(list(),3000);flow.complete(true,3100);
+        flow.next(deploy(),4400);flow.complete(true,4500);
+        assertEquals(Kind.DEPLOY,flow.next(deploy(),5300).kind);
+        flow.suspend(5350,true);flow.resume(6500);
+        assertEquals(MarchFlow.Phase.VERIFY,flow.phase);
+        assertEquals(1,flow.nextPreset);
+        assertEquals(Kind.WAIT,flow.next(deploy(),6500).kind);
+        flow.next(list(),7600);assertEquals(1,flow.submitted);
+    }
+    @Test public void pauseBeforeDeployWasSentCanResumeThatAction(){
+        MarchFlow flow=flow();enter(flow,3);
+        flow.next(list(),3000);flow.complete(true,3100);
+        flow.next(deploy(),4400);flow.complete(true,4500);
+        flow.next(deploy(),5300);flow.suspend(5350,false);flow.resume(6000);
+        assertEquals(0,flow.nextPreset);assertEquals(Kind.DEPLOY,flow.next(deploy(),6000).kind);
+    }
+    @Test public void stoppingOrExpiringRequiresANewSession(){
+        MarchFlow flow=flow();flow.suspend(2000,false);
+        assertFalse(flow.canResume(1801000));
+        flow.start(2000000);flow.stop();assertFalse(flow.canResume(2001000));
+    }
     @Test public void presetTapUsesItsObservedPositionAfterLayoutMoves(){
         MarchFlow flow=flow();enter(flow,4);flow.next(list(),3000);flow.complete(true,3100);
         BearFlow.Frame moved=deploy();moved.presetX[0]=144;moved.presetY[0]=527;

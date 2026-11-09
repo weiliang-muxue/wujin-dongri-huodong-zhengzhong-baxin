@@ -20,13 +20,33 @@ final class MarchFlow {
     private long dialogSince,markerMissingSince=-1;
     private long rallyDeadline=-1;
     private boolean charged;
+    private boolean session;
     void start(long now){
-        running=true;pending=null;phase=Phase.MAP;phaseSince=now;waitUntil=now;lastScroll=now;
+        session=true;running=true;pending=null;phase=Phase.MAP;phaseSince=now;waitUntil=now;lastScroll=now;
         deadline=now+Math.max(1,Math.min(30,maxMinutes))*60_000L;
         checkedAt=-1;unknownSince=-1;lastNav=-1;remaining=0;charged=false;attemptedMask=0;retryAt=0;
         failedRowY=-1;lastJoinY=-1;dialogAttempts=0;avoidRowUntil=0;markerMissingSince=-1;rallyDeadline=-1;resetEvidence();nextPreset=Math.floorMod(nextPreset,6);
     }
-    void stop(){running=false;pending=null;checkedAt=-1;remaining=0;resetEvidence();}
+    void stop(){session=false;running=false;pending=null;checkedAt=-1;remaining=0;resetEvidence();}
+    boolean canResume(long now){return session&&!expired(now);}
+    void deferPending(){
+        if(pending==Kind.SCROLL)lastScroll=0;
+        if(pending==Kind.NAVIGATE)lastNav=-1;
+        if(pending==Kind.BACK&&backAttempts>0)backAttempts--;
+        pending=null;
+    }
+    void suspend(long now,boolean gestureStarted){
+        // A submitted deploy may have reached the game even if its callback is
+        // interrupted. Reserve that attempt before discarding the callback.
+        if(gestureStarted&&pending!=null)complete(true,now);
+        else deferPending();
+        running=false;
+    }
+    void resume(long now){
+        if(!canResume(now))return;
+        running=true;pending=null;waitUntil=now;phaseSince=now;
+        returnSince=now;dialogSince=now;unknownSince=-1;markerMissingSince=-1;
+    }
     boolean pending(){return pending!=null;}
     boolean expired(long now){return now>=deadline;}
     long remainingMillis(long now){return Math.max(0,deadline-now);}
@@ -119,7 +139,7 @@ final class MarchFlow {
             return waitFor("集结剩余不足 10 秒，返回列表换一队");
         }
         if(phase==Phase.ENTER_LIST||phase==Phase.FIND||phase==Phase.FORMATION||phase==Phase.SEND||phase==Phase.RETURN_LIST){
-            if(checkedAt<0||now-checkedAt>CAPACITY_MAX_AGE||remaining<=0){returnToMap(now);return waitFor("本批空位已用完或需更新，回地图检查");}
+            if(checkedAt<0||remaining<=0||(phase!=Phase.FIND&&now-checkedAt>CAPACITY_MAX_AGE)){returnToMap(now);return waitFor("本批空位已用完或需更新，回地图检查");}
         }
         if(phase==Phase.ENTER_LIST){
             if(f.header&&f.rallyList){phase=Phase.FIND;phaseSince=now;lastScroll=now;unknownSince=-1;}
@@ -146,13 +166,18 @@ final class MarchFlow {
             Row row=f.rows.stream().filter(r->r.order>=0&&r.available&&r.x>0&&r.y>0&&CountdownDigits.canJoin(r.secondsLeft,f.ageMillis)&&(now>=avoidRowUntil||Math.abs(r.y-failedRowY)>60))
                 .min(Comparator.comparingInt(r->r.order)).orElse(null);
             if(row!=null){
+                if(now-checkedAt>CAPACITY_MAX_AGE){returnToMap(now);return waitFor("找到可加入的巨熊，先确认剩余空位");}
                 if(remainingMillis(now)<8000)return waitFor("本轮即将结束，停止新上车");
                 selected=choosePreset();
                 if(selected<0){retryAt=now+8000;returnToMap(now);return waitFor("本轮已检查全部预设，稍后重查");}
                 lastJoinY=row.y;charged=false;markerMissingSince=-1;rallyDeadline=now+row.secondsLeft*1000L-f.ageMillis;
                 return act(Kind.JOIN,row.x,row.y,Phase.FORMATION,"点击绿色＋ · 预设 "+(selected+1)+" · 本批余 "+remaining+" 次");
             }
-            if(now-lastScroll>=5000){lastScroll=now;return act(Kind.SCROLL,0,0,Phase.FIND,"暂时没有可加入的巨熊，翻看下一屏");}
+            boolean shortRally=f.rows.stream().anyMatch(r->r.available&&r.secondsLeft>=0&&r.secondsLeft*1000L-f.ageMillis<10000);
+            if(shortRally||now-lastScroll>=5000){
+                lastScroll=now;
+                return act(Kind.SCROLL,0,0,Phase.FIND,shortRally?"跳过不足 10 秒的集结，向下查找":"向下查找可加入的巨熊");
+            }
             return waitFor("等待倒计时至少 10 秒、可加入的巨熊");
         }
         if(phase==Phase.FORMATION){

@@ -48,14 +48,13 @@ public class GameService extends ContextWrapper {
         remaining=c.count;tickets.reset();rounds=0;pending=-1;starting=false;inRound=false;allowInitialBoard=true;exitSeen=0;exitAttempts=0;visited.clear();retries=0;failures=0;running=true;paused=false;lastKnown=SystemClock.uptimeMillis();lastAction=lastKnown;showFloating();update("5 秒后开始");main.postDelayed(this::tick,5000);
     }
     void showFloating(){
-        floating=new LinearLayout(this);floating.setOrientation(LinearLayout.VERTICAL);floating.setPadding(dp(8),dp(4),dp(8),dp(4));floating.setBackgroundColor(Color.rgb(237,247,240));
-        TextView version=new TextView(this);version.setText("正中靶心  ⠿ 拖动");version.setGravity(Gravity.CENTER_VERTICAL);version.setMinHeight(dp(48));version.setTextColor(Color.rgb(20,70,45));version.setTextSize(13);version.setTypeface(null,Typeface.BOLD);floating.addView(version);
-        status=new TextView(this);status.setTextColor(Color.rgb(20,70,45));status.setTextSize(12);status.setMaxLines(2);status.setEllipsize(TextUtils.TruncateAt.END);floating.addView(status,new LinearLayout.LayoutParams(-1,dp(40)));
-        LinearLayout buttons=new LinearLayout(this);pauseButton=new Button(this);pauseButton.setText("暂停");pauseButton.setAllCaps(false);pauseButton.setMinHeight(dp(48));
-        pauseButton.setOnClickListener(v->{if(paused){final long resumeToken=generation;worker.execute(()->{synchronized(tapLock){if(!SessionGuard.canResume(resumeToken,generation,running,paused,host.modes.is(cn.local.winterbear.ModeGate.Mode.BULLSEYE)))return;tickets.reset();lastKnown=SystemClock.uptimeMillis();lastAction=lastKnown;paused=false;update("继续识别");}});}else pause("已暂停");});
-        LinearLayout.LayoutParams left=new LinearLayout.LayoutParams(0,dp(48),1);left.rightMargin=dp(8);buttons.addView(pauseButton,left);
-        Button stop=new Button(this);stop.setText("停止");stop.setAllCaps(false);stop.setMinHeight(dp(48));stop.setOnClickListener(v->stopRun("已停止"));buttons.addView(stop,new LinearLayout.LayoutParams(0,dp(48),1));floating.addView(buttons);
-        int width=Math.min(dp(240),wm.getCurrentWindowMetrics().getBounds().width()-dp(24));
+        WindowMetrics metrics=wm.getCurrentWindowMetrics();
+        Insets insets=metrics.getWindowInsets().getInsetsIgnoringVisibility(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());
+        cn.local.winterbear.OverlayFold.Controls ui=new cn.local.winterbear.OverlayFold.Controls(
+                this,metrics.getBounds().width(),insets.top,"靶心",this::togglePause,()->stopRun("已结束"));
+        floating=ui.panel;status=ui.status;pauseButton=ui.run;TextView version=ui.title;
+        pauseButton.setText("暂停");
+        int width=ui.width;
         floatingParams=new WindowManager.LayoutParams(width,-2,WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,PixelFormat.TRANSLUCENT);
         floatingParams.gravity=Gravity.TOP|Gravity.LEFT;floatingParams.x=dp(12);floatingParams.y=dp(48);
         final long token=generation,initialMove=moveId;
@@ -65,14 +64,25 @@ public class GameService extends ContextWrapper {
             if(e.getActionMasked()==MotionEvent.ACTION_DOWN){synchronized(tapLock){dragging=true;overlayRevision++;move=++moveId;}moved=false;sx=e.getRawX();sy=e.getRawY();x=floatingParams.x;y=floatingParams.y;return true;}
             if(e.getActionMasked()==MotionEvent.ACTION_MOVE){moved|=Math.hypot(e.getRawX()-sx,e.getRawY()-sy)>ViewConfiguration.get(GameService.this).getScaledTouchSlop();Rect r=wm.getCurrentWindowMetrics().getBounds();floatingParams.x=Math.max(0,Math.min(r.width()-floating.getWidth(),x+(int)(e.getRawX()-sx)));floatingParams.y=Math.max(0,Math.min(r.height()-floating.getHeight(),y+(int)(e.getRawY()-sy)));wm.updateViewLayout(floating,floatingParams);return true;}
             if(e.getActionMasked()==MotionEvent.ACTION_UP||e.getActionMasked()==MotionEvent.ACTION_CANCEL){final long finishedMove=move;floating.post(()->settleFloating(token,finishedMove));if(!moved&&e.getActionMasked()==MotionEvent.ACTION_UP)v.performClick();return true;}return true;}});
-        floatingFold=new cn.local.winterbear.OverlayFold(this,floating,version,"靶心",width,dp(72),dp(48),newWidth->{
+        floatingFold=new cn.local.winterbear.OverlayFold(this,floating,version,"靶心",width,ui.compactWidth,ui.titleHeight,newWidth->{
             final long resizedMove;synchronized(tapLock){overlayRevision++;dragging=true;resizedMove=++moveId;}
             floatingParams.width=newWidth;floatingParams.x=Math.min(floatingParams.x,wm.getCurrentWindowMetrics().getBounds().width()-newWidth);
             final View resized=floating;
             resized.getViewTreeObserver().addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener(){public boolean onPreDraw(){resized.getViewTreeObserver().removeOnPreDrawListener(this);if(floating==resized)settleFloating(token,resizedMove);return true;}});
             wm.updateViewLayout(floating,floatingParams);
-        });
+        },host::showTaskPicker);
         wm.addView(floating,floatingParams);floating.post(()->settleFloating(token,initialMove));
+    }
+    private void togglePause(){
+        if(!paused){pause("已暂停");return;}
+        final long resumeToken=generation;
+        worker.execute(()->{
+            synchronized(tapLock){
+                if(!SessionGuard.canResume(resumeToken,generation,running,paused,host.modes.is(cn.local.winterbear.ModeGate.Mode.BULLSEYE)))return;
+                tickets.reset();lastKnown=SystemClock.uptimeMillis();lastAction=lastKnown;
+                paused=false;update("继续识别");
+            }
+        });
     }
     // Only the main thread reads Views. Workers consume immutable screen-pixel bounds.
     void publishFloatingBounds(){
@@ -104,8 +114,24 @@ public class GameService extends ContextWrapper {
         if(FloatingGuard.blocked(floatingBounds,protectedAreas,dp(8)))pause("悬浮条挡住游戏，请拖到空白处后继续");
     }
     boolean frameCurrent(){return running&&!paused&&FloatingGuard.current(frameRevision,overlayRevision,dragging);}
-    void update(String message){getSharedPreferences("progress",0).edit().putInt("remaining",remaining).putInt("rounds",rounds).putString("state",message).apply();main.post(()->{if(status!=null){String text="首页余券 "+remaining+" · "+message;if(!text.contentEquals(status.getText()))status.setText(text);status.setContentDescription(text);}if(pauseButton!=null)pauseButton.setText(paused?"继续":"暂停");});}
+    void update(String message){getSharedPreferences("progress",0).edit().putInt("remaining",remaining).putInt("rounds",rounds).putString("state",message).apply();main.post(()->{if(status!=null){String text="首页余券 "+remaining+" · "+message;if(!text.contentEquals(status.getText()))status.setText(text);status.setContentDescription(text);}if(pauseButton!=null){String label=paused?"继续":"暂停";if(!label.contentEquals(pauseButton.getText()))pauseButton.setText(label);}});}
     void pause(String message){synchronized(tapLock){paused=true;overlayRevision++;}update(message);}
+    public void pauseForTaskSelection(){if(running)pause("选择任务");}
+    public boolean awaitingCapture(){return busy||captureInFlight;}
+    public String startSavedTask(){
+        try{
+            File file=new File(getFilesDir(),"config.json");
+            if(!file.isFile())return "请先在助手中上传靶心首页和 12 个靶子的截图。";
+            Config saved=Config.read(new String(java.nio.file.Files.readAllBytes(file.toPath()),java.nio.charset.StandardCharsets.UTF_8));
+            Rect screen=wm.getCurrentWindowMetrics().getBounds();
+            if(saved.width!=screen.width()||saved.height!=screen.height()||saved.targets.size()!=12)
+                return "靶心截图与当前屏幕不一致，请在助手中更新截图。";
+            if(!new File(getFilesDir(),"home.png").isFile()||!new File(getFilesDir(),"board.png").isFile())
+                return "靶心截图缺失，请在助手中重新上传。";
+            if(busy||captureInFlight)return "上一项截图尚未结束，请稍后再切换。";
+            begin(saved);return running?null:"靶心截图未能读取，请在助手中重新保存截图。";
+        }catch(Exception error){return "靶心设置读取失败，请在助手中重新保存截图。";}
+    }
     public void stopRun(String message){boolean wasRunning;synchronized(tapLock){wasRunning=running;generation++;running=false;paused=false;dragging=false;floatingBounds=null;overlayRevision++;}main.removeCallbacksAndMessages(null);gestureInFlight=false;if(!captureInFlight)busy=false;if(floating!=null){try{wm.removeView(floating);}catch(Exception ignored){}floating=null;status=null;pauseButton=null;}getSharedPreferences("progress",0).edit().putInt("remaining",remaining).putInt("rounds",rounds).putString("state",message).apply();if(wasRunning)Toast.makeText(this,message+"，剩余 "+remaining+" 张",Toast.LENGTH_LONG).show();}
     void next(){main.postDelayed(this::tick,700);}
     void tick(){

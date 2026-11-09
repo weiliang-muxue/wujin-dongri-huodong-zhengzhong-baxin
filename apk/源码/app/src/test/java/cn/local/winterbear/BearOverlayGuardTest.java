@@ -5,6 +5,38 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class BearOverlayGuardTest {
+    @Test public void recordingPanelCannotBlockTheNextPageSwipe(){
+        for(int[] size:new int[][]{{620,1280},{1080,2400},{1152,2376},{1344,2772},{1260,2800}}){
+            int width=size[0],height=size[1],gap=Math.max(4,width/60);
+            Box panel=new Box(width*45/100,height*58/100,width*80/100,height*74/100);
+            assertFalse(BearOverlayGuard.inputClear(panel,width*.5f,height*.78f,width*.5f,height*.36f,gap));
+            for(int page=0;page<8;page++){
+                float[] swipe=BearOverlayGuard.nextPagePath(width,height,panel,gap);
+                assertNotNull(swipe);assertTrue(swipe[1]>swipe[3]);
+                assertTrue(BearOverlayGuard.inputClear(panel,swipe[0],swipe[1],swipe[2],swipe[3],gap));
+            }
+        }
+    }
+    @Test public void blockedSwipeRequestsOverlayRecovery(){
+        assertNull(BearOverlayGuard.nextPagePath(1080,2400,new Box(0,900,1080,1500),16));
+        assertNull(BearOverlayGuard.nextPagePath(1080,2400,null,16));
+    }
+    @Test public void giantSizeControlsFitTheBearProtectionAreas(){
+        for(int[] size:new int[][]{{620,1280},{720,1600},{1080,2400},{1152,2376},{1344,2772},{1260,2800}}){
+            int width=size[0],height=size[1];
+            for(int top:new int[]{0,60,120}){
+                float scale=FloatingGuard.controlScale(width,top,3f);
+                Box panel=new Box(width*40/100,top,width*40/100+Math.round(width*.57f),top+8+Math.round(106*scale));
+                Box clear=FloatingGuard.place(panel,new Box(0,top,width,height-60),BearOverlayGuard.areas(width,height),8);
+                if(clear==null){
+                    panel=new Box(panel.left,top,panel.left+Math.round(72*scale),top+8+Math.round(44*scale));
+                    clear=FloatingGuard.place(panel,new Box(0,top,width,height-60),BearOverlayGuard.areas(width,height),8);
+                }
+                assertNotNull(width+"x"+height,clear);
+                assertNotNull(BearOverlayGuard.nextPagePath(width,height,clear,8));
+            }
+        }
+    }
     @Test public void compactPanelLeavesAllBearControlsAndPopupVisible(){
         for(int w:new int[]{720,1080,1440})for(float density:new float[]{2f,2.75f,3f,3.5f,4f}){
             int h=w*20/9;float d=Math.min(density,w/360f);int gap=Math.round(8*d);

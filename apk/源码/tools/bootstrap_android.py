@@ -26,7 +26,7 @@ def unpack(archive,dest,strip=1):
                 with z.open(info) as src,target.open('wb') as out:
                     while block:=src.read(1024*1024):out.write(block)
     print('Installed',dest,flush=True)
-xml=urllib.request.urlopen('https://dl.google.com/android/repository/repository2-1.xml',timeout=90).read()
+xml=urllib.request.urlopen('https://dl.google.com/android/repository/repository2-3.xml',timeout=90).read()
 tree=ET.fromstring(xml)
 for package,dest in [('platforms;android-35-ext15',sdk/'platforms'/'android-35-ext15'),('build-tools;35.0.0',sdk/'build-tools'/'35.0.0')]:
     if (dest/'source.properties').exists():continue

@@ -4,6 +4,13 @@ import static org.junit.Assert.*;
 import static cn.local.winterbear.HuntFlow.*;
 
 public class HuntFlowTest {
+    @Test public void switchingTaskFromAnotherHuntPageReturnsBeforeSending(){
+        for(Mode mode:Mode.values())for(Page oldPage:new Page[]{Page.SEARCH,Page.GIANT,Page.BEAST,Page.RALLY,Page.FORMATION}){
+            HuntFlow flow=create(mode,1,100);
+            assertEquals(Kind.BACK,see(flow,page(oldPage,-1)).kind);
+            assertEquals(0,flow.submitted);assertEquals(0,flow.cansUsed);
+        }
+    }
     long now=1000;
     HuntFlow create(Mode m,int cap,int cans){HuntFlow f=new HuntFlow(new Options(m,m==Mode.GIANT?8:30,cap,cans));f.start(now);return f;}
     Frame map(int n){Frame f=new Frame();f.page=Page.MAP;f.used=n;if(n>=0){f.marches=new HuntMarches.Row[n];for(int i=0;i<n;i++)f.marches[i]=new HuntMarches.Row(i*0x9e3779b97f4a7c15L,3600+i*1800-(int)((now+2000)/1000));}return f;}

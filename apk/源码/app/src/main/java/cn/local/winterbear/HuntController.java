@@ -41,7 +41,7 @@ final class HuntController {
     void destroy(){stop();destroyed=true;worker.shutdown();}
     boolean hasTask(){return flow!=null;}
     void pauseForSettings(){if(panel!=null)pause("已回到设置，任务暂停");}
-    private void begin(){
+    void begin(){
         if(!owns()||flow==null)return;
         String app=host.foregroundPackage();
         if(app.isEmpty()||app.equals(host.getPackageName())||app.startsWith("com.android.")||app.equals("android")){update("先回到游戏的野外地图");return;}
@@ -63,17 +63,11 @@ final class HuntController {
     private void show(){
         WindowMetrics metrics=wm.getCurrentWindowMetrics();Rect screen=metrics.getBounds();
         Insets insets=metrics.getWindowInsets().getInsetsIgnoringVisibility(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());
-        float scale=HuntOverlayGuard.scale(screen.width(),insets.top,host.getResources().getDisplayMetrics().density);
-        panel=Ui.column(host);panel.setPadding(6,4,6,4);panel.setBackground(Ui.shape(host,Ui.CARD,12));
-        LinearLayout row=new LinearLayout(host);
-        TextView title=Ui.text(host,(flow.options.mode==Mode.GIANT?"巨兽":"野兽")+" ⠿",12,Ui.ACCENT);
-        title.setGravity(Gravity.CENTER);row.addView(title,new LinearLayout.LayoutParams(0,-1,1));
-        run=Ui.button(host,row,"开始",true,()->{if(flow.running)pause("已暂停 · 已用罐头 "+flow.cansUsed);else begin();});
-        Button stop=Ui.button(host,row,"结束",false,this::stop);
-        for(Button b:new Button[]{run,stop}){b.setMinHeight(0);b.setMinimumHeight(0);b.setPadding(0,0,0,0);b.setTextSize(12);OverlayFold.fitText(b,Math.round(32*scale),12);b.setLayoutParams(new LinearLayout.LayoutParams(0,-1,1));}
-        panel.addView(row,new LinearLayout.LayoutParams(-1,Math.round(32*scale)));
-        status=Ui.text(host,"",11,Ui.TEXT);status.setMaxLines(2);OverlayFold.fitText(status,Math.round(30*scale),11);panel.addView(status,new LinearLayout.LayoutParams(-1,Math.round(30*scale)));
-        layout=new WindowManager.LayoutParams((int)(screen.width()*.57),-2,WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,PixelFormat.TRANSLUCENT);
+        String label=flow.options.mode==Mode.GIANT?"巨兽":"野兽";
+        OverlayFold.Controls ui=new OverlayFold.Controls(host,screen.width(),insets.top,label,
+                ()->{if(flow.running)pause("已暂停 · 已用罐头 "+flow.cansUsed);else begin();},this::stop);
+        panel=ui.panel;status=ui.status;run=ui.run;TextView title=ui.title;
+        layout=new WindowManager.LayoutParams(ui.width,-2,WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,PixelFormat.TRANSLUCENT);
         layout.gravity=Gravity.TOP|Gravity.LEFT;layout.x=(int)(screen.width()*.4);layout.y=(int)(screen.height()*.025);
         title.setOnTouchListener(new View.OnTouchListener(){float sx,sy;int x,y;boolean moved;
             public boolean onTouch(View v,MotionEvent e){
@@ -81,7 +75,7 @@ final class HuntController {
                 if(e.getActionMasked()==MotionEvent.ACTION_MOVE){moved|=Math.hypot(e.getRawX()-sx,e.getRawY()-sy)>ViewConfiguration.get(host).getScaledTouchSlop();Rect r=wm.getCurrentWindowMetrics().getBounds();layout.x=Math.max(0,Math.min(r.width()-panel.getWidth(),x+(int)(e.getRawX()-sx)));layout.y=Math.max(0,Math.min(r.height()-panel.getHeight(),y+(int)(e.getRawY()-sy)));wm.updateViewLayout(panel,layout);return true;}
                 if(e.getActionMasked()==MotionEvent.ACTION_UP||e.getActionMasked()==MotionEvent.ACTION_CANCEL){revision++;dragging=false;if(!moved&&e.getActionMasked()==MotionEvent.ACTION_UP)v.performClick();return true;}return true;
             }});
-        folding=new OverlayFold(host,panel,title,flow.options.mode==Mode.GIANT?"巨兽":"野兽",layout.width,Math.round(72*scale),Math.round(44*scale),width->{revision++;layout.width=width;layout.x=Math.min(layout.x,wm.getCurrentWindowMetrics().getBounds().width()-width);wm.updateViewLayout(panel,layout);});
+        folding=new OverlayFold(host,panel,title,label,ui.width,ui.compactWidth,ui.titleHeight,width->{revision++;layout.width=width;layout.x=Math.min(layout.x,wm.getCurrentWindowMetrics().getBounds().width()-width);wm.updateViewLayout(panel,layout);},host::showTaskPicker);
         panel.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->publish());wm.addView(panel,layout);
     }
     private void publish(){if(panel==null||panel.getWidth()==0)return;int[] xy=new int[2];panel.getLocationOnScreen(xy);Box b=new Box(xy[0],xy[1],xy[0]+panel.getWidth(),xy[1]+panel.getHeight());if(!b.same(bounds)){bounds=b;revision++;}}

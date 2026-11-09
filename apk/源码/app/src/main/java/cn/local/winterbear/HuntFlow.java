@@ -86,7 +86,8 @@ final class HuntFlow {
             return unknown(now,"等待出征结果");
         }
         if(phase==Phase.MAP){
-            if(f.page==Page.SEARCH)return act(Kind.BACK,"先回地图检查行军空位");
+            if(f.page==Page.SEARCH||f.page==Page.GIANT||f.page==Page.BEAST||f.page==Page.RALLY||f.page==Page.FORMATION)
+                return act(Kind.BACK,"返回地图开始本次任务");
             if(f.page!=Page.MAP)return unknown(now,"请停在野外地图");
             if(f.used<0)return unknown(now,"读取地图行军数量");
             if(f.used!=stableUsed){stableUsed=f.used;stableCount=1;return waitFor("确认行军 "+f.used+"/6");}

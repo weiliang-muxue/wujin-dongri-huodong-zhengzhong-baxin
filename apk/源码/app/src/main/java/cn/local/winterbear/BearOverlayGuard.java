@@ -20,7 +20,8 @@ final class BearOverlayGuard {
     }
     static List<Box> areas(int w,int h){
         List<Box> a=new ArrayList<>();
-        a.add(FloatingGuard.normalized(w,h,0,0,1,.29f)); // back, headers, flags, troop count
+        a.add(FloatingGuard.normalized(w,h,0,0,.38f,.29f)); // back and page title
+        a.add(new Box(0,(int)Math.ceil(w*.33f),w,(int)Math.ceil(h*.29f))); // flags and troop count
         a.add(FloatingGuard.normalized(w,h,0,.18f,.37f,.91f)); // march and bear targets
         a.add(FloatingGuard.normalized(w,h,.80f,.15f,1,.91f)); // red entry and green +
         a.add(FloatingGuard.normalized(w,h,0,.455f,1,.695f)); // overflow text and confirmation
@@ -30,6 +31,14 @@ final class BearOverlayGuard {
         return a;
     }
     static boolean current(long captured,long revision,boolean dragging){return FloatingGuard.current(captured,revision,dragging);}
+    static float[] nextPagePath(int width,int height,Box overlay,int gap){
+        float from=height*.78f,to=height*.36f;
+        for(float column:new float[]{.5f,.68f,.32f,.18f}){
+            float x=width*column;
+            if(inputClear(overlay,x,from,x,to,gap))return new float[]{x,from,x,to};
+        }
+        return null;
+    }
     static boolean inputClear(Box overlay,float x1,float y1,float x2,float y2,int gap){
         if(overlay==null)return false;
         Box path=new Box((int)Math.floor(Math.min(x1,x2)),(int)Math.floor(Math.min(y1,y2)),

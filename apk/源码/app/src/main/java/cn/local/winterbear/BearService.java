@@ -24,6 +24,7 @@ import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.WindowInsets;
 import android.view.WindowManager;
+import android.view.WindowMetrics;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.Button;
@@ -51,9 +52,12 @@ public final class BearService extends AccessibilityService {
     private final MarchFlow flow=new MarchFlow();
     private final GestureGate gestureGate=new GestureGate();
     private final ForegroundGate foregroundGate=new ForegroundGate();
+    private final OverlayRecovery overlayRecovery=new OverlayRecovery();
     public final ModeGate modes=new ModeGate();
     private cn.local.bullseye.GameService bullseye;
     private HuntController hunt;
+    private TaskChooser taskChooser;
+    private String taskSelectionTarget="";
     private final ArrayDeque<String> log=new ArrayDeque<>();
     private final Runnable tick=this::cycle;
     private Config config;
@@ -68,14 +72,15 @@ public final class BearService extends AccessibilityService {
     private boolean dragging,overlayMoving;
     private Matcher matcher;
     private String status="准备就绪",captureMode="";
-    private int captureSlot,generation,captureId,scrollCount;
+    private int captureSlot,generation,captureId;
     private boolean capturing,destroyed,checkingMap,manualMapFallback;
+    private boolean startAfterMapCheck;
     private final LiveMapCheck previewCheck=new LiveMapCheck();
     private Bitmap selectionBitmap;
 
     @Override protected void onServiceConnected() {
         super.onServiceConnected();config=new Config(this);windows=getSystemService(WindowManager.class);
-        reference=new WeakReference<>(this);bullseye=new cn.local.bullseye.GameService(this);hunt=new HuntController(this);setStatus("服务已开启 · 选择活动后开始");
+        reference=new WeakReference<>(this);bullseye=new cn.local.bullseye.GameService(this);hunt=new HuntController(this);taskChooser=new TaskChooser(this);setStatus("服务已开启 · 选择活动后开始");
     }
     @Override public void onAccessibilityEvent(AccessibilityEvent event) {
         // A heads-up notification can temporarily replace the active accessibility root.
@@ -83,7 +88,7 @@ public final class BearService extends AccessibilityService {
     }
     @Override public void onInterrupt(){pause("服务被系统中断");if(bullseye!=null)bullseye.onInterrupt();if(hunt!=null)hunt.pause("服务被系统中断");}
     @Override public void onDestroy() {
-        destroyed=true;pause("服务已关闭");if(bullseye!=null)bullseye.onDestroy();if(hunt!=null)hunt.destroy();captureId++;removePicker();removeBubble();
+        destroyed=true;pause("服务已关闭");if(taskChooser!=null)taskChooser.dismiss();if(bullseye!=null)bullseye.onDestroy();if(hunt!=null)hunt.destroy();captureId++;removePicker();removeBubble();
         main.removeCallbacksAndMessages(null);worker.shutdown();if(current()==this)reference.clear();super.onDestroy();
     }
     String status(){return status;}
@@ -98,9 +103,9 @@ public final class BearService extends AccessibilityService {
         updateControls();
     }
     private void updateControls(){
-        if(moreButton!=null&&!flow.running&&!checkingMap&&!capturing)moreButton.setVisibility(View.VISIBLE);
+        if(moreButton!=null)moreButton.setVisibility(!captureMode.isEmpty()&&!flow.running&&!checkingMap&&!capturing?View.VISIBLE:View.GONE);
         if(runButton!=null){
-            String label=flow.running?"暂停":checkingMap?"读取中":captureMode.equals("auto_map")?"连接":!captureMode.isEmpty()?"取样":config.dry()?"识别":"开始";
+            String label=flow.running?"暂停":checkingMap?"读取中":captureMode.equals("auto_map")?"连接":!captureMode.isEmpty()?"取样":config.dry()?"识别":flow.canResume(SystemClock.elapsedRealtime())?"继续":"开始";
             if(!label.contentEquals(runButton.getText()))runButton.setText(label);
             runButton.setEnabled(!checkingMap);runButton.setAlpha(checkingMap?.55f:1f);
         }
@@ -113,56 +118,106 @@ public final class BearService extends AccessibilityService {
         return ForegroundProbe.read(this);
     }
     void pause(String reason) {
-        generation++;checkingMap=false;previewCheck.reset();gestureGate.cancel();flow.stop();main.removeCallbacks(tick);setStatus(reason);
+        flow.suspend(SystemClock.elapsedRealtime(),gestureGate.inFlight());
+        generation++;checkingMap=false;previewCheck.reset();gestureGate.cancel();main.removeCallbacks(tick);setStatus(reason);
         if(bubble!=null&&picker==null&&!destroyed)bubble.setVisibility(View.VISIBLE);
-        if(moreButton!=null)moreButton.setVisibility(View.VISIBLE);
         Matcher previous=matcher;matcher=null;
         if(previous!=null&&!worker.isShutdown())worker.execute(previous::close);
     }
     private boolean interactive() { return getSystemService(PowerManager.class).isInteractive(); }
     public String foregroundPackage(){return activePackage();}
-    public void activateBullseye(){pause("已切换正中靶心");removePicker();removeBubble();if(hunt!=null)hunt.stop();modes.select(ModeGate.Mode.BULLSEYE);}
-    public void stopAllModes(){pause("已返回活动选择");removePicker();removeBubble();if(bullseye!=null)bullseye.stopRun("已切换活动");if(hunt!=null)hunt.stop();modes.select(ModeGate.Mode.NONE);}
+    public void activateBullseye(){pause("已切换正中靶心");flow.stop();removePicker();removeBubble();if(hunt!=null)hunt.stop();modes.select(ModeGate.Mode.BULLSEYE);}
+    public void stopAllModes(){startAfterMapCheck=false;pause("已返回活动选择");flow.stop();removePicker();removeBubble();if(bullseye!=null)bullseye.stopRun("已切换活动");if(hunt!=null)hunt.stop();modes.select(ModeGate.Mode.NONE);}
     private void activateBear(){if(bullseye!=null)bullseye.stopRun("已切换打熊");if(hunt!=null)hunt.stop();modes.select(ModeGate.Mode.BEAR);}
-    void prepareHunt(HuntFlow.Options options){pause("已切换狩猎");removePicker();removeBubble();if(bullseye!=null)bullseye.stopRun("已切换活动");hunt.prepare(options);}
+    void prepareHunt(HuntFlow.Options options){pause("已切换狩猎");flow.stop();removePicker();removeBubble();if(bullseye!=null)bullseye.stopRun("已切换活动");hunt.prepare(options);}
     void pauseHunt(){if(hunt!=null)hunt.pauseForSettings();}
     boolean hasHuntTask(){return hunt!=null&&hunt.hasTask();}
+    public void showTaskPicker(){if(!destroyed&&taskChooser!=null)taskChooser.show();}
+    void pauseForTaskSelection(){
+        String foreground=activePackage();
+        if(!foreground.isEmpty()&&!foreground.equals(getPackageName()))taskSelectionTarget=foreground;
+        pause("选择任务");
+        if(hunt!=null)hunt.pause("选择任务");
+        if(bullseye!=null)bullseye.pauseForTaskSelection();
+    }
+    void startBearInGame(){
+        stopAllModes();
+        if(config.mapVerified()&&config.validate()==null){
+            prepareRun(false);
+            final int token=generation;
+            main.postDelayed(()->startInGameWhenReady(token,this::start,0),350);
+        }else{
+            prepareCapture("auto_map",0);startAfterMapCheck=true;
+            final int token=generation;
+            main.postDelayed(()->startInGameWhenReady(token,this::captureNow,0),350);
+        }
+    }
+    void startHuntInGame(HuntFlow.Options options){
+        stopAllModes();prepareHunt(options);
+        final int token=generation;
+        main.postDelayed(()->startInGameWhenReady(token,hunt::begin,0),350);
+    }
+    void startBullseyeInGame(){
+        stopAllModes();
+        final int token=generation;
+        main.postDelayed(()->startInGameWhenReady(token,()->startSavedBullseye(token,0),0),350);
+    }
+    private void startInGameWhenReady(int token,Runnable action,int attempt){
+        if(token!=generation||destroyed)return;
+        String foreground=activePackage();
+        boolean gameReady=!foreground.isEmpty()&&!foreground.equals(getPackageName())
+                &&(taskSelectionTarget.isEmpty()||taskSelectionTarget.equals(foreground));
+        if(capturing||!gameReady){
+            if(attempt<20)main.postDelayed(()->startInGameWhenReady(token,action,attempt+1),250);
+            else taskChooser.message("等待游戏画面","请回到游戏后重新选择任务。");
+            return;
+        }
+        action.run();
+    }
+    private void startSavedBullseye(int token,int attempt){
+        if(token!=generation||destroyed)return;
+        if(bullseye.awaitingCapture()&&attempt<20){
+            main.postDelayed(()->startSavedBullseye(token,attempt+1),250);return;
+        }
+        String error=bullseye.startSavedTask();
+        if(error!=null)taskChooser.message("正中靶心",error);
+    }
     @Override public void onTaskRemoved(Intent rootIntent){if(hunt!=null)hunt.stop();super.onTaskRemoved(rootIntent);}
     private void start() {
         if(picker!=null||capturing||checkingMap){setStatus("请先完成当前识别或取样");return;}
         String error=config.validate();if(error!=null){setStatus(error);return;}
-        if(!activePackage().equals(config.target())){setStatus("请先切回目标游戏的野外地图");return;}
+        String foreground=activePackage();
+        if(!foreground.isEmpty()&&!foreground.equals(config.target())){setStatus("请先切回目标游戏");return;}
         if(!interactive()){setStatus("屏幕未点亮");return;}
         activateBear();
         try { matcher=new Matcher(config); } catch(Exception e){setStatus("图像组件无法启动："+e.getMessage());return;}
-        generation++;scrollCount=0;flow.dry=config.dry();flow.maxMinutes=config.minutes();flow.nextPreset=config.p.getInt("nextPreset",0);
+        generation++;flow.dry=config.dry();flow.maxMinutes=config.minutes();flow.nextPreset=config.p.getInt("nextPreset",0);
         for(int i=0;i<Config.SLOTS;i++){
             flow.enabled[i]=config.enabled(i);
             flow.presetX[i]=config.p.getInt("presetX"+i,0);flow.presetY[i]=config.p.getInt("presetY"+i,0);
         }
-        flow.start(SystemClock.elapsedRealtime());
+        long now=SystemClock.elapsedRealtime();
+        boolean resuming=flow.canResume(now);
+        if(resuming)flow.resume(now);else flow.start(now);
         foregroundGate.reset();
+        overlayRecovery.reset();
         if(controls!=null)controls.setVisibility(View.GONE);
         if(moreButton!=null)moreButton.setVisibility(View.GONE);
         int session=generation;
         main.postDelayed(()->{if(session==generation&&flow.running)pause("已达到本次运行时长");},flow.remainingMillis(SystemClock.elapsedRealtime()));
-        setStatus(flow.dry?"只识别模式 · 检查行军 x/6":"开始检查实际行军空位");cycle();
+        setStatus(flow.dry?"只识别模式 · 检查行军 x/6":resuming?"继续当前跟车流程":"开始检查实际行军空位");cycle();
     }
     void showBubble() {
         if(destroyed)return;
         if(bubble!=null){bubble.setVisibility(View.VISIBLE);return;}
-        bubble=Ui.column(this);bubble.setPadding(overlayDp(6),overlayDp(6),overlayDp(6),overlayDp(6));
-        bubble.setBackground(Ui.shape(this,Ui.CARD,16));bubble.setElevation(overlayDp(8));
-        TextView handle=Ui.text(this,"打熊 ⠿ 拖动",14,Ui.ACCENT);handle.setGravity(Gravity.CENTER_VERTICAL);bubble.addView(handle,new LinearLayout.LayoutParams(-1,overlayDp(40)));
-        handle.setMaxLines(1);handle.setAutoSizeTextTypeUniformWithConfiguration(8,14,1,android.util.TypedValue.COMPLEX_UNIT_SP);
-        statusLabel=Ui.text(this,status,12,Ui.TEXT);statusLabel.setMaxLines(2);statusLabel.setEllipsize(TextUtils.TruncateAt.END);bubble.addView(statusLabel,new LinearLayout.LayoutParams(-1,overlayDp(32)));
-        statusLabel.setAutoSizeTextTypeUniformWithConfiguration(8,12,1,android.util.TypedValue.COMPLEX_UNIT_SP);
-        LinearLayout actions=new LinearLayout(this);LinearLayout.LayoutParams row=new LinearLayout.LayoutParams(-1,overlayDp(48));row.topMargin=overlayDp(2);bubble.addView(actions,row);
-        runButton=Ui.button(this,actions,"开始",true,()->{if(flow.running)pause("已手动暂停");else if(!captureMode.isEmpty())captureNow();else start();});
-        Button stopButton=Ui.button(this,actions,"停止",false,()->{pause("已停止");removeBubble();});
-        for(Button button:new Button[]{runButton,stopButton}){button.setMinHeight(0);button.setMinimumHeight(0);button.setPadding(0,0,0,0);button.setTextSize(13);button.setSingleLine(true);button.setLayoutParams(new LinearLayout.LayoutParams(0,-1,1));}
-        for(Button button:new Button[]{runButton,stopButton})button.setAutoSizeTextTypeUniformWithConfiguration(8,13,1,android.util.TypedValue.COMPLEX_UNIT_SP);
-        ((LinearLayout.LayoutParams)runButton.getLayoutParams()).rightMargin=overlayDp(4);
+        WindowMetrics metrics=windows.getCurrentWindowMetrics();
+        Rect screenBounds=metrics.getBounds();
+        Insets insets=metrics.getWindowInsets().getInsetsIgnoringVisibility(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());
+        OverlayFold.Controls ui=new OverlayFold.Controls(this,screenBounds.width(),insets.top,"打熊",
+                ()->{if(flow.running)pause("已手动暂停");else if(!captureMode.isEmpty())captureNow();else start();},
+                ()->{pause("已结束");flow.stop();removeBubble();});
+        bubble=ui.panel;statusLabel=ui.status;runButton=ui.run;TextView handle=ui.title;
+        statusLabel.setText(status);
         moreButton=Ui.button(this,bubble,"更多 / 收起",false,()->{controls.setVisibility(controls.getVisibility()==View.VISIBLE?View.GONE:View.VISIBLE);});
         controls=Ui.column(this);bubble.addView(controls);
         controls.setVisibility(View.GONE);
@@ -173,12 +228,11 @@ public final class BearService extends AccessibilityService {
         });
         Ui.button(this,controls,"设置 / 说明",false,()->{pause("已打开助手设置");startActivity(new Intent(this,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP));});
         Ui.button(this,controls,"关闭悬浮窗",false,()->{pause("已关闭悬浮窗");removeBubble();});
-        bubbleParams=new WindowManager.LayoutParams((int)(windows.getCurrentWindowMetrics().getBounds().width()*.34f),-2,WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+        bubbleParams=new WindowManager.LayoutParams(ui.width,-2,WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,PixelFormat.TRANSLUCENT);
         bubbleParams.gravity=Gravity.TOP|Gravity.LEFT;
-        Rect screenBounds=windows.getCurrentWindowMetrics().getBounds();
-        bubbleParams.x=Math.max(0,Math.min(screenBounds.width()-Ui.dp(this,180),config.p.getInt("bubbleX",(int)(screenBounds.width()*.38))));
-        bubbleParams.y=Math.max(0,Math.min(screenBounds.height()-Ui.dp(this,350),config.p.getInt("bubbleY",(int)(screenBounds.height()*.45))));
+        bubbleParams.x=Math.max(0,Math.min(screenBounds.width()-ui.width,config.p.getInt("bubbleX",(int)(screenBounds.width()*.4))));
+        bubbleParams.y=Math.max(insets.top,Math.min(screenBounds.height()-ui.titleHeight,config.p.getInt("bubbleY",insets.top)));
         handle.setOnTouchListener(new View.OnTouchListener(){float startX,startY;int x,y;boolean moved;
             public boolean onTouch(View view,MotionEvent event){
                 if(event.getActionMasked()==MotionEvent.ACTION_DOWN){dragging=true;overlayRevision++;moved=false;startX=event.getRawX();startY=event.getRawY();x=bubbleParams.x;y=bubbleParams.y;return true;}
@@ -191,7 +245,7 @@ public final class BearService extends AccessibilityService {
                 }
                 if(event.getActionMasked()==MotionEvent.ACTION_UP||event.getActionMasked()==MotionEvent.ACTION_CANCEL){overlayRevision++;dragging=false;config.p.edit().putInt("bubbleX",bubbleParams.x).putInt("bubbleY",bubbleParams.y).apply();if(!moved&&event.getActionMasked()==MotionEvent.ACTION_UP)view.performClick();return true;}return true;
             }});
-        bubbleFold=new OverlayFold(this,bubble,handle,"打熊",bubbleParams.width,overlayDp(72),overlayDp(40),width->{overlayRevision++;bubbleParams.width=width;bubbleParams.x=Math.min(bubbleParams.x,windows.getCurrentWindowMetrics().getBounds().width()-width);windows.updateViewLayout(bubble,bubbleParams);});
+        bubbleFold=new OverlayFold(this,bubble,handle,"打熊",ui.width,ui.compactWidth,ui.titleHeight,width->{overlayRevision++;bubbleParams.width=width;bubbleParams.x=Math.min(bubbleParams.x,windows.getCurrentWindowMetrics().getBounds().width()-width);windows.updateViewLayout(bubble,bubbleParams);},this::showTaskPicker);
         windows.addView(bubble,bubbleParams);
         bubble.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->publishBubbleBounds());
         updateControls();
@@ -209,10 +263,11 @@ public final class BearService extends AccessibilityService {
     }
     private boolean prepareAnalysisOverlay(){
         if(bubble==null){showBubble();return false;}
-        if(dragging||overlayMoving)return false;
+        if(dragging){overlayRecovery.reset();return false;}
+        if(overlayMoving){recoverAnalysisOverlay();return false;}
         if(moreButton.getVisibility()!=View.GONE||controls.getVisibility()!=View.GONE){moreButton.setVisibility(View.GONE);controls.setVisibility(View.GONE);overlayRevision++;return false;}
         // The start button has just collapsed the settings. Wait for the smaller layout.
-        if(bubble.isLayoutRequested())return false;
+        if(bubble.isLayoutRequested()){recoverAnalysisOverlay();return false;}
         publishBubbleBounds();if(bubbleBounds==null)return false;
         Rect screen=windows.getCurrentWindowMetrics().getBounds();
         Insets inset=windows.getCurrentWindowMetrics().getWindowInsets().getInsetsIgnoringVisibility(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());
@@ -230,6 +285,7 @@ public final class BearService extends AccessibilityService {
             pause("当前屏幕没有可用浮窗位置，请退出分屏后继续");return false;
         }
         if(!clear.same(bubbleBounds)){
+            if(recoverAnalysisOverlay())return false;
             bubbleParams.x+=clear.left-bubbleBounds.left;bubbleParams.y+=clear.top-bubbleBounds.top;overlayRevision++;overlayMoving=true;
             final View moved=bubble;
             moved.getViewTreeObserver().addOnPreDrawListener(new android.view.ViewTreeObserver.OnPreDrawListener(){
@@ -237,16 +293,28 @@ public final class BearService extends AccessibilityService {
             });
             windows.updateViewLayout(bubble,bubbleParams);return false;
         }
+        overlayRecovery.reset();
         return true;
     }
+    private boolean recoverAnalysisOverlay(){
+        OverlayRecovery.Action action=overlayRecovery.blocked(SystemClock.elapsedRealtime(),bubbleFold!=null&&bubbleFold.isCollapsed());
+        if(action==OverlayRecovery.Action.STOP){pause("浮窗位置未稳定，请拖开后继续");return true;}
+        if(action==OverlayRecovery.Action.COLLAPSE&&bubbleFold!=null){
+            overlayMoving=false;bubbleFold.setCollapsed(true);setStatus("浮窗已收起，继续查找");return true;
+        }
+        return false;
+    }
     void prepareCapture(String mode,int slot){
+        startAfterMapCheck=false;
         if(picker!=null||capturing||checkingMap){setStatus("请先完成或取消当前操作");return;}
-        activateBear();pause("准备连接游戏");captureMode=mode;captureSlot=slot;manualMapFallback=false;
+        activateBear();pause("准备连接游戏");flow.stop();captureMode=mode;captureSlot=slot;manualMapFallback=false;
         if(mode.equals("auto_map"))config.p.edit().putBoolean("dry",true).apply();
         setStatus(mode.equals("auto_map")?"打开真实游戏的野外地图，再点“连接游戏”。没有行军栏也可以":mode.equals("rally")?"打开有巨熊和绿色＋的集结页，再点“截取当前页面”":"打开对应游戏页面，再点“截取当前页面” · "+captureLabel(mode,slot));showBubble();
     }
     void prepareRun(boolean dry){
+        startAfterMapCheck=false;
         pause(dry?"回到野外地图，点“试识别”；不会点击游戏":"回到野外地图，点“开始打熊”");
+        flow.stop();
         captureMode="";manualMapFallback=false;config.p.edit().putBoolean("dry",dry).apply();showBubble();updateControls();
     }
     private String captureLabel(String mode,int slot){
@@ -311,6 +379,10 @@ public final class BearService extends AccessibilityService {
                             config.markMapVerified(app,w,h,result.marchUsed);
                             checkingMap=false;manualMapFallback=false;captureMode="";config.p.edit().putBoolean("dry",false).apply();
                             setStatus(result.marchHidden?"已连接真实地图 · 未显示行军栏，运行时可直接尝试加入":"已连接游戏 · 实际读到 "+result.marchUsed+"/6，可开始跟车");
+                            if(startAfterMapCheck){
+                                startAfterMapCheck=false;
+                                main.postDelayed(()->{if(token==generation&&!destroyed)start();},250);
+                            }
                         }catch(Exception e){finishMapCheck("保存连接失败，请重试或手动取样",true);}
                         return;
                     }
@@ -321,7 +393,7 @@ public final class BearService extends AccessibilityService {
             });
         },false,()->main.postDelayed(()->readMapFrame(token,app,check,attempt),250));
     }
-    private void finishMapCheck(String message,boolean manual){checkingMap=false;manualMapFallback=manual;setStatus(message);}
+    private void finishMapCheck(String message,boolean manual){checkingMap=false;startAfterMapCheck=false;manualMapFallback=manual;setStatus(message);}
     private void screenshot(Consumer<Bitmap> success,boolean sample,Runnable retry){
         if(capturing||destroyed)return;
         capturing=true;int id=++captureId;
@@ -408,18 +480,24 @@ public final class BearService extends AccessibilityService {
     }
     private void gesture(BearFlow.Decision decision,int token){
         // Every action is gated again after image recognition to avoid clicking another app.
-        if(token!=generation||!flow.running||!activePackage().equals(config.target())){pause("点击前检测到页面切换，已暂停");return;}
+        if(token!=generation||!flow.running)return;
+        if(!activePackage().equals(config.target())){
+            flow.deferPending();
+            if(gameAvailable())main.postDelayed(tick,250);
+            return;
+        }
         if(flow.expired(SystemClock.elapsedRealtime())){pause("已达到本次运行时长");return;}
         Path path=new Path();long duration;float x1,y1,x2,y2;
         if(decision.kind==BearFlow.Kind.SCROLL){
-            boolean back=(scrollCount++%4)>=2;
-            x1=x2=config.width()*.50f;y1=config.height()*(back?.36f:.72f);y2=config.height()*(back?.72f:.36f);
+            float[] swipe=BearOverlayGuard.nextPagePath(config.width(),config.height(),bubbleBounds,overlayDp(8));
+            if(swipe==null){deferObstructedGesture();return;}
+            x1=swipe[0];y1=swipe[1];x2=swipe[2];y2=swipe[3];
             path.moveTo(x1,y1);path.lineTo(x2,y2);duration=400;
         }else{
             if(decision.x<=0||decision.y<=0||decision.x>=config.width()||decision.y>=config.height()){pause("点击位置无效，请重新取样");return;}
             x1=x2=decision.x;y1=y2=decision.y;path.moveTo(x1,y1);duration=70;
         }
-        if(dragging||!BearOverlayGuard.inputClear(bubbleBounds,x1,y1,x2,y2,overlayDp(8))){pause("悬浮条挡住按钮，请移开后继续");return;}
+        if(dragging||!BearOverlayGuard.inputClear(bubbleBounds,x1,y1,x2,y2,overlayDp(8))){deferObstructedGesture();return;}
         GestureDescription description=new GestureDescription.Builder().addStroke(new GestureDescription.StrokeDescription(path,0,duration)).build();
         final long ticket=gestureGate.begin();
         try{
@@ -438,9 +516,16 @@ public final class BearService extends AccessibilityService {
             main.postDelayed(()->{if(token==generation&&flow.running&&gestureGate.finish(ticket))pause("触控响应超时，已暂停");},3000);
         }catch(Exception e){pause("触控失败："+e.getClass().getSimpleName());}
     }
+    private void deferObstructedGesture(){
+        flow.deferPending();
+        if(!dragging&&bubbleFold!=null&&!bubbleFold.isCollapsed())bubbleFold.setCollapsed(true);
+        setStatus("调整浮窗后继续查找");
+        main.postDelayed(tick,250);
+    }
     private boolean gameAvailable(){
-        boolean target=activePackage().equals(config.target());
-        if(foregroundGate.timedOut(target,SystemClock.elapsedRealtime())){pause("暂时无法确认游戏窗口，已暂停");return false;}
+        String foreground=activePackage();
+        boolean target=foreground.equals(config.target());
+        if(foregroundGate.timedOut(config.target(),foreground,SystemClock.elapsedRealtime())){pause("已切换应用，请回游戏后继续");return false;}
         if(!target){setStatus("等待游戏窗口恢复");main.postDelayed(tick,500);return false;}
         return true;
     }

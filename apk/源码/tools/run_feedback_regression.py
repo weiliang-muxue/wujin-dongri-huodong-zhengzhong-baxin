@@ -15,7 +15,8 @@ p.add_argument('--huawei-fixtures',type=Path)
 p.add_argument('--adaptive-layouts',action='store_true')
 p.add_argument('--bullseye-fixtures',type=Path)
 p.add_argument('--return-fixtures',type=Path,help='Private Xiaomi rally / returning / returned screenshots')
-p.add_argument('--suite',action='append',choices=['core','bullseye','adaptive','huawei','direct','reported','marches','return','hunt','feedback','countdown','compat'],help='Run selected suites; default runs every supplied suite')
+p.add_argument('--paging-fixtures',type=Path,help='Private short-countdown recording frames')
+p.add_argument('--suite',action='append',choices=['core','bullseye','adaptive','huawei','direct','reported','marches','return','paging','overlay','hunt','feedback','countdown','compat'],help='Run selected suites; default runs every supplied suite')
 p.add_argument('--adaptive-bear-only',action='store_true')
 a=p.parse_args()
 if not a.serial.startswith('emulator-'):p.error('Use a dedicated emulator')
@@ -53,6 +54,10 @@ if a.bullseye_fixtures:
 if a.return_fixtures:
     for name in ('xiaomi-rally','xiaomi-returning','xiaomi-returned-toast','xiaomi-returned'):
         (bundle/'fixtures'/f'{name}.jpg').write_bytes((a.return_fixtures/f'{name}.jpg').read_bytes())
+if a.paging_fixtures:
+    for second in (6,12,18):
+        name=f'paging-{second}.png'
+        (bundle/'fixtures'/name).write_bytes((a.paging_fixtures/name).read_bytes())
 def adb(*args,timeout=180):
     r=subprocess.run([a.adb,'-s',a.serial,*args],capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=timeout)
     if r.returncode:raise RuntimeError(r.stdout+r.stderr)
@@ -66,7 +71,8 @@ with (a.output/'android-feedback-runtime.txt').open('w',encoding='utf-8') as log
         process=subprocess.Popen(command,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,encoding='utf-8',errors='replace')
         # All pixel suites are slower under software-only emulation, including
         # the reported-level/glyph checks. Keep a bounded timeout for every suite.
-        timer=threading.Timer(600 if entry=='RuntimeCoreCheck' else 1800,process.kill);timer.start();lines=[]
+        limit=120 if entry=='OverlayUiRuntimeCheck' else 600 if entry=='RuntimeCoreCheck' else 1800
+        timer=threading.Timer(limit,process.kill);timer.start();lines=[]
         try:
             for line in process.stdout:
                 lines.append(line);log.write(line);log.flush();print(line,end='',flush=True)
@@ -98,6 +104,21 @@ with (a.output/'android-feedback-runtime.txt').open('w',encoding='utf-8') as log
     if a.return_fixtures and wanted('return'):
         result=run('HuntReturnRuntimeCheck',f'{remote}/lib {remote}/fixtures {remote}/assets')
         if 'ANDROID RETURN PASS: 32' not in result:raise RuntimeError('Return image regression result missing')
+    if a.paging_fixtures and wanted('paging'):
+        result=run('BearPagingRuntimeCheck',f'{remote}/lib {remote}/fixtures {remote}/assets {remote}/paging-calibration')
+        if 'ANDROID PAGING PASS: 15' not in result:raise RuntimeError('Paging regression result missing')
+    if a.suite and 'overlay' in a.suite:
+        result=run('OverlayUiRuntimeCheck',f'{remote}/overlay-ui')
+        if 'ANDROID OVERLAY UI PASS: 48' not in result:raise RuntimeError('Overlay UI regression result missing')
+        overlay_output=a.output/'overlay-ui'
+        overlay_output.mkdir(parents=True,exist_ok=True)
+        for label in ('打熊','靶心','巨兽','野兽'):
+            for state in ('expanded','collapsed'):
+                name=f'{label}-{state}.png'
+                transfer=subprocess.run([a.adb,'-s',a.serial,'exec-out','cat',f'{remote}/overlay-ui/{name}'],
+                                        capture_output=True,timeout=30,check=True)
+                (overlay_output/name).write_bytes(transfer.stdout)
+        print(f'Overlay renders saved to {overlay_output}',flush=True)
     if a.hunt_fixtures and wanted('hunt'):
         result=run('HuntRuntimeCheck',f'{remote}/lib {remote}/fixtures {remote}/assets')
         if 'ANDROID HUNT PASS:' not in result:raise RuntimeError('Hunt image test result missing')

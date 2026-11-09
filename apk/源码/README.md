@@ -4,11 +4,15 @@ JDK 17、Gradle 8.9、Android SDK 35 extension 15、Build Tools 35.0.0。设置 
 
 构建：`gradlew.bat :app:testEngine :app:assembleRelease :app:lintRelease`。
 
-将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.1.4.apk。
+将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.1.5.apk。
 
-检查成品：`python tools/verify_android_package.py ../无尽冬日助手-2.1.4.apk --version 2.1.4`。
+检查成品使用 `python tools/verify_android_package.py ../无尽冬日助手-2.1.5.apk --version 2.1.5`。
 
 一个 launcher：ModeActivity；一个无障碍服务：BearService。cn.local.bullseye.GameService 和 HuntController 是该服务内的模块，不是其他 Android Service。ModeGate、运行代次和输入前检查共同限制旧任务回调。返回活动选择会停止所有模块。
+
+2.1.5 的 `TaskChooser` 由这个无障碍服务显示游戏内任务选择与狩猎参数弹窗。四个活动通过 `OverlayFold.Controls` 共享尺寸、按钮和状态行，通过 `OverlayFold` 共享收起、展开和任务切换入口。切换前暂停旧任务，确认新任务后撤销旧任务回调，等游戏窗口恢复后启动。靶心首次仍需在助手中保存两张参考截图。
+
+`MarchFlow` 会立即跳过已识别的短倒计时并向下翻页。空位读数过期时，先继续查找，找到可加入队伍后再核对空位。`BearOverlayGuard.nextPagePath` 只生成查看后续内容的滑动方向，并避开浮窗范围。待发送动作被浮窗挡住时撤销该动作，收起、重新截图后再决定下一步。手动暂停保留流程，提交中的出征先保留占用，恢复后检查结果。窗口身份暂时未知时等待新观察。
 
 打熊实际流程在 MarchFlow.java。2.0.4 仅更新 Android，电脑版保持 2.0.3。BearFlow.java 只保留页面和动作数据类型。正中靶心保留实际券数、低券切换、结算退出；正中靶心悬浮条保持显示；仅在识别用的截图副本里遮罩悬浮条。固定尺寸避免状态更新时跳动，拖动时停发点击，落点自动避开券数、开始按钮、靶子、倍率及结算区域；旧位置采集的画面不再用于点击。
 
