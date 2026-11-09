@@ -16,7 +16,7 @@ p.add_argument('--adaptive-layouts',action='store_true')
 p.add_argument('--bullseye-fixtures',type=Path)
 p.add_argument('--return-fixtures',type=Path,help='Private Xiaomi rally / returning / returned screenshots')
 p.add_argument('--paging-fixtures',type=Path,help='Private short-countdown recording frames')
-p.add_argument('--suite',action='append',choices=['core','presets','bullseye','adaptive','huawei','direct','reported','marches','return','paging','overlay','hunt','feedback','countdown','compat'],help='Run selected suites; default runs every supplied suite')
+p.add_argument('--suite',action='append',choices=['core','session','presets','bullseye','adaptive','huawei','direct','reported','marches','return','paging','overlay','hunt','feedback','countdown','compat'],help='Run selected suites; default runs every supplied suite')
 p.add_argument('--adaptive-bear-only',action='store_true')
 a=p.parse_args()
 if not a.serial.startswith('emulator-'):p.error('Use a dedicated emulator')
@@ -83,6 +83,11 @@ with (a.output/'android-feedback-runtime.txt').open('w',encoding='utf-8') as log
     if wanted('core'):
         core=run('RuntimeCoreCheck',remote+'/simulation')
         if '0 failures' not in core:raise RuntimeError('ART test result missing')
+    if wanted('session'):
+        state=run('HuntStateRuntimeCheck','')
+        if 'ANDROID HUNT STATE PASS: 4' not in state:raise RuntimeError('Hunt state regression missing')
+        controller=run('HuntControllerStateRuntimeCheck','')
+        if 'ANDROID HUNT CONTROLLER PASS: 10' not in controller:raise RuntimeError('Hunt controller regression missing')
     if wanted('presets'):
         result=run('PresetSettingsRuntimeCheck',f'{remote}/assets {remote}/preset-config')
         if 'ANDROID PRESET SETTINGS PASS: 68' not in result:raise RuntimeError('Preset settings regression result missing')

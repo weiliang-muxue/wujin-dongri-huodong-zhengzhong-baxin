@@ -4,6 +4,30 @@ import static org.junit.Assert.*;
 import static cn.local.winterbear.BearFlow.Kind;
 
 public class MarchFlowTest {
+    @Test public void interruptedNavigationRetriesFromTheObservedMap(){
+        MarchFlow flow=flow();flow.next(map(3),1000);
+        assertEquals(Kind.NAVIGATE,flow.next(map(3),1600).kind);
+        flow.suspend(1650,true);flow.resume(2000);
+        assertEquals(Kind.NAVIGATE,flow.next(map(3),2100).kind);
+    }
+    @Test public void timeoutAndCancellationReserveSubmittedDeployUntilObserved(){
+        for(boolean timeout:new boolean[]{false,true}){
+            MarchFlow flow=flow();enter(flow,3);flow.next(list(),3000);flow.complete(true,3100);
+            flow.next(deploy(),4400);flow.complete(true,4500);flow.next(deploy(),5300);
+            GestureGate gate=new GestureGate();long ticket=gate.begin();
+            assertTrue(gate.isActive(ticket));flow.suspend(timeout?8300:5350,gate.inFlight());gate.cancel();
+            flow.resume(9000);assertEquals(MarchFlow.Phase.VERIFY,flow.phase);
+            assertEquals(Kind.WAIT,flow.next(deploy(),9100).kind);
+            flow.next(list(),10000);assertEquals(1,flow.submitted);
+        }
+    }
+    @Test public void interruptedPresetIsSelectedAgainBeforeDeploy(){
+        MarchFlow flow=flow();enter(flow,3);flow.next(list(),3000);flow.complete(true,3100);
+        assertEquals(Kind.PRESET,flow.next(deploy(),4400).kind);
+        flow.suspend(4450,true);flow.resume(5000);
+        assertEquals(Kind.PRESET,flow.next(deploy(),5100).kind);
+        flow.complete(true,5200);assertEquals(Kind.DEPLOY,flow.next(deploy(),6000).kind);
+    }
     @Test public void everySelectionSendsOnlyItsEnabledPresetsThenWraps(){
         for(int selection=1;selection<=63;selection++){
             MarchFlow flow=flow();flow.setPresets(selection);flow.start(1000);enter(flow,0);

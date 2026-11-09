@@ -4,6 +4,11 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class GestureGateTest {
+    @Test public void timeoutInspectionKeepsDispatchEvidenceUntilPause(){
+        GestureGate gate=new GestureGate();long old=gate.begin();gate.finish(old);long current=gate.begin();
+        assertFalse(gate.isActive(old));assertTrue(gate.isActive(current));assertTrue(gate.inFlight());
+        gate.cancel();assertFalse(gate.isActive(current));assertFalse(gate.inFlight());
+    }
     @Test public void oldJoinTimeoutCannotCancelPendingDeployGesture() {
         GestureGate gate=new GestureGate();
         long join=gate.begin();assertTrue(gate.finish(join));

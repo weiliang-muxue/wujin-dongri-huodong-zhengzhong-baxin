@@ -29,6 +29,28 @@ public final class HuntDeviceCheck extends Instrumentation {
         if(type==HuntActivity.class){Activity fresh=startActivitySync(new Intent(getTargetContext(),type).putExtra("giant",giant).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));waitForIdleSync();runOnMainSync(()->{require(!canSwitch(fresh.getWindow().getDecorView()).isChecked(),"New task retained can settings");fresh.finish();});}
         report("HUNT UI PASS: "+name);
     }
+    private void recreationCheck()throws Exception{
+        HuntActivity original=(HuntActivity)startActivitySync(new Intent(getTargetContext(),HuntActivity.class)
+                .putExtra("giant",true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        waitForIdleSync();
+        Bundle draft=new Bundle();draft.putInt("huntMode",Mode.GIANT.ordinal());draft.putInt("huntLevel",7);
+        draft.putInt("huntLimit",3);draft.putInt("huntCanLimit",98);draft.putInt("huntPresets",18);
+        draft.putBoolean("huntCans",true);draft.putBoolean("huntHadTask",false);
+        runOnMainSync(()->original.restoreSettings(draft,Mode.GIANT));
+        ActivityMonitor monitor=addMonitor(HuntActivity.class.getName(),null,false);
+        runOnMainSync(original::recreate);
+        Activity replacement=waitForMonitorWithTimeout(monitor,10000);removeMonitor(monitor);
+        require(replacement instanceof HuntActivity&&replacement!=original,"Activity was not recreated");
+        waitForIdleSync();
+        Bundle restored=new Bundle();
+        runOnMainSync(()->{
+            ((HuntActivity)replacement).saveSettings(restored);
+            require(canSwitch(replacement.getWindow().getDecorView()).isChecked(),"Recreated UI lost can toggle");
+        });
+        for(String key:draft.keySet())require(draft.get(key).equals(restored.get(key)),"Recreation lost "+key);
+        runOnMainSync(replacement::finish);
+        report("HUNT RECREATION PASS: levels, queue limit, formations and can allowance retained");
+    }
     private void foldCheck()throws Exception{
         Activity a=startActivitySync(new Intent(getTargetContext(),ModeActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         LinearLayout[] root={null};TextView[] title={null},status={null};OverlayFold[] folding={null};View[] parent={null};int[] resizes={0};
@@ -49,6 +71,7 @@ public final class HuntDeviceCheck extends Instrumentation {
         screen(ModeActivity.class,true,"ui-modes","打熊","正中靶心","巨兽集结","野兽集结");
         screen(HuntActivity.class,true,"ui-giant","巨兽集结","目标等级  8","巨兽同时派出  1 队");
         screen(HuntActivity.class,false,"ui-beast","野兽集结","目标等级  30","自动使用库存罐头");
+        recreationCheck();
         screen(PermissionActivity.class,true,"ui-permissions","屏幕操作权限","被“敏感权限 / 受限设置”拦住","找不到助手，或设置打不开");
         foldCheck();
         require(org.opencv.android.OpenCVLoader.initLocal(),"OpenCV initialization");

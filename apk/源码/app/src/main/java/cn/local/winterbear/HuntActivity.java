@@ -12,7 +12,33 @@ import android.widget.*;
 /** New task settings are session-only; leaving and starting a new task resets the can allowance. */
 public final class HuntActivity extends Activity {
     private HuntFlow.Mode mode;private int level,limit=1,canLimit=100,presetSelection=PresetOrder.ALL;private boolean cans,hadTask;
-    @Override public void onCreate(Bundle state){super.onCreate(state);mode=getIntent().getBooleanExtra("giant",true)?HuntFlow.Mode.GIANT:HuntFlow.Mode.BEAST;level=mode==HuntFlow.Mode.GIANT?8:30;}
+    private Button launchButton;
+    @Override public void onCreate(Bundle state){
+        super.onCreate(state);
+        restoreSettings(state,getIntent().getBooleanExtra("giant",true)?HuntFlow.Mode.GIANT:HuntFlow.Mode.BEAST);
+    }
+    void restoreSettings(Bundle state,HuntFlow.Mode requestedMode){
+        mode=requestedMode;level=mode==HuntFlow.Mode.GIANT?8:30;limit=1;canLimit=100;
+        presetSelection=PresetOrder.ALL;cans=false;hadTask=false;
+        if(state==null||state.getInt("huntMode",-1)!=mode.ordinal())return;
+        level=state.getInt("huntLevel",level);limit=state.getInt("huntLimit",1);
+        canLimit=state.getInt("huntCanLimit",100);presetSelection=state.getInt("huntPresets",PresetOrder.ALL);
+        cans=state.getBoolean("huntCans",false);hadTask=state.getBoolean("huntHadTask",false);
+    }
+    void saveSettings(Bundle state){
+        state.putInt("huntMode",mode.ordinal());state.putInt("huntLevel",level);
+        state.putInt("huntLimit",limit);state.putInt("huntCanLimit",canLimit);
+        state.putInt("huntPresets",presetSelection);state.putBoolean("huntCans",cans);
+        state.putBoolean("huntHadTask",hadTask);
+    }
+    @Override protected void onSaveInstanceState(Bundle state){saveSettings(state);super.onSaveInstanceState(state);}
+    private HuntFlow.Options options(){return new HuntFlow.Options(mode,level,limit,cans?canLimit:0,presetSelection);}
+    private String launchLabel(){
+        BearService service=BearService.current();
+        if(service==null)return "开启无障碍权限";
+        if(PresetOrder.valid(presetSelection)&&service.matchesHuntOptions(options()))return "回游戏继续";
+        return service.hasHuntTask()?"开始新任务":"去游戏开始";
+    }
     @Override public void onResume(){
         super.onResume();BearService s=BearService.current();
         if(hadTask&&(s==null||!s.hasHuntTask())){level=mode==HuntFlow.Mode.GIANT?8:30;limit=1;canLimit=100;presetSelection=PresetOrder.ALL;cans=false;hadTask=false;}
@@ -28,17 +54,20 @@ public final class HuntActivity extends Activity {
         String activity=mode==HuntFlow.Mode.GIANT?"巨兽":"野兽";
         Ui.button(this,settings,activity+"同时派出  "+limit+" 队",false,()->new AlertDialog.Builder(this).setTitle(activity+"同时派出的队数").setSingleChoiceItems(new String[]{"1 队","2 队","3 队","4 队","5 队","6 队"},limit-1,(d,n)->{limit=n+1;d.dismiss();render();}).show());
         settings.addView(Ui.text(this,"只计算本次任务队伍，回城后自动补队。总行军满 6 队时等待空位。",14,Ui.MUTED));
-        PresetPicker presets=new PresetPicker(this,presetSelection,value->presetSelection=value);
+        PresetPicker presets=new PresetPicker(this,presetSelection,value->{
+            presetSelection=value;
+            if(launchButton!=null)launchButton.setText(launchLabel());
+        });
         settings.addView(presets);
         LinearLayout energy=Ui.card(this,root,"体力补充",null);Switch on=new Switch(this);on.setText("自动使用库存罐头");on.setTextColor(Ui.TEXT);on.setMinHeight(Ui.dp(this,52));on.setChecked(cans);energy.addView(on);on.setOnCheckedChangeListener((v,b)->{cans=b;render();});
         if(cans){Ui.button(this,energy,"本次罐头上限  "+canLimit+" 个",false,()->number("本次最多使用罐头",canLimit,1,9999,n->canLimit=n));energy.addView(Ui.text(this,"每次补 4 个，最后补齐剩余额度；用完额度后，剩余体力继续出征。",14,Ui.MUTED));}
         else energy.addView(Ui.text(this,"使用现有体力，体力不足时停止。",14,Ui.MUTED));
-        BearService service=BearService.current();
-        Ui.button(this,root,service==null?"开启无障碍权限":"去游戏开始",true,()->{
+        launchButton=Ui.button(this,root,launchLabel(),true,()->{
             if(!presets.validateSelection())return;
             BearService s=BearService.current();if(s==null){PermissionActivity.open(this);return;}
-            s.prepareHunt(new HuntFlow.Options(mode,level,limit,cans?canLimit:0,presets.selection()));hadTask=true;moveTaskToBack(true);
-            Toast.makeText(this,"回野外地图，点悬浮窗开始",Toast.LENGTH_LONG).show();
+            boolean continuing=s.matchesHuntOptions(options());
+            s.prepareHunt(options());hadTask=true;moveTaskToBack(true);
+            Toast.makeText(this,continuing?"回到游戏，点悬浮窗继续":"回野外地图，点悬浮窗开始",Toast.LENGTH_LONG).show();
         });
         root.addView(Ui.text(this,"退出后下次重新设置。",13,Ui.MUTED));
     }

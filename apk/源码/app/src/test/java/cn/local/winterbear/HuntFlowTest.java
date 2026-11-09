@@ -4,6 +4,91 @@ import static org.junit.Assert.*;
 import static cn.local.winterbear.HuntFlow.*;
 
 public class HuntFlowTest {
+    @Test public void equalOptionsResumeTheSameTaskOnlyWhenEverySettingMatches(){
+        Options original=new Options(Mode.GIANT,8,2,100,18);
+        assertTrue(original.sameTask(new Options(Mode.GIANT,8,2,100,18)));
+        assertFalse(original.sameTask(null));
+        for(Options changed:new Options[]{new Options(Mode.BEAST,8,2,100,18),new Options(Mode.GIANT,7,2,100,18),
+                new Options(Mode.GIANT,8,1,100,18),new Options(Mode.GIANT,8,2,99,18),new Options(Mode.GIANT,8,2,100,16)})
+            assertFalse(original.sameTask(changed));
+    }
+    @Test public void submittedDeployInterruptedBeforeCallbackWaitsForMap(){
+        for(Mode mode:Mode.values()){
+            HuntFlow flow=create(mode,1,100);toFormation(flow);
+            assertEquals(Kind.DEPLOY,see(flow,form()).kind);flow.suspend(now,true);
+            now+=60000;flow.resume(now);
+            assertEquals(Phase.VERIFY,flow.phase);assertEquals(Kind.WAIT,see(flow,form()).kind);
+            see(flow,map(1));assertEquals(1,flow.submitted);assertEquals(1,flow.marches.active());
+        }
+    }
+    @Test public void unsentDeployCanBeRetriedAfterPause(){
+        HuntFlow flow=create(Mode.BEAST,1,0);toFormation(flow);
+        assertEquals(Kind.DEPLOY,see(flow,form()).kind);flow.suspend(now,false);flow.resume(now);
+        assertEquals(Kind.DEPLOY,see(flow,form()).kind);assertEquals(0,flow.submitted);
+    }
+    @Test public void interruptedPresetIsReselectedBeforeDeploy(){
+        HuntFlow flow=create(Mode.BEAST,1,0);toFormation(flow);flow.phase=Phase.FORMATION;
+        assertEquals(Kind.PRESET,see(flow,form()).kind);flow.suspend(now,true);flow.resume(now);
+        click(flow,form(),Kind.PRESET);assertEquals(Kind.DEPLOY,see(flow,form()).kind);
+    }
+    @Test public void openAndSearchReconcileTheFreshPageAfterInterruption(){
+        for(Mode mode:Mode.values())for(boolean moved:new boolean[]{false,true}){
+            HuntFlow flow=create(mode,1,0);see(flow,map(0));
+            assertEquals(Kind.OPEN,see(flow,map(0)).kind);flow.suspend(now,true);flow.resume(now);
+            if(moved)click(flow,search(mode,flow.options.level),Kind.SEARCH);
+            else{assertEquals(Kind.WAIT,see(flow,map(0)).kind);click(flow,map(0),Kind.OPEN);}
+
+            flow=create(mode,1,0);enter(flow,0);
+            assertEquals(Kind.SEARCH,see(flow,search(mode,flow.options.level)).kind);flow.suspend(now,true);flow.resume(now);
+            if(moved)assertEquals(Kind.TARGET,see(flow,page(mode==Mode.GIANT?Page.GIANT:Page.BEAST,flow.options.level)).kind);
+            else assertEquals(Kind.SEARCH,see(flow,search(mode,flow.options.level)).kind);
+        }
+    }
+    @Test public void targetAndRallyReconcileBothOriginalAndDestinationPages(){
+        for(Mode mode:Mode.values())for(boolean moved:new boolean[]{false,true}){
+            HuntFlow flow=create(mode,1,0);enter(flow,0);click(flow,search(mode,flow.options.level),Kind.SEARCH);
+            Frame target=page(mode==Mode.GIANT?Page.GIANT:Page.BEAST,flow.options.level);
+            assertEquals(Kind.TARGET,see(flow,target).kind);flow.suspend(now,true);flow.resume(now);
+            if(!moved)assertEquals(Kind.TARGET,see(flow,target).kind);
+            else if(mode==Mode.GIANT)assertEquals(Kind.LAUNCH,see(flow,page(Page.RALLY,-1)).kind);
+            else assertEquals(Kind.PRESET,see(flow,form()).kind);
+        }
+        for(boolean moved:new boolean[]{false,true}){
+            HuntFlow flow=create(Mode.GIANT,1,0);enter(flow,0);click(flow,search(Mode.GIANT,8),Kind.SEARCH);click(flow,page(Page.GIANT,8),Kind.TARGET);
+            assertEquals(Kind.LAUNCH,see(flow,page(Page.RALLY,-1)).kind);flow.suspend(now,true);flow.resume(now);
+            assertEquals(moved?Kind.PRESET:Kind.LAUNCH,see(flow,moved?form():page(Page.RALLY,-1)).kind);
+        }
+    }
+    @Test public void unsentCanClickReturnsItsReservation(){
+        HuntFlow flow=create(Mode.GIANT,1,4);toFormation(flow);click(flow,form(),Kind.DEPLOY);
+        assertEquals(Kind.USE,see(flow,energy(4,0)).kind);assertEquals(1,flow.cansUsed);
+        flow.suspend(now,false);assertEquals(0,flow.cansUsed);now+=60000;flow.resume(now);
+        for(int can=0;can<4;can++)click(flow,energy(4-can,can*10),Kind.USE);
+        click(flow,energy(0,40),Kind.CLOSE);assertEquals(4,flow.cansUsed);
+    }
+    @Test public void uncertainCanClickRetainsReservationAndAcceptsDelayedResult(){
+        HuntFlow flow=create(Mode.BEAST,1,4);toFormation(flow);click(flow,form(),Kind.DEPLOY);
+        assertEquals(Kind.USE,see(flow,energy(4,0)).kind);flow.suspend(now,true);now+=60000;flow.resume(now);
+        assertEquals(Kind.WAIT,see(flow,energy(4,0)).kind);assertEquals(1,flow.cansUsed);
+        click(flow,energy(3,10),Kind.USE);assertEquals(2,flow.cansUsed);
+    }
+    @Test public void interruptedEnergyCloseRetriesWithoutSpendingAnotherBatch(){
+        for(boolean dispatched:new boolean[]{false,true})for(boolean closed:new boolean[]{false,true}){
+            HuntFlow flow=create(Mode.GIANT,1,100);toFormation(flow);click(flow,form(),Kind.DEPLOY);
+            for(int can=0;can<4;can++)click(flow,energy(8-can,can*10),Kind.USE);
+            assertEquals(Kind.CLOSE,see(flow,energy(4,40)).kind);flow.suspend(now,dispatched);flow.resume(now);
+            if(closed)assertEquals(Kind.DEPLOY,see(flow,form()).kind);
+            else{click(flow,energy(4,40),Kind.CLOSE);assertEquals(Kind.DEPLOY,see(flow,form()).kind);}
+            assertEquals(4,flow.cansUsed);
+        }
+    }
+    @Test public void longPausedDispatchGetsFreshVerificationTime(){
+        HuntFlow flow=create(Mode.BEAST,1,0);toFormation(flow);click(flow,form(),Kind.DEPLOY);
+        flow.suspend(now,false);now+=60000;flow.resume(now);
+        Frame incomplete=map(1);incomplete.marches=null;
+        assertEquals(Kind.WAIT,see(flow,incomplete).kind);assertTrue(flow.running);
+        see(flow,map(1));assertEquals(1,flow.submitted);
+    }
     @Test public void bothHuntsCycleOnlySelectedPresetsAcrossReturns(){
         for(Mode mode:Mode.values())for(int selection=1;selection<=63;selection++){
             now=1000;

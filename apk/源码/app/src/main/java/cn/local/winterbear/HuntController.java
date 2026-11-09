@@ -21,17 +21,27 @@ final class HuntController {
     private LinearLayout panel;private TextView status;private Button run;
     private OverlayFold folding;
     private final OverlayRecovery overlayRecovery=new OverlayRecovery();
+    private final GestureGate gestures=new GestureGate();
+    private boolean gestureDispatched;
     private WindowManager.LayoutParams layout;private Box bounds;
     private HuntFlow flow;private HuntVision vision;private CounterOcr ocr;
     private long generation,revision,modeToken,captureId;private boolean busy,dragging,started,destroyed;
     private String target="";private ModeGate.Mode ownership;
     HuntController(BearService host){this.host=host;wm=host.getSystemService(WindowManager.class);}
     void prepare(Options options){
+        if(matchesOptions(options)){pause("任务已暂停，回游戏继续");return;}
         stop();flow=new HuntFlow(options);ownership=options.mode==Mode.GIANT?ModeGate.Mode.GIANT:ModeGate.Mode.BEAST;
         modeToken=host.modes.select(ownership);show();update("回到野外地图，点开始");
     }
+    boolean matchesOptions(Options options){return flow!=null&&owns()&&flow.options.sameTask(options);}
+    long preparationToken(){return generation;}
+    void beginIfPrepared(long token){if(token==generation&&flow!=null&&!flow.running)begin();}
     private boolean owns(){return !destroyed&&host.modes.owns(ownership,modeToken);}
-    void pause(String message){generation++;captureId++;busy=false;main.removeCallbacksAndMessages(null);if(flow!=null)flow.stop();update(message);}
+    void pause(String message){
+        if(flow!=null)flow.suspend(SystemClock.elapsedRealtime(),gestureDispatched);
+        gestureDispatched=false;gestures.cancel();generation++;captureId++;busy=false;
+        main.removeCallbacksAndMessages(null);update(message);
+    }
     void stop(){
         pause("已结束");if(panel!=null){wm.removeView(panel);panel=null;status=null;run=null;bounds=null;}
         HuntVision old=vision;CounterOcr oldOcr=ocr;vision=null;ocr=null;
@@ -42,7 +52,7 @@ final class HuntController {
     boolean hasTask(){return flow!=null;}
     void pauseForSettings(){if(panel!=null)pause("已回到设置，任务暂停");}
     void begin(){
-        if(!owns()||flow==null)return;
+        if(!owns()||flow==null||flow.running)return;
         String app=host.foregroundPackage();
         if(app.isEmpty()||app.equals(host.getPackageName())||app.startsWith("com.android.")||app.equals("android")){update("先回到游戏的野外地图");return;}
         if(!target.isEmpty()&&!target.equals(app)){update("请回到本次绑定的游戏");return;}
@@ -151,15 +161,21 @@ final class HuntController {
         int[] p=a.kind==Kind.PRESET?f.flags[a.preset]:f.points[a.kind.ordinal()];Rect r=wm.getCurrentWindowMetrics().getBounds();
         if(p[0]<=0||p[1]<=0||p[0]>=r.width()||p[1]>=r.height()||bounds==null||bounds.padded(8).contains(p[0],p[1])){pause("按钮未确认，已暂停");return;}
         busy=true;Path path=new Path();path.moveTo(p[0],p[1]);GestureDescription g=new GestureDescription.Builder().addStroke(new GestureDescription.StrokeDescription(path,0,70)).build();
-        final GestureGate gate=new GestureGate();long ticket=gate.begin();
+        long ticket=gestures.begin();
         try{
+            gestureDispatched=true;
             boolean accepted=host.dispatchGesture(g,new AccessibilityService.GestureResultCallback(){
                 @Override public void onCompleted(GestureDescription gesture){finish(true);}
                 @Override public void onCancelled(GestureDescription gesture){finish(false);}
-                private void finish(boolean ok){if(token!=generation||!owns()||!gate.finish(ticket))return;busy=false;flow.complete(ok,SystemClock.elapsedRealtime());if(ok)later(900);else pause("触控中断，请检查游戏后继续");}
+                private void finish(boolean ok){
+                    if(token!=generation||!owns()||!gestures.finish(ticket))return;
+                    busy=false;
+                    if(ok){gestureDispatched=false;flow.complete(true,SystemClock.elapsedRealtime());later(900);}
+                    else pause("触控中断，请检查游戏后继续");
+                }
             },main);
-            if(!accepted){gate.cancel();busy=false;flow.complete(false,SystemClock.elapsedRealtime());pause("系统未接受点击");}
-            main.postDelayed(()->{if(token==generation&&gate.finish(ticket))pause("触控超时，已暂停");},3000);
+            if(!accepted){gestureDispatched=false;pause("系统未接受点击");return;}
+            main.postDelayed(()->{if(token==generation&&gestures.isActive(ticket))pause("触控超时，已暂停");},3000);
         }catch(Exception e){busy=false;pause("触控失败，请重试");}
     }
 }

@@ -62,6 +62,11 @@ def verify(apk: Path, version: str) -> dict:
         for marker in ('使用编队', '按选中的编号顺序循环使用。', '请至少选择一个编队'):
             if not any(marker.encode('utf-8') in blob for blob in dex):
                 raise ValueError('APK is missing preset selection: ' + marker)
+    session_recovery = tuple(map(int,version.split('.'))) >= (2,1,7)
+    if session_recovery:
+        for marker in ('回游戏继续', '开始新任务', '确认上次操作结果'):
+            if not any(marker.encode('utf-8') in blob for blob in dex):
+                raise ValueError('APK is missing session recovery: ' + marker)
     for text in ('首页实际余券', '正在切换 1 倍，等待画面确认', '首页确认余券为 0，已全部用完', '结算完成，自动返回首页'):
         if not any(text.encode('utf-8') in blob for blob in dex):
             raise ValueError('APK is missing expected behavior marker: ' + text)
@@ -73,6 +78,7 @@ def verify(apk: Path, version: str) -> dict:
             'hunt_stamina_budget_without_duration': stamina_budget,
             'in_game_task_switch': in_game_switch,
             'preset_selection': preset_selection,
+            'session_recovery': session_recovery,
             'sha256': hashlib.sha256(apk.read_bytes()).hexdigest()}
 
 

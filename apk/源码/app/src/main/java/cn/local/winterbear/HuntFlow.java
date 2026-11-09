@@ -17,6 +17,10 @@ final class HuntFlow {
             this.mode=mode;this.level=level;this.limit=limit;this.canLimit=canLimit;
             this.presetSelection=presetSelection;
         }
+        boolean sameTask(Options other){
+            return other!=null&&mode==other.mode&&level==other.level&&limit==other.limit
+                    &&canLimit==other.canLimit&&presetSelection==other.presetSelection;
+        }
     }
     static final class Frame {
         Page page=Page.UNKNOWN; int used=-1,level=-1,category=-1,stock=-1,energy=-1;
@@ -33,13 +37,23 @@ final class HuntFlow {
     final HuntMarches marches=new HuntMarches();
     int nextPreset,submitted,cansUsed; private int selected,stableUsed=-2,stableCount;
     private int lastLevel=-1,levelFailures,categoryAttempts,batchLeft,stockBefore=-1,energyBefore=-1;
-    private boolean awaitingCan,closingEnergy;private Kind pending;private long waitUntil,since,unknownSince=-1;
+    private boolean awaitingCan,closingEnergy;private Kind pending,interrupted;private long waitUntil,since,unknownSince=-1;
     HuntFlow(Options options){this.options=options;nextPreset=PresetOrder.next(options.presetSelection,0);}
     // The session ends on stamina/can allowance or a manual stop, not elapsed time.
-    void start(long now){running=true;phase=Phase.MAP;since=now;waitUntil=now;stableCount=0;pending=null;}
+    void start(long now){running=true;phase=Phase.MAP;since=now;waitUntil=now;stableCount=0;pending=null;interrupted=null;}
     // Pausing invalidates callbacks in the controller. Resume preserves the session's limits.
     void stop(){running=false;pending=null;}
-    void resume(long now){running=true;pending=null;waitUntil=now;unknownSince=-1;}
+    void suspend(long now,boolean dispatched){
+        Kind action=pending;pending=null;running=false;
+        if(action==null)return;
+        if(action==Kind.USE&&!dispatched){cansUsed--;awaitingCan=false;}
+        if(action==Kind.CLOSE&&!dispatched)interrupted=Kind.CLOSE;
+        if(!dispatched)return;
+        if(action==Kind.DEPLOY)phase(Phase.VERIFY,now);
+        else if(action==Kind.PRESET)phase(Phase.FORMATION,now);
+        else if(action==Kind.OPEN||action==Kind.SEARCH||action==Kind.TARGET||action==Kind.LAUNCH||action==Kind.CLOSE||action==Kind.DISMISS)interrupted=action;
+    }
+    void resume(long now){running=true;pending=null;waitUntil=now;since=now;unknownSince=-1;}
     boolean pending(){return pending!=null;}
     private Action waitFor(String s){return new Action(Kind.WAIT,s,-1);}
     private Action halt(String s){stop();return new Action(Kind.STOP,s,-1);}
@@ -47,10 +61,39 @@ final class HuntFlow {
     private void phase(Phase p,long now){phase=p;since=now;unknownSince=-1;}
     private Action unknown(long now,String message){if(unknownSince<0)unknownSince=now;return now-unknownSince>18000?halt(message+"，已暂停"):waitFor(message);}
     static int batch(int cap,int used,int stock){int n=Math.min(4,Math.max(0,cap-used));return n>0&&stock>=n?n:0;}
+    private Action reconcileInterrupted(Frame frame,long now){
+        Page page=frame.page;
+        Kind action=interrupted;
+        Phase observed=null;
+        if(action==Kind.CLOSE){
+            if(page==Page.ENERGY){interrupted=null;closingEnergy=true;since=now;return act(Kind.CLOSE,"关闭已补充的体力窗口");}
+            if(page==Page.FORMATION){closingEnergy=false;observed=Phase.SEND;}
+        }else if(action==Kind.DISMISS){
+            if(page==Page.ERROR){interrupted=null;return act(Kind.DISMISS,"关闭提示，返回地图重新搜索");}
+            if(page!=Page.UNKNOWN)observed=Phase.RECOVER;
+        }else if(page==Page.MAP)observed=Phase.MAP;
+        else if(action==Kind.OPEN&&page==Page.SEARCH)observed=Phase.SEARCH;
+        else if(action==Kind.SEARCH){
+            if(page==Page.SEARCH)observed=Phase.SEARCH;
+            if(page==(options.mode==Mode.GIANT?Page.GIANT:Page.BEAST))observed=Phase.RESULT;
+        }else if(action==Kind.TARGET){
+            if(page==(options.mode==Mode.GIANT?Page.GIANT:Page.BEAST))observed=Phase.RESULT;
+            if(page==Page.RALLY&&options.mode==Mode.GIANT)observed=Phase.RALLY;
+            if(page==Page.FORMATION)observed=Phase.FORMATION;
+        }else if(action==Kind.LAUNCH){
+            if(page==Page.RALLY)observed=Phase.RALLY;
+            if(page==Page.FORMATION)observed=Phase.FORMATION;
+        }
+        if(observed==null)return unknown(now,"确认上次操作结果");
+        interrupted=null;phase(observed,now);
+        if(observed==Phase.MAP)stableCount=0;
+        return null;
+    }
     Action next(Frame f,long now){
         if(!running||pending!=null)return waitFor("已暂停");
         if(f.age<0||f.age>4000)return unknown(now,"画面更新较慢，等待新截图");
         if(now<waitUntil)return waitFor("等待游戏响应");
+        if(interrupted!=null){Action recovery=reconcileInterrupted(f,now);if(recovery!=null)return recovery;}
         if(f.page==Page.ENERGY){
             if(closingEnergy)return now-since>10000?halt("体力窗口未关闭，已暂停"):waitFor("等待体力窗口关闭");
             if(phase!=Phase.VERIFY&&phase!=Phase.SEND)return halt("请先关闭体力窗口，回地图开始");

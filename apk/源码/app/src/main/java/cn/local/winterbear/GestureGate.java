@@ -5,6 +5,7 @@ final class GestureGate {
     private long next,active;
     long begin() { active=++next;return active; }
     boolean inFlight() { return active!=0; }
+    boolean isActive(long ticket) { return ticket!=0&&ticket==active; }
     boolean finish(long ticket) {
         if(ticket==0||ticket!=active)return false;
         active=0;return true;

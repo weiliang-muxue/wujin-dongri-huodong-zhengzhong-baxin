@@ -48,13 +48,13 @@ final class MarchFlow {
     void suspend(long now,boolean gestureStarted){
         // A submitted deploy may have reached the game even if its callback is
         // interrupted. Reserve that attempt before discarding the callback.
-        if(gestureStarted&&pending!=null)complete(true,now);
+        if(gestureStarted&&pending!=null&&pending!=Kind.PRESET)complete(true,now);
         else deferPending();
         running=false;
     }
     void resume(long now){
         if(!canResume(now))return;
-        running=true;pending=null;waitUntil=now;phaseSince=now;
+        running=true;pending=null;waitUntil=now;phaseSince=now;lastNav=-1;
         returnSince=now;dialogSince=now;unknownSince=-1;markerMissingSince=-1;
     }
     boolean pending(){return pending!=null;}

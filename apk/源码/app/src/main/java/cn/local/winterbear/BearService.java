@@ -42,6 +42,7 @@ import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
+import java.util.function.BooleanSupplier;
 import java.lang.ref.WeakReference;
 
 public final class BearService extends AccessibilityService {
@@ -132,6 +133,7 @@ public final class BearService extends AccessibilityService {
     void prepareHunt(HuntFlow.Options options){pause("已切换狩猎");flow.stop();removePicker();removeBubble();if(bullseye!=null)bullseye.stopRun("已切换活动");hunt.prepare(options);}
     void pauseHunt(){if(hunt!=null)hunt.pauseForSettings();}
     boolean hasHuntTask(){return hunt!=null&&hunt.hasTask();}
+    boolean matchesHuntOptions(HuntFlow.Options options){return hunt!=null&&hunt.matchesOptions(options);}
     public void showTaskPicker(){if(!destroyed&&taskChooser!=null)taskChooser.show();}
     void pauseForTaskSelection(){
         String foreground=activePackage();
@@ -158,7 +160,9 @@ public final class BearService extends AccessibilityService {
     void startHuntInGame(HuntFlow.Options options){
         stopAllModes();prepareHunt(options);
         final int token=generation;
-        main.postDelayed(()->startInGameWhenReady(token,hunt::begin,0),350);
+        final long prepared=hunt.preparationToken();
+        main.postDelayed(()->startInGameWhenReady(token,()->hunt.beginIfPrepared(prepared),0,
+                ()->hunt.preparationToken()==prepared),350);
     }
     void startBullseyeInGame(){
         stopAllModes();
@@ -166,12 +170,15 @@ public final class BearService extends AccessibilityService {
         main.postDelayed(()->startInGameWhenReady(token,()->startSavedBullseye(token,0),0),350);
     }
     private void startInGameWhenReady(int token,Runnable action,int attempt){
-        if(token!=generation||destroyed)return;
+        startInGameWhenReady(token,action,attempt,()->true);
+    }
+    private void startInGameWhenReady(int token,Runnable action,int attempt,BooleanSupplier stillRequested){
+        if(token!=generation||destroyed||!stillRequested.getAsBoolean())return;
         String foreground=activePackage();
         boolean gameReady=!foreground.isEmpty()&&!foreground.equals(getPackageName())
                 &&(taskSelectionTarget.isEmpty()||taskSelectionTarget.equals(foreground));
         if(capturing||!gameReady){
-            if(attempt<20)main.postDelayed(()->startInGameWhenReady(token,action,attempt+1),250);
+            if(attempt<20)main.postDelayed(()->startInGameWhenReady(token,action,attempt+1,stillRequested),250);
             else taskChooser.message("等待游戏画面","请回到游戏后重新选择任务。");
             return;
         }
@@ -400,12 +407,13 @@ public final class BearService extends AccessibilityService {
     private void finishMapCheck(String message,boolean manual){checkingMap=false;startAfterMapCheck=false;manualMapFallback=manual;setStatus(message);}
     private void screenshot(Consumer<Bitmap> success,boolean sample,Runnable retry){
         if(capturing||destroyed)return;
-        capturing=true;int id=++captureId;
+        capturing=true;int id=++captureId;final int requestGeneration=generation;
         final long revision=overlayRevision;final Box mask=bubbleBounds==null?null:bubbleBounds.padded(overlayDp(8));
         // Only an explicit one-off template capture hides controls. Runtime analysis never does.
         if(sample&&bubble!=null)bubble.setVisibility(View.INVISIBLE);
         main.postDelayed(()->{
             if(destroyed||id!=captureId)return;
+            if(requestGeneration!=generation){finishScreenshot(sample);return;}
             try {
                 takeScreenshot(Display.DEFAULT_DISPLAY,getMainExecutor(),new TakeScreenshotCallback(){
                     public void onSuccess(ScreenshotResult result){
@@ -416,8 +424,9 @@ public final class BearService extends AccessibilityService {
                         } catch(Exception e){ }
                         finally {if(wrapped!=null)wrapped.recycle();}
                         if(id!=captureId||destroyed){if(copy!=null)copy.recycle();return;}
-                        publishBubbleBounds();
                         finishScreenshot(sample);
+                        if(requestGeneration!=generation){if(copy!=null)copy.recycle();return;}
+                        publishBubbleBounds();
                         if(copy==null){pause("无法读取画面，请重新开启服务后重试");return;}
                         if(!sample){
                             if(mask==null||!BearOverlayGuard.current(revision,overlayRevision,dragging)){copy.recycle();retry.run();return;}
@@ -428,13 +437,13 @@ public final class BearService extends AccessibilityService {
                     }
                     public void onFailure(int code){
                         if(id!=captureId||destroyed)return;finishScreenshot(sample);
-                        pause("截图失败（"+code+"），请确认屏幕已解锁且游戏允许截图");
+                        if(requestGeneration==generation)pause("截图失败（"+code+"），请确认屏幕已解锁且游戏允许截图");
                     }
                 });
-            } catch(Exception e){finishScreenshot(sample);pause("截图不可用："+e.getClass().getSimpleName());}
+            } catch(Exception e){finishScreenshot(sample);if(requestGeneration==generation)pause("截图不可用："+e.getClass().getSimpleName());}
         },sample?120:0);
         main.postDelayed(()->{
-            if(capturing&&id==captureId){captureId++;finishScreenshot(sample);pause("截图超时，请重新开启服务");}
+            if(capturing&&id==captureId){captureId++;finishScreenshot(sample);if(requestGeneration==generation)pause("截图超时，请重新开启服务");}
         },5000);
     }
     private void finishScreenshot(boolean sample){capturing=false;if(sample&&bubble!=null)bubble.setVisibility(View.VISIBLE);}
@@ -509,15 +518,17 @@ public final class BearService extends AccessibilityService {
                 @Override public void onCompleted(GestureDescription gesture){finish(true);}
                 @Override public void onCancelled(GestureDescription gesture){finish(false);}
                 private void finish(boolean ok){
-                    if(token!=generation||!flow.running||!gestureGate.finish(ticket))return;
-                    flow.complete(ok,SystemClock.elapsedRealtime());
+                    if(token!=generation||!flow.running||!gestureGate.isActive(ticket))return;
+                    if(!ok){pause("触控被打断，恢复后确认当前画面");return;}
+                    gestureGate.finish(ticket);
+                    flow.complete(true,SystemClock.elapsedRealtime());
                     if(config.p.getInt("nextPreset",0)!=flow.nextPreset)config.p.edit().putInt("nextPreset",flow.nextPreset).apply();
                     if(!flow.running&&flow.expired(SystemClock.elapsedRealtime()))pause("已达到本次运行时长");
                     else if(!ok)pause("触控被打断，已暂停；未确认上车");else main.postDelayed(tick,850);
                 }
             },main);
-            if(!accepted){gestureGate.finish(ticket);flow.complete(false,SystemClock.elapsedRealtime());pause("系统未接受触控操作，已暂停");}
-            main.postDelayed(()->{if(token==generation&&flow.running&&gestureGate.finish(ticket))pause("触控响应超时，已暂停");},3000);
+            if(!accepted){gestureGate.cancel();pause("系统未接受触控操作，已暂停");}
+            main.postDelayed(()->{if(token==generation&&flow.running&&gestureGate.isActive(ticket))pause("触控响应超时，恢复后确认当前画面");},3000);
         }catch(Exception e){pause("触控失败："+e.getClass().getSimpleName());}
     }
     private void deferObstructedGesture(){
