@@ -21,6 +21,7 @@ final class HuntController {
     private LinearLayout panel;private TextView status;private Button run;
     private OverlayFold folding;
     private final OverlayRecovery overlayRecovery=new OverlayRecovery();
+    private final ForegroundGate foregroundGate=new ForegroundGate();
     private final GestureGate gestures=new GestureGate();
     private boolean gestureDispatched;
     private WindowManager.LayoutParams layout;private Box bounds;
@@ -62,7 +63,7 @@ final class HuntController {
             if(!OpenCVLoader.initLocal())throw new IllegalStateException("OpenCV");
             ocr=new CounterOcr();vision=new HuntVision(host.getAssets()::open,ocr::text);
         }catch(Exception e){update("识别组件未就绪，请重新打开助手");return;}
-        generation++;overlayRecovery.reset();if(started)flow.resume(SystemClock.elapsedRealtime());else{flow.start(SystemClock.elapsedRealtime());started=true;}
+        generation++;overlayRecovery.reset();foregroundGate.reset();if(started)flow.resume(SystemClock.elapsedRealtime());else{flow.start(SystemClock.elapsedRealtime());started=true;}
         update("正在检查地图");tick();
     }
     private void update(String text){
@@ -114,10 +115,16 @@ final class HuntController {
         update("正在调整浮窗位置");return false;
     }
     private void later(long delay){main.postDelayed(this::tick,delay);}
-    private boolean foreground(){return host.getSystemService(PowerManager.class).isInteractive()&&target.equals(host.foregroundPackage());}
+    private boolean gameAvailable(){
+        if(!host.getSystemService(PowerManager.class).isInteractive()){pause("屏幕已关闭，任务暂停");return false;}
+        String foreground=host.foregroundPackage();
+        if(foregroundGate.timedOut(target,foreground,SystemClock.elapsedRealtime())){pause("已切换应用，请回游戏后继续");return false;}
+        if(!target.equals(foreground)){update("等待游戏窗口恢复");later(500);return false;}
+        return true;
+    }
     private void tick(){
         if(!owns()||flow==null||!flow.running||busy)return;
-        if(!foreground()){pause("已离开游戏或锁屏，任务暂停");return;}
+        if(!gameAvailable())return;
         if(!safePosition()){if(flow.running)later(250);return;}
         busy=true;long token=generation,viewRevision=revision,id=++captureId,at=SystemClock.elapsedRealtime();Box mask=bounds.padded(6);
         final HuntVision reader=vision;
@@ -142,7 +149,7 @@ final class HuntController {
                             if(dragging)overlayRecovery.reset();else recoverOverlay();
                             if(flow.running)later(250);return;
                         }
-                        if(!foreground()){pause("已离开游戏，任务暂停");return;}
+                        if(!gameAvailable())return;
                         overlayRecovery.reset();
                         f.age=SystemClock.elapsedRealtime()-at;Action a=flow.next(f,SystemClock.elapsedRealtime());update(a.message);
                         if(a.kind==Kind.WAIT){later(800);return;}if(a.kind==Kind.STOP)return;
@@ -155,7 +162,12 @@ final class HuntController {
         main.postDelayed(()->{if(id==captureId&&token==generation&&busy)pause("识别超时，已暂停");},6000);
     }
     private void gesture(Action a,Frame f,long token,long viewRevision,long captured){
-        if(token!=generation||!owns()||!foreground()||dragging||revision!=viewRevision||SystemClock.elapsedRealtime()-captured>4000){pause("点击前画面已变化，请继续重试");return;}
+        if(token!=generation||!owns())return;
+        if(!gameAvailable()){
+            if(flow.running){flow.suspend(SystemClock.elapsedRealtime(),false);flow.resume(SystemClock.elapsedRealtime());}
+            return;
+        }
+        if(dragging||revision!=viewRevision||SystemClock.elapsedRealtime()-captured>4000){pause("点击前画面已变化，请继续重试");return;}
         // Use the recognized game's back/dismiss target. Android Back can leave
         // the WeChat mini-game instead of returning to its map.
         int[] p=a.kind==Kind.PRESET?f.flags[a.preset]:f.points[a.kind.ordinal()];Rect r=wm.getCurrentWindowMetrics().getBounds();

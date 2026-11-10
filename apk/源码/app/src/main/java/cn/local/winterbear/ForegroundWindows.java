@@ -17,7 +17,10 @@ final class ForegroundWindows {
         root=root==null?"":root;
         Window app=null;
         for(Window w:windows)if(w.application&&(app==null||w.layer>app.layer))app=w;
-        if(app==null)return root;
+        // With no application window, our package may only be the floating
+        // controls' active root. Wait for fresh evidence instead of reporting
+        // an application switch. A visible assistant Activity is handled below.
+        if(app==null)return root.equals(own)?"":root;
         // A notification shade, keyboard or another accessibility overlay can
         // intercept input. Only this app's TYPE_ACCESSIBILITY_OVERLAY is ignored.
         for(Window w:windows)if(!w.application&&!w.ownOverlay&&(w.active||w.focused)&&w.layer>=app.layer)

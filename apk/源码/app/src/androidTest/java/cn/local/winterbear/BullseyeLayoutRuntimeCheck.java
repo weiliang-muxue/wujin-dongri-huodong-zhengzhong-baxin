@@ -30,8 +30,9 @@ public final class BullseyeLayoutRuntimeCheck {
         System.load(args[0]+"/libc++_shared.so");System.load(args[0]+"/libopencv_java4.so");
         Bitmap home=BitmapFactory.decodeFile(new File(args[1],"bullseye-home.png").getPath()),board=BitmapFactory.decodeFile(new File(args[1],"bullseye-board.png").getPath());
         require(home!=null&&board!=null,"Private bullseye fixtures");cn.local.bullseye.Config c=config(board);
+        require(c.matchesReferences(home,board),"Saved reference images rejected");
         try(LiveLayout v=new LiveLayout(c,home,board)){
-            for(int[] size:new int[][]{{1080,2400,0,0},{1080,2520,24,72},{720,1680,-12,48},{1344,2772,0,30}}){
+            for(int[] size:new int[][]{{1080,2400,0,0},{1080,2520,24,72},{720,1680,-12,48},{1344,2772,0,30},{1152,2376,0,0}}){
                 int w=size[0],h=size[1],dx=size[2],dy=size[3];
                 for(boolean isHome:new boolean[]{true,false}){
                     Bitmap frame=moved(isHome?home:board,w,h,dx,dy);
@@ -64,6 +65,7 @@ public final class BullseyeLayoutRuntimeCheck {
         Mat flat=Mat.zeros(10,10,CvType.CV_8UC1),screen=Mat.ones(30,30,CvType.CV_8UC1);
         require(VisualLocator.unique(screen,flat,new org.opencv.core.Rect(-50,-50,200,200),.8,false)==null,"Flat template matched");checks++;flat.release();screen.release();
         Bitmap small=Bitmap.createBitmap(64,64,Bitmap.Config.ARGB_8888);
+        require(!c.matchesReferences(home,small)&&!c.matchesReferences(small,board),"Mismatched reference images accepted");
         require(Vision.textRegion(small,new float[]{0,1,1,1.2f})==null,"Off-screen OCR region");
         require(Vision.textRegion(small,new float[]{0,0,1,.1f})==null,"Undersized OCR region");
         require(Vision.textRegion(small,new float[]{Float.NaN,0,1,1})==null,"Invalid OCR region");

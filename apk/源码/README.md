@@ -4,15 +4,17 @@ JDK 17、Gradle 8.9、Android SDK 35 extension 15、Build Tools 35.0.0。设置 
 
 构建：`gradlew.bat :app:testEngine :app:assembleRelease :app:lintRelease`。
 
-将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.1.7.apk。
+将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.1.8.apk。
 
-检查成品使用 `python tools/verify_android_package.py ../无尽冬日助手-2.1.7.apk --version 2.1.7`。
+检查成品使用 `python tools/verify_android_package.py ../无尽冬日助手-2.1.8.apk --version 2.1.8`。
 
 一个 launcher：ModeActivity；一个无障碍服务：BearService。cn.local.bullseye.GameService 和 HuntController 是该服务内的模块，不是其他 Android Service。ModeGate、运行代次和输入前检查共同限制旧任务回调。返回活动选择会停止所有模块。
 
+2.1.8 的 `ForegroundWindows` 在缺少应用窗口、活动根属于助手时返回未知。`HuntController` 和靶心复用 `ForegroundGate`，未知前台等待，明确切换应用超过短暂宽限后暂停，每次输入仍要求游戏位于前台。靶心为截图和手势分别分配请求编号，截图回调等待 5 秒、手势回调等待 3 秒后提供恢复入口，旧回调无法释放新请求。截图处理期间保留资源所有权，4 秒画面时效使用包含休眠时间的单调时钟。`Config.matchesReferences` 校验保存设置与参考图，当前屏幕的点击位置继续由 `LiveLayout` 重新定位。
+
 2.1.7 在 `HuntFlow.suspend` 中记录已发送动作，恢复时根据当前页面继续。出征进入结果确认，预设重新选择，未发送的罐头动作退回预留额度。`HuntController` 复用相同参数的任务，开始操作具有幂等性，准备代次使手动暂停或结束能取消延迟启动。打熊的手势超时保留发送证据，截图回调同时校验请求所属代次。`HuntActivity` 通过 Bundle 保存当前参数。
 
-`run_feedback_regression.py --suite session` 执行 Bundle 状态往返与实际控制器方法测试。完整 `Activity.recreate()` 回归在 `HuntDeviceCheck` 中，需要可启动 Activity 的模拟器框架或测试手机。
+`run_feedback_regression.py --suite session` 执行 Bundle 状态往返、狩猎控制器方法和靶心回调所有权测试。完整 `Activity.recreate()` 回归在 `HuntDeviceCheck` 中，需要可启动 Activity 的模拟器框架或测试手机。
 
 2.1.6 的 `PresetPicker` 共用于打熊、巨兽、野兽的主界面和游戏内菜单。`PresetOrder` 按所选编号循环，巨兽、野兽的 `Options` 默认构造仍选中全部六个编队。打熊继续读写旧的 `enabled0`～`enabled5` 配置，重新选择时从最小编号开始，改变勾选会废弃旧的暂停步骤。编队选择与活动队数分别传入流程。
 

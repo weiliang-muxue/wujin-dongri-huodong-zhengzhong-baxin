@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService.TakeScreenshotCallback;
 import android.accessibilityservice.AccessibilityService.ScreenshotResult;
 import android.accessibilityservice.AccessibilityService.GestureResultCallback;
 import cn.local.winterbear.BearService;
+import cn.local.winterbear.ForegroundGate;
 import cn.local.winterbear.R;
 import android.content.*;
 import android.graphics.*;
@@ -24,7 +25,12 @@ public class GameService extends ContextWrapper {
     void takeScreenshot(int display,Executor executor,TakeScreenshotCallback callback){host.takeScreenshot(display,executor,callback);}
     boolean dispatchGesture(GestureDescription gesture,GestureResultCallback callback,Handler handler){return host.dispatchGesture(gesture,callback,handler);}
     public volatile boolean running=false,paused=false;volatile boolean busy=false,captureInFlight=false,gestureInFlight=false;
+    final ForegroundGate foregroundGate=new ForegroundGate();
+    private long captureId,gestureId;
+    private boolean waitingForCapture;
+    volatile long frameCapturedAt=-1;
     final Handler main=new Handler(Looper.getMainLooper());final ExecutorService worker=Executors.newSingleThreadExecutor();final Object tapLock=new Object();
+    final Runnable tickTask=this::tick;
     Config config,referenceConfig;LiveLayout liveLayout;Vision vision;Bitmap home,board;WindowManager wm;LinearLayout floating;TextView status;Button pauseButton;
     int remaining,rounds,pending=-1,retries=0,failures=0;boolean starting=false,inRound=false;long lastAction=0,lastKnown=0;Set<Integer> visited=new HashSet<>();
     boolean allowInitialBoard=true;final TicketPolicy tickets=new TicketPolicy();
@@ -40,12 +46,13 @@ public class GameService extends ContextWrapper {
     public void onInterrupt(){pause("系统中断，已暂停");}
     public void onDestroy(){stopRun("服务已关闭");instance=null;worker.execute(()->{if(liveLayout!=null){liveLayout.close();liveLayout=null;}if(vision!=null)vision.close();});worker.shutdown();}
     int dp(int n){return Math.round(n*getResources().getDisplayMetrics().density);}
-    public void begin(Config c){if(running||busy){Toast.makeText(this,"上次运行尚未结束，请稍后再开始",Toast.LENGTH_LONG).show();return;}host.activateBullseye();generation++;targetPackage="";config=c;referenceConfig=c;if(liveLayout!=null){liveLayout.close();liveLayout=null;}if(home!=null)home.recycle();if(board!=null)board.recycle();home=BitmapFactory.decodeFile(new File(getFilesDir(),"home.png").toString());board=BitmapFactory.decodeFile(new File(getFilesDir(),"board.png").toString());if(home==null||board==null){Toast.makeText(this,"请重新上传两张截图",Toast.LENGTH_LONG).show();return;}
+    public void begin(Config c){if(running||busy){Toast.makeText(this,"上次运行尚未结束，请稍后再开始",Toast.LENGTH_LONG).show();return;}host.activateBullseye();generation++;targetPackage="";config=c;referenceConfig=c;if(liveLayout!=null){liveLayout.close();liveLayout=null;}if(home!=null)home.recycle();if(board!=null)board.recycle();home=BitmapFactory.decodeFile(new File(getFilesDir(),"home.png").toString());board=BitmapFactory.decodeFile(new File(getFilesDir(),"board.png").toString());if(!c.matchesReferences(home,board)){if(home!=null)home.recycle();if(board!=null)board.recycle();home=null;board=null;Toast.makeText(this,"参考截图与保存的设置不一致，请重新保存两张截图",Toast.LENGTH_LONG).show();return;}
         float[] xs=new float[c.targets.size()],ys=new float[c.targets.size()];
         for(int i=0;i<xs.length;i++){xs[i]=c.targets.get(i).x;ys[i]=c.targets.get(i).y;}
-        protectedAreas=FloatingGuard.protectedAreas(c.width,c.height,c.countRect,c.exitRect,c.start.x,c.start.y,xs,ys);
+        Rect screen=wm.getCurrentWindowMetrics().getBounds();
+        protectedAreas=FloatingGuard.protectedAreas(screen.width(),screen.height(),c.countRect,c.exitRect,c.start.x,c.start.y,xs,ys);
         floatingBounds=null;dragging=true;overlayRevision++;frameRevision=-1;moveId++;
-        remaining=c.count;tickets.reset();rounds=0;pending=-1;starting=false;inRound=false;allowInitialBoard=true;exitSeen=0;exitAttempts=0;visited.clear();retries=0;failures=0;running=true;paused=false;lastKnown=SystemClock.uptimeMillis();lastAction=lastKnown;showFloating();update("5 秒后开始");main.postDelayed(this::tick,5000);
+        remaining=c.count;tickets.reset();foregroundGate.reset();rounds=0;pending=-1;starting=false;inRound=false;allowInitialBoard=true;exitSeen=0;exitAttempts=0;visited.clear();retries=0;failures=0;running=true;paused=false;lastKnown=SystemClock.uptimeMillis();lastAction=lastKnown;showFloating();update("5 秒后开始");main.postDelayed(tickTask,5000);
     }
     void showFloating(){
         WindowMetrics metrics=wm.getCurrentWindowMetrics();
@@ -79,8 +86,8 @@ public class GameService extends ContextWrapper {
         worker.execute(()->{
             synchronized(tapLock){
                 if(!SessionGuard.canResume(resumeToken,generation,running,paused,host.modes.is(cn.local.winterbear.ModeGate.Mode.BULLSEYE)))return;
-                tickets.reset();lastKnown=SystemClock.uptimeMillis();lastAction=lastKnown;
-                paused=false;update("继续识别");
+                tickets.reset();foregroundGate.reset();lastKnown=SystemClock.uptimeMillis();lastAction=lastKnown;
+                paused=false;update("继续识别");next();
             }
         });
     }
@@ -113,9 +120,9 @@ public class GameService extends ContextWrapper {
         publishFloatingBounds();synchronized(tapLock){dragging=false;}
         if(FloatingGuard.blocked(floatingBounds,protectedAreas,dp(8)))pause("悬浮条挡住游戏，请拖到空白处后继续");
     }
-    boolean frameCurrent(){return running&&!paused&&FloatingGuard.current(frameRevision,overlayRevision,dragging);}
+    boolean frameCurrent(){return running&&!paused&&SessionGuard.freshFrame(frameCapturedAt,SystemClock.elapsedRealtime())&&FloatingGuard.current(frameRevision,overlayRevision,dragging);}
     void update(String message){getSharedPreferences("progress",0).edit().putInt("remaining",remaining).putInt("rounds",rounds).putString("state",message).apply();main.post(()->{if(status!=null){String text="首页余券 "+remaining+" · "+message;if(!text.contentEquals(status.getText()))status.setText(text);status.setContentDescription(text);}if(pauseButton!=null){String label=paused?"继续":"暂停";if(!label.contentEquals(pauseButton.getText()))pauseButton.setText(label);}});}
-    void pause(String message){synchronized(tapLock){paused=true;overlayRevision++;}update(message);}
+    void pause(String message){synchronized(tapLock){paused=true;overlayRevision++;cancelCaptureWait();gestureId++;gestureInFlight=false;}update(message);}
     public void pauseForTaskSelection(){if(running)pause("选择任务");}
     public boolean awaitingCapture(){return busy||captureInFlight;}
     public String startSavedTask(){
@@ -123,47 +130,95 @@ public class GameService extends ContextWrapper {
             File file=new File(getFilesDir(),"config.json");
             if(!file.isFile())return "请先在助手中上传靶心首页和 12 个靶子的截图。";
             Config saved=Config.read(new String(java.nio.file.Files.readAllBytes(file.toPath()),java.nio.charset.StandardCharsets.UTF_8));
-            Rect screen=wm.getCurrentWindowMetrics().getBounds();
-            if(saved.width!=screen.width()||saved.height!=screen.height()||saved.targets.size()!=12)
-                return "靶心截图与当前屏幕不一致，请在助手中更新截图。";
+            if(saved.width<=0||saved.height<=0||saved.targets.size()!=12)
+                return "靶心设置不完整，请在助手中重新保存截图。";
             if(!new File(getFilesDir(),"home.png").isFile()||!new File(getFilesDir(),"board.png").isFile())
                 return "靶心截图缺失，请在助手中重新上传。";
             if(busy||captureInFlight)return "上一项截图尚未结束，请稍后再切换。";
             begin(saved);return running?null:"靶心截图未能读取，请在助手中重新保存截图。";
         }catch(Exception error){return "靶心设置读取失败，请在助手中重新保存截图。";}
     }
-    public void stopRun(String message){boolean wasRunning;synchronized(tapLock){wasRunning=running;generation++;running=false;paused=false;dragging=false;floatingBounds=null;overlayRevision++;}main.removeCallbacksAndMessages(null);gestureInFlight=false;if(!captureInFlight)busy=false;if(floating!=null){try{wm.removeView(floating);}catch(Exception ignored){}floating=null;status=null;pauseButton=null;}getSharedPreferences("progress",0).edit().putInt("remaining",remaining).putInt("rounds",rounds).putString("state",message).apply();if(wasRunning)Toast.makeText(this,message+"，剩余 "+remaining+" 张",Toast.LENGTH_LONG).show();}
-    void next(){main.postDelayed(this::tick,700);}
+    public void stopRun(String message){boolean wasRunning;synchronized(tapLock){wasRunning=running;generation++;running=false;paused=false;dragging=false;floatingBounds=null;overlayRevision++;cancelCaptureWait();gestureId++;gestureInFlight=false;}main.removeCallbacksAndMessages(null);if(!captureInFlight)busy=false;if(floating!=null){try{wm.removeView(floating);}catch(Exception ignored){}floating=null;status=null;pauseButton=null;}getSharedPreferences("progress",0).edit().putInt("remaining",remaining).putInt("rounds",rounds).putString("state",message).apply();if(wasRunning)Toast.makeText(this,message+"，剩余 "+remaining+" 张",Toast.LENGTH_LONG).show();}
+    long beginCapture(){
+        synchronized(tapLock){busy=true;captureInFlight=true;waitingForCapture=true;return ++captureId;}
+    }
+    boolean captureArrived(long request,long session){
+        synchronized(tapLock){
+            if(request!=captureId||session!=generation||!waitingForCapture)return false;
+            waitingForCapture=false;return true;
+        }
+    }
+    boolean finishCapture(long request){
+        synchronized(tapLock){
+            if(request!=captureId)return false;
+            waitingForCapture=false;captureInFlight=false;busy=false;return true;
+        }
+    }
+    boolean expireCapture(long request,long session){
+        synchronized(tapLock){
+            if(request!=captureId||session!=generation||!waitingForCapture)return false;
+            cancelCaptureWait();return true;
+        }
+    }
+    void cancelCaptureWait(){
+        synchronized(tapLock){
+            // Processing keeps its busy ownership until the worker releases the
+            // frame. Cancelling a callback wait may safely allow a new session.
+            if(!waitingForCapture)return;
+            captureId++;waitingForCapture=false;captureInFlight=false;busy=false;
+        }
+    }
+    long beginGesture(){synchronized(tapLock){gestureInFlight=true;return ++gestureId;}}
+    boolean finishGesture(long request,long session){
+        synchronized(tapLock){
+            if(request!=gestureId||session!=generation||!gestureInFlight)return false;
+            gestureInFlight=false;return true;
+        }
+    }
+    void next(){
+        synchronized(tapLock){main.removeCallbacks(tickTask);if(running)main.postDelayed(tickTask,700);}
+    }
     void tick(){
-        if(!running||!host.modes.is(cn.local.winterbear.ModeGate.Mode.BULLSEYE))return;if(paused||busy||dragging||floatingBounds==null||SystemClock.uptimeMillis()-lastAction<2400){next();return;}
+        if(!running||!host.modes.is(cn.local.winterbear.ModeGate.Mode.BULLSEYE))return;if(paused||busy||gestureInFlight||dragging||floatingBounds==null||SystemClock.uptimeMillis()-lastAction<2400){next();return;}
+        if(!getSystemService(PowerManager.class).isInteractive()){pause("屏幕关闭，任务暂停");next();return;}
         String foreground=host.foregroundPackage();
-        if(foreground.isEmpty()||foreground.equals(getPackageName())||foreground.startsWith("com.android.")||(!targetPackage.isEmpty()&&!foreground.equals(targetPackage))){pause("已离开游戏，请回游戏后继续");next();return;}
-        if(targetPackage.isEmpty())targetPackage=foreground;
+        if(targetPackage.isEmpty()){
+            if(foreground.isEmpty()||foreground.equals(getPackageName())||foreground.startsWith("com.android.")||foreground.equals("android")){update("等待游戏窗口恢复");next();return;}
+            targetPackage=foreground;
+        }
+        if(foregroundGate.timedOut(targetPackage,foreground,SystemClock.uptimeMillis())){pause("已离开游戏，请回游戏后继续");next();return;}
+        if(!targetPackage.equals(foreground)){update("等待游戏窗口恢复");next();return;}
         publishFloatingBounds();
-        busy=true;captureInFlight=true;
+        final long request=beginCapture();
         final long token=generation,captureRevision=overlayRevision;
+        final long capturedAt=SystemClock.elapsedRealtime();
         final FloatingGuard.Box mask=floatingBounds.padded(dp(8));
         // Keep controls visible. Only the private analysis bitmap is masked; never the screen.
         try{takeScreenshot(Display.DEFAULT_DISPLAY,worker,new TakeScreenshotCallback(){
-            @Override public void onSuccess(ScreenshotResult s){Bitmap hw=null,frame=null;try{
+            @Override public void onSuccess(ScreenshotResult s){
+                if(!captureArrived(request,token)){s.getHardwareBuffer().close();return;}
+                Bitmap hw=null,frame=null;try{
                 hw=Bitmap.wrapHardwareBuffer(s.getHardwareBuffer(),s.getColorSpace());if(hw==null)throw new Exception("无法读取屏幕");
                 if(token==generation&&running&&FloatingGuard.current(captureRevision,overlayRevision,dragging)){
                     frame=hw.copy(Bitmap.Config.ARGB_8888,true);Paint paint=new Paint();paint.setColor(Color.BLACK);
                     new Canvas(frame).drawRect(mask.left,mask.top,mask.right,mask.bottom,paint);
-                    frameRevision=captureRevision;process(frame);failures=0;
+                    frameRevision=captureRevision;frameCapturedAt=capturedAt;process(frame);failures=0;
+                    if(token==generation&&running&&!paused&&!SessionGuard.freshFrame(capturedAt,SystemClock.elapsedRealtime()))update("画面已更新，重新识别");
                 }
             }catch(Exception e){if(token==generation)pause("识别异常："+e.getMessage());}finally{
-                if(frame!=null)frame.recycle();if(hw!=null)hw.recycle();s.getHardwareBuffer().close();captureInFlight=false;busy=false;if(token==generation&&running)next();
+                if(frame!=null)frame.recycle();if(hw!=null)hw.recycle();s.getHardwareBuffer().close();finishCapture(request);if(token==generation&&running)next();
             }}
-            @Override public void onFailure(int error){captureInFlight=false;busy=false;if(token!=generation)return;if(++failures>=3)pause("无法读取屏幕，请检查权限");if(running)next();}
-        });}catch(Exception e){captureInFlight=false;busy=false;pause("无法读取屏幕："+e.getMessage());next();}
+            @Override public void onFailure(int error){if(!finishCapture(request)||token!=generation)return;if(++failures>=3)pause("无法读取屏幕，请检查权限");if(running)next();}
+        });}catch(Exception e){if(finishCapture(request)&&token==generation){pause("无法读取屏幕："+e.getMessage());next();}}
+        main.postDelayed(()->{if(expireCapture(request,token)){pause("截图响应超时，点继续重试");if(running)next();}},5000);
     }
-    boolean tap(PointF point){synchronized(tapLock){if(!frameCurrent()||!host.modes.is(cn.local.winterbear.ModeGate.Mode.BULLSEYE)||!host.foregroundPackage().equals(targetPackage))return false;if(floatingBounds==null||floatingBounds.padded(dp(8)).contains(point.x*config.width,point.y*config.height)){pause("悬浮条挡住点击位置，请拖开后继续");return false;}Path p=new Path();p.moveTo(point.x*config.width,point.y*config.height);GestureDescription g=new GestureDescription.Builder().addStroke(new GestureDescription.StrokeDescription(p,0,70)).build();lastAction=SystemClock.uptimeMillis();final long token=generation;gestureInFlight=true;
+    boolean tap(PointF point){synchronized(tapLock){if(!frameCurrent()||gestureInFlight||!host.modes.is(cn.local.winterbear.ModeGate.Mode.BULLSEYE)||!getSystemService(PowerManager.class).isInteractive()||!host.foregroundPackage().equals(targetPackage))return false;if(floatingBounds==null||floatingBounds.padded(dp(8)).contains(point.x*config.width,point.y*config.height)){pause("悬浮条挡住点击位置，请拖开后继续");return false;}Path p=new Path();p.moveTo(point.x*config.width,point.y*config.height);GestureDescription g=new GestureDescription.Builder().addStroke(new GestureDescription.StrokeDescription(p,0,70)).build();lastAction=SystemClock.uptimeMillis();final long token=generation,request=beginGesture();
         boolean accepted=dispatchGesture(g,new GestureResultCallback(){
-          private void finish(){if(token==generation)gestureInFlight=false;}
-          @Override public void onCompleted(GestureDescription d){finish();}
-          @Override public void onCancelled(GestureDescription d){finish();if(token==generation&&running)pause("点击被中断，请确认后继续");}
-        },main);if(!accepted){gestureInFlight=false;pause("点击未被系统接受");}return accepted;}}
+          @Override public void onCompleted(GestureDescription d){finishGesture(request,token);}
+          @Override public void onCancelled(GestureDescription d){if(finishGesture(request,token)&&running)pause("点击被中断，请确认后继续");}
+        },main);if(!accepted){finishGesture(request,token);pause("点击未被系统接受");}
+        else main.postDelayed(()->{if(finishGesture(request,token)&&running)pause("点击响应超时，点继续确认画面");},3000);
+        return accepted;}}
     double match(Bitmap frame,Bitmap ref,PointF actual,PointF original,float radius){Bitmap a=Vision.patch(frame,actual,radius),b=Vision.patch(ref,original,radius);try{return Vision.similarity(a,b);}finally{a.recycle();b.recycle();}}
     boolean protectLayout(Config c){
         float[] xs=new float[c.targets.size()],ys=new float[c.targets.size()];

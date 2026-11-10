@@ -1,5 +1,6 @@
 package cn.local.bullseye;
 import android.graphics.PointF;
+import android.graphics.Bitmap;
 import org.json.*;
 import java.util.*;
 
@@ -8,6 +9,13 @@ public class Config {
     public PointF start;
     public List<PointF> targets=new ArrayList<>();
     public int count,width,height;
+    public boolean matchesReferences(Bitmap home,Bitmap board){
+        return width>0&&height>0&&targets.size()==12&&start!=null
+                &&region!=null&&region.length==4&&countRect!=null&&countRect.length==4
+                &&exitRect!=null&&exitRect.length==4
+                &&home!=null&&board!=null&&home.getWidth()==width&&home.getHeight()==height
+                &&board.getWidth()==width&&board.getHeight()==height;
+    }
     static JSONArray array(float[] a)throws JSONException {JSONArray j=new JSONArray();for(float v:a)j.put((double)v);return j;}
     static float[] floats(JSONArray j)throws JSONException {float[] a=new float[j.length()];for(int i=0;i<a.length;i++)a[i]=(float)j.getDouble(i);return a;}
     public String json()throws JSONException {

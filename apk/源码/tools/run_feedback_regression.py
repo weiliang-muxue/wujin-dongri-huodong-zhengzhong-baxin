@@ -88,6 +88,8 @@ with (a.output/'android-feedback-runtime.txt').open('w',encoding='utf-8') as log
         if 'ANDROID HUNT STATE PASS: 4' not in state:raise RuntimeError('Hunt state regression missing')
         controller=run('HuntControllerStateRuntimeCheck','')
         if 'ANDROID HUNT CONTROLLER PASS: 10' not in controller:raise RuntimeError('Hunt controller regression missing')
+        bullseye=run('BullseyeSessionRuntimeCheck','')
+        if 'ANDROID BULLSEYE SESSION PASS: 14' not in bullseye:raise RuntimeError('Bullseye session regression missing')
     if wanted('presets'):
         result=run('PresetSettingsRuntimeCheck',f'{remote}/assets {remote}/preset-config')
         if 'ANDROID PRESET SETTINGS PASS: 68' not in result:raise RuntimeError('Preset settings regression result missing')

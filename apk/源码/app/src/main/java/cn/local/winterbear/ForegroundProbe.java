@@ -26,7 +26,9 @@ final class ForegroundProbe {
                 observed.add(new ForegroundWindows.Window(name,w.getLayer(),app,own,w.isActive(),w.isFocused()));
             }
             return ForegroundWindows.select(service.getPackageName(),active,observed);
-        }catch(RuntimeException unavailable){return active;}
+        }catch(RuntimeException unavailable){
+            return ForegroundWindows.select(service.getPackageName(),active,java.util.Collections.emptyList());
+        }
         finally{if(windows!=null)for(AccessibilityWindowInfo w:windows)w.recycle();}
     }
 }

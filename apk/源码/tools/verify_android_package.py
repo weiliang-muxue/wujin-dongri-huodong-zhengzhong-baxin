@@ -67,6 +67,14 @@ def verify(apk: Path, version: str) -> dict:
         for marker in ('回游戏继续', '开始新任务', '确认上次操作结果'):
             if not any(marker.encode('utf-8') in blob for blob in dex):
                 raise ValueError('APK is missing session recovery: ' + marker)
+    device_recovery = tuple(map(int,version.split('.'))) >= (2,1,8)
+    if device_recovery:
+        for marker in ('截图响应超时，点继续重试', '点击响应超时，点继续确认画面', '画面已更新，重新识别'):
+            if not any(marker.encode('utf-8') in blob for blob in dex):
+                raise ValueError('APK is missing device recovery: ' + marker)
+        obsolete='靶心截图与当前屏幕不一致，请在助手中更新截图。'
+        if any(obsolete.encode('utf-8') in blob for blob in dex):
+            raise ValueError('APK still blocks relocated reference layouts')
     for text in ('首页实际余券', '正在切换 1 倍，等待画面确认', '首页确认余券为 0，已全部用完', '结算完成，自动返回首页'):
         if not any(text.encode('utf-8') in blob for blob in dex):
             raise ValueError('APK is missing expected behavior marker: ' + text)
@@ -79,6 +87,7 @@ def verify(apk: Path, version: str) -> dict:
             'in_game_task_switch': in_game_switch,
             'preset_selection': preset_selection,
             'session_recovery': session_recovery,
+            'device_recovery': device_recovery,
             'sha256': hashlib.sha256(apk.read_bytes()).hexdigest()}
 
 

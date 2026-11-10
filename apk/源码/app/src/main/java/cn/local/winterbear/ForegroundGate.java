@@ -1,9 +1,9 @@
 package cn.local.winterbear;
 
 /** Brief system overlays suspend actions; an actual app switch stops after a bounded grace period. */
-final class ForegroundGate {
+public final class ForegroundGate {
     private long missingAt=-1;
-    boolean timedOut(String target,String observed,long now){
+    public boolean timedOut(String target,String observed,long now){
         // A missing root or temporary system surface gives no evidence that the
         // user switched apps. Wait for a fresh foreground observation.
         if(observed==null||observed.isEmpty()){reset();return false;}
@@ -14,5 +14,5 @@ final class ForegroundGate {
         if(missingAt<0)missingAt=now;
         return now-missingAt>=3000;
     }
-    void reset(){missingAt=-1;}
+    public void reset(){missingAt=-1;}
 }

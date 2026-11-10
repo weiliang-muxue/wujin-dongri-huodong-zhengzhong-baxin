@@ -36,15 +36,13 @@ public class MainActivity extends Activity {
     void restore(){try{
         File data=new File(getFilesDir(),"config.json");if(!data.isFile())return;
         Config c=Config.read(new String(java.nio.file.Files.readAllBytes(data.toPath()),StandardCharsets.UTF_8));
-        Rect screen=getWindowManager().getMaximumWindowMetrics().getBounds();
-        if(c.width!=screen.width()||c.height!=screen.height()||c.targets.size()!=12)return;
         home=BitmapFactory.decodeFile(new File(getFilesDir(),"home.png").toString());board=BitmapFactory.decodeFile(new File(getFilesDir(),"board.png").toString());
-        if(home==null||board==null||home.getWidth()!=c.width||board.getWidth()!=c.width||home.getHeight()!=c.height||board.getHeight()!=c.height)return;
+        if(!c.matchesReferences(home,board))return;
         config=c;preview.setImageBitmap(board);first.setText("1  首页图已保存 · 更换");second.setText("2  靶子图已保存 · 更换");result.setText("已恢复上次设置 · 12 / 12 个靶子");count.setText("运行时读取实际余券");start.setEnabled(true);
     }catch(Exception ignored){config=null;}}
     void pick(int kind){if(analyzing)return;if(GameService.instance!=null&&GameService.instance.running){toast("请先停止当前运行再更换截图");return;}selected=kind;Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.setType("image/*");i.addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(i,kind);}
     @Override protected void onActivityResult(int request,int code,Intent data){super.onActivityResult(request,code,data);if(code!=RESULT_OK||data==null||data.getData()==null)return;
-        try(InputStream in=getContentResolver().openInputStream(data.getData())){Bitmap b=BitmapFactory.decodeStream(in);if(b==null)throw new IOException("图片无法读取");Rect screen=getWindowManager().getMaximumWindowMetrics().getBounds();if(b.getWidth()!=screen.width()||b.getHeight()!=screen.height())throw new IOException("请上传这台手机当前方向的全屏原图，不要裁剪或压缩");
+        try(InputStream in=getContentResolver().openInputStream(data.getData())){Bitmap b=BitmapFactory.decodeStream(in);if(b==null)throw new IOException("图片无法读取");
             if(request==1){home=b;first.setText("1  首页图已上传 · 更换");}else{board=b;second.setText("2  靶子图已上传 · 更换");}preview.setImageBitmap(b);config=null;start.setEnabled(false);count.setText("");if(home!=null&&board!=null)analyze();
         }catch(Exception e){toast(e.getMessage());}
     }
@@ -56,7 +54,7 @@ public class MainActivity extends Activity {
     void saveBitmap(String name,Bitmap b)throws IOException{try(FileOutputStream out=openFileOutput(name,MODE_PRIVATE)){b.compress(Bitmap.CompressFormat.PNG,100,out);}}
     void startRun(){if(config==null)return;if(GameService.instance!=null&&GameService.instance.running){toast("运行中，请使用悬浮按钮控制");return;}
         if(GameService.instance==null){cn.local.winterbear.PermissionActivity.open(this);return;}
-        new AlertDialog.Builder(this).setTitle("准备开始").setMessage("倍率在游戏里设置，每轮回首页读取实际余券。剩 1～4 张时自动切到 1 倍，余券为 0 时停止。\n\n请保持游戏位置与截图一致，停在首页或完整的 12 靶子页。开始后 5 秒执行，请切回游戏，不要手动操作游戏。可用悬浮按钮暂停 / 继续 / 停止。").setPositiveButton("5 秒后开始",(d,w)->{try{String data=config.json();try(FileOutputStream out=openFileOutput("config.json",MODE_PRIVATE)){out.write(data.getBytes(StandardCharsets.UTF_8));}GameService.instance.begin(config);moveTaskToBack(true);}catch(Exception e){toast(e.getMessage());}}).setNegativeButton("返回",null).show();
+        new AlertDialog.Builder(this).setTitle("准备开始").setMessage("倍率在游戏里设置，每轮回首页读取实际余券。剩 1～4 张时自动切到 1 倍，余券为 0 时停止。\n\n请停在首页或完整的 12 靶子页，助手会重新定位当前画面。开始后 5 秒执行，请切回游戏，不要手动操作游戏。可用悬浮按钮暂停 / 继续 / 停止。").setPositiveButton("5 秒后开始",(d,w)->{try{String data=config.json();try(FileOutputStream out=openFileOutput("config.json",MODE_PRIVATE)){out.write(data.getBytes(StandardCharsets.UTF_8));}GameService.instance.begin(config);moveTaskToBack(true);}catch(Exception e){toast(e.getMessage());}}).setNegativeButton("返回",null).show();
     }
     void toast(String message){Toast.makeText(this,message,Toast.LENGTH_LONG).show();log.setText(message);}
     @Override protected void onDestroy(){super.onDestroy();worker.shutdown();if(!analyzing)vision.close();}

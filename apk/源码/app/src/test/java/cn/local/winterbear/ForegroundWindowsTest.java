@@ -20,4 +20,15 @@ public class ForegroundWindowsTest {
     @Test public void staleRootAndNewAppWindowCannotAllowOldGameClick(){assertEquals("",read(GAME,app("other.app",3)));}
     @Test public void missingTopWindowOwnerDoesNotFallBackToGame(){assertEquals("",read(GAME,app(GAME,1),app("",3)));}
     @Test public void unavailableWindowListUsesCurrentRootWithoutCaching(){assertEquals(GAME,read(GAME));assertEquals("",read(""));}
+    @Test public void ownRootWithoutApplicationWindowsIsTemporarilyUnknown(){
+        assertEquals("",read(OWN));
+        assertEquals("",read(OWN,overlay(OWN,4,true,true)));
+    }
+    @Test public void explicitAssistantActivityRemainsAnAppSwitch(){
+        assertEquals(OWN,read(OWN,app(OWN,2)));
+        assertEquals(OWN,read(OWN,app(OWN,2),overlay(OWN,4,true,true)));
+    }
+    @Test public void unavailableWindowListStillReportsAnExplicitDifferentRoot(){
+        assertEquals("com.android.settings",read("com.android.settings"));
+    }
 }
