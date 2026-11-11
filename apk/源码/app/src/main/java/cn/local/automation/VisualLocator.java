@@ -70,7 +70,10 @@ public final class VisualLocator {
             if(deviation.toArray()[0]<1)return result;
         }finally{mean.release();deviation.release();}
         Rect region=new Rect(left,top,right-left,bottom-top);
-        double minimum=Math.max(.5,12.0/Math.min(template.cols(),template.rows()));
+        // Some shipped preset markers are only 12 px wide at reference scale.
+        // A 12 px minimum silently prohibited their smaller, still readable
+        // variants. Preserve at least 8 px; confidence/color/page checks remain.
+        double minimum=Math.max(.5,8.0/Math.min(template.cols(),template.rows()));
         double maximum=Math.min(2,Math.min(region.width/(double)template.cols(),region.height/(double)template.rows()));
         if(maximum<minimum)return result;
         // A wide text strip loses correlation much sooner than a square icon:

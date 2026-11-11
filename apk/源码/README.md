@@ -4,9 +4,9 @@ JDK 17、Gradle 8.9、Android SDK 35 extension 15、Build Tools 35.0.0。设置 
 
 构建：`gradlew.bat :app:testEngine :app:assembleRelease :app:lintRelease`。
 
-将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.1.9.apk。
+将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.1.10.apk。
 
-检查成品使用 `python tools/verify_android_package.py ../无尽冬日助手-2.1.9.apk --version 2.1.9`。
+检查成品使用 `python tools/verify_android_package.py ../无尽冬日助手-2.1.10.apk --version 2.1.10`。
 
 2.1.9 的 `VisualLocator.findAdaptive` 先按图像金字塔生成候选，在原图中按像素尺寸细化，再以调用方的置信度接受结果。比例间隔随模板短边／长边之比调整，长条文字使用更密的比例候选，避免细化前就漏掉正确尺寸。候选范围包含降采样取整误差。同一位置的尺寸候选会合并，不同位置继续接受唯一性检查。按钮颜色按匹配出的实际尺寸核对。打熊、巨兽、野兽、靶心共用该算法，靶心的目标比对区域也随布局比例变化。靶心页面的多个原比例标记已满足几何一致性时直接复用定位结果，只有不一致或不足时才搜索缩放比例，避免普通帧反复扫描所有比例。
 
@@ -17,6 +17,20 @@ JDK 17、Gradle 8.9、Android SDK 35 extension 15、Build Tools 35.0.0。设置 
 Release 构建自动依赖 `testEngine`。图像回放使用 `run_feedback_regression.py`，其中 `--suite scale` 验证缩放、重复目标和颜色，`--suite restart --restart-fixtures <目录>` 回放结束重开录屏，`--suite overlay` 检查浮窗状态与文字边界。图像组需要本地测试素材和专用模拟器，执行结果记录在项目验证文档中。
 
 `core`、`session`、`presets`、`scale`、`overlay` 组可直接使用源码内的素材。构建带 `-PemulatorTest` 的 Debug 与 AndroidTest APK 后，为脚本传入 `--adb <路径> --serial emulator-<端口> --output <输出目录>` 和所需 `--suite`。私人截图回放组另传素材目录。软件模拟器可通过 `--opencv-threads 1` 调整测试进程线程数，日志记录所用设置。
+
+### 连续缩放回归（2.1.10）
+
+`tools/run_scale_sweep.ps1` 直接编译生产用 `VisualLocator`、`ReferenceAnchors`、`LayoutTransform`，没有另写一套识别算法。使用 JDK 17 和与 APK 同版本的 [OpenCV 4.12.0 Windows 官方 Java 库](https://github.com/opencv/opencv/releases/tag/4.12.0)，将 `OpenCvJavaDir` 指向解压后的 `opencv/build/java`，输出目录必须显式指定。例如在本工程目录运行：
+
+```powershell
+tools/run_scale_sweep.ps1 -JavaHome <JDK目录> -OpenCvJavaDir <OpenCV目录> -OutputDir <本地验证目录> -Suite dense
+```
+
+`dense` 对 11 种源码内素材逐像素扫描约 80%～120% 的宽度，并加入 67%、73%、127%、133%、146% 比例，分别使用 AREA 和 LINEAR 插值，共 856 项。`boundary` 检查贴四边的完整目标与半遮挡负例（60 项）；`colors` 检查 20～42 像素宽的绿色／灰色按钮（46 项）。这三组不需要私人截图。
+
+`-Suite all -Fixtures <私人素材目录>` 还加入 25 项实际页面缩放偏移及 35 项靶心锚点检查，总共 1022 项。目录需包含 `giant_search.png`、`giant_formation.png`、`beast_detail.png`、`beast_formation.png`、`huawei-bear-list.png`、`bullseye-home.png`、`bullseye-board.png`；图片沿用已有私人回放素材，不提交 Git。逐项结果、坐标误差与耗时写入 TSV。任何失败均使脚本退出失败；保留失败记录后修复，不能只挑通过的比例。
+
+2.1.9 在该扫描中有 10 项失败：缩小的编队旗帜和“等级”标记被 12 像素短边下限排除。2.1.10 将最小短边改为 8 像素，未降低最终置信度。Android `--suite scale` 同时加入这 10 项，合计 50 项原生 Bitmap/OpenCV 检查。桌面扫描补充密集比例覆盖，不能替代 Android 测试；以上图像变换也不代表小米、华为手机的真实触控、性能或整场流程已经验证。
 
 布局回放可用 `--adaptive-start-index` / `--adaptive-end-index` 按 `AdaptiveRuntimeCheck` 中的页面顺序分组，结束索引不包含在内。`--adaptive-hunt-only` 只检查选中的狩猎页；`--adaptive-bear-only` 使用打熊的三个页面编号（0 华为列表、1 历史列表、2 出征页），不传索引时检查全部三页。每页均检查左右两个偏移方向。各组使用独立模拟器与输出目录，最后按页面和偏移方向合并记录，重复的负例只计一次。
 

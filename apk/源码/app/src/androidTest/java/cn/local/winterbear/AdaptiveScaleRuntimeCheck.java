@@ -101,10 +101,29 @@ public final class AdaptiveScaleRuntimeCheck {
             }
         }finally{expected.release();shape.release();grayButton.release();}
     }
+    private static void smallMarkers(File assets){
+        for(String key:new String[]{"hunt/level_label","feedback/preset0"}){
+            Mat template=load(assets,key,false);
+            try{
+                int[] widths=key.endsWith("preset0")?new int[]{8,9,10,11}:new int[]{23};
+                for(int width:widths)for(int interpolation:new int[]{Imgproc.INTER_AREA,Imgproc.INTER_LINEAR}){
+                    Mat frame=new Mat(160,240,CvType.CV_8UC1,new Scalar(35)),sample=new Mat();
+                    try{
+                        int height=(int)Math.round(width*template.rows()/(double)template.cols());
+                        Imgproc.resize(template,sample,new Size(width,height),0,0,interpolation);
+                        Rect box=new Rect(73,61,width,height);Mat target=frame.submat(box);
+                        try{sample.copyTo(target);}finally{target.release();}
+                        centered(VisualLocator.uniqueAdaptive(frame,template,new Rect(0,0,240,160),.88,true),box,key+" width="+width);
+                        checks++;System.out.println("ADAPTIVE SMALL PASS: "+key+" width="+width+" interpolation="+interpolation);
+                    }finally{frame.release();sample.release();}
+                }
+            }finally{template.release();}
+        }
+    }
     public static void main(String[] args){
         try{
             System.load(args[0]+"/libc++_shared.so");System.load(args[0]+"/libopencv_java4.so");
-            File assets=new File(args[1]);scales(assets);negatives(assets);colors(assets);
+            File assets=new File(args[1]);scales(assets);negatives(assets);colors(assets);smallMarkers(assets);
             System.out.println("ANDROID ADAPTIVE SCALE PASS: "+checks+" synthetic checks using real assets; continuous local scale refinement; no device-specific settings or gestures");
         }catch(Throwable error){error.printStackTrace(System.out);System.exit(1);}
     }

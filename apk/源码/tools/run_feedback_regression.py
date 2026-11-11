@@ -118,7 +118,7 @@ with (a.output/'android-feedback-runtime.txt').open('w',encoding='utf-8') as log
         if 'ANDROID PRESET SETTINGS PASS: 68' not in result:raise RuntimeError('Preset settings regression result missing')
     if wanted('scale'):
         result=run('AdaptiveScaleRuntimeCheck',f'{remote}/lib {remote}/assets')
-        if 'ANDROID ADAPTIVE SCALE PASS: 40' not in result:raise RuntimeError('Adaptive scale regression missing')
+        if 'ANDROID ADAPTIVE SCALE PASS: 50' not in result:raise RuntimeError('Adaptive scale regression missing')
     if a.restart_fixtures and wanted('restart'):
         result=run('HuntRestartRuntimeCheck',f'{remote}/lib {remote}/fixtures {remote}/assets {a.restart_start_index}')
         if 'ANDROID HUNT RESTART CONTROLLER PASS: 24' not in result:raise RuntimeError('Restart controller regression missing')
