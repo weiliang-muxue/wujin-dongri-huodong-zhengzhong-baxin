@@ -49,7 +49,10 @@ public final class LiveLayout implements AutoCloseable {
             int w=frame.getWidth(),h=frame.getHeight();Config c=new Config();c.width=w;c.height=h;c.count=reference.count;
             c.start=map(reference.start,t,w,h);c.region=map(reference.region,t,w,h);c.countRect=map(reference.countRect,t,w,h);
             if(c.countRect[2]<=c.countRect[0]||c.countRect[3]<=c.countRect[1])return null;
-            VisualLocator.Match button=VisualLocator.uniqueAdaptive(gray,start,new Rect(0,gray.rows()/2,gray.cols(),gray.rows()-gray.rows()/2),.87,true);
+            // The header has already identified this page. Content may occupy
+            // either half, and bottom safe areas can move the button independently.
+            // Require a unique visual button across the visible frame.
+            VisualLocator.Match button=VisualLocator.uniqueAdaptive(gray,start,new Rect(0,0,gray.cols(),gray.rows()),.87,true);
             List<PointF> found=button==null?Vision.targets(frame):Collections.emptyList();
             if(found.size()==12){grid=found;gridAt=t;gridWidth=w;gridHeight=h;}
             if(grid!=null){

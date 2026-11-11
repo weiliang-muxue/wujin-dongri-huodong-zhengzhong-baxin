@@ -17,13 +17,15 @@ p.add_argument('--huawei-end-index',type=int,choices=range(1,21),default=20,help
 p.add_argument('--adaptive-layouts',action='store_true')
 p.add_argument('--bullseye-fixtures',type=Path)
 p.add_argument('--bullseye-zoom-only',action='store_true',help='Run content-scale, partial-board and negative layout checks after a recorded normal-layout run')
+p.add_argument('--bullseye-button-only',action='store_true',help='Run upper-page and independently moved start-button layout checks')
+p.add_argument('--manual-navigation-fixtures',type=Path,help='Private video-315.png rally list for manual calibration navigation checks')
 p.add_argument('--return-fixtures',type=Path,help='Private Xiaomi rally / returning / returned screenshots')
 p.add_argument('--timer-fixtures',type=Path,help='39 exported march timer strips and timers.tsv from MarchTrackingScaleCheck')
 p.add_argument('--paging-fixtures',type=Path,help='Private short-countdown recording frames')
 p.add_argument('--restart-fixtures',type=Path,help='Private end/reopen recording frames')
 p.add_argument('--restart-start-index',type=int,choices=range(5),default=0,help='Resume at a size group after a recorded partial run')
 p.add_argument('--opencv-threads',type=int,choices=range(9),default=0,help='OpenCV test process thread count; 0 uses its default')
-p.add_argument('--suite',action='append',choices=['core','session','presets','scale','restart','bullseye','adaptive','huawei','huawei-bear','direct','reported','marches','return','march-timers','paging','overlay','hunt','feedback','countdown','compat'],help='Run selected suites; default runs every supplied suite')
+p.add_argument('--suite',action='append',choices=['core','session','presets','scale','restart','bullseye','manual-navigation','march-presence','adaptive','huawei','huawei-bear','direct','reported','marches','return','march-timers','paging','overlay','hunt','feedback','countdown','compat'],help='Run selected suites; default runs every supplied suite')
 p.add_argument('--adaptive-bear-only',action='store_true')
 p.add_argument('--adaptive-start-index',type=int,choices=range(11),default=0,help='First hunt page, or first of three bear pages with --adaptive-bear-only')
 p.add_argument('--adaptive-end-index',type=int,choices=range(1,12),default=11,help='Exclusive final adaptive page; bear-only default includes all three pages')
@@ -38,6 +40,9 @@ if (not a.suite or any(suite in a.suite for suite in ('feedback','countdown','co
     p.error('Base image fixtures are required for feedback, countdown and compatibility suites')
 if (a.reported_fixtures or a.dispatch_fixtures) and not a.hunt_fixtures:p.error('Hunt fixtures are required for reported/dispatch checks')
 if a.suite and 'march-timers' in a.suite and not a.timer_fixtures:p.error('March timer checks require --timer-fixtures')
+if a.suite and 'manual-navigation' in a.suite and not a.manual_navigation_fixtures:p.error('Manual navigation checks require --manual-navigation-fixtures')
+if a.suite and 'march-presence' in a.suite and not a.return_fixtures:p.error('March presence checks require --return-fixtures')
+if a.bullseye_zoom_only and a.bullseye_button_only:p.error('Select either bullseye zoom or button checks')
 if a.adaptive_layouts and not (a.hunt_fixtures and a.huawei_fixtures):p.error('Adaptive layouts require hunt and Huawei fixtures')
 root=Path(__file__).resolve().parents[1];a.output.mkdir(parents=True,exist_ok=True)
 def wanted(name):return not a.suite or name in a.suite
@@ -69,6 +74,8 @@ if a.huawei_fixtures:
 if a.bullseye_fixtures:
     for name in ('bullseye-home','bullseye-board'):
         (bundle/'fixtures'/f'{name}.png').write_bytes((a.bullseye_fixtures/f'{name}.png').read_bytes())
+if a.manual_navigation_fixtures:
+    (bundle/'fixtures/video-315.png').write_bytes((a.manual_navigation_fixtures/'video-315.png').read_bytes())
 if a.return_fixtures:
     for name in ('xiaomi-rally','xiaomi-returning','xiaomi-returned-toast','xiaomi-returned'):
         (bundle/'fixtures'/f'{name}.jpg').write_bytes((a.return_fixtures/f'{name}.jpg').read_bytes())
@@ -132,8 +139,16 @@ with (a.output/'android-feedback-runtime.txt').open('w',encoding='utf-8') as log
         expected=19-a.restart_start_index*3
         if f'ANDROID HUNT RESTART IMAGE PASS: {expected} ' not in result:raise RuntimeError('Restart image regression missing')
     if a.bullseye_fixtures and wanted('bullseye'):
-        result=run('BullseyeLayoutRuntimeCheck',f'{remote}/lib {remote}/fixtures'+(' zoom' if a.bullseye_zoom_only else ''))
-        if 'ANDROID BULLSEYE LAYOUT PASS:' not in result:raise RuntimeError('Bullseye layout result missing')
+        variant=' button' if a.bullseye_button_only else ' zoom' if a.bullseye_zoom_only else ''
+        result=run('BullseyeLayoutRuntimeCheck',f'{remote}/lib {remote}/fixtures'+variant)
+        expected='ANDROID BULLSEYE UPPER BUTTON PASS: 10 ' if a.bullseye_button_only else 'ANDROID BULLSEYE LAYOUT PASS: 8 ' if a.bullseye_zoom_only else 'ANDROID BULLSEYE LAYOUT PASS: 28 '
+        if expected not in result:raise RuntimeError('Bullseye layout result missing/incomplete')
+    if a.manual_navigation_fixtures and wanted('manual-navigation'):
+        result=run('ManualNavigationRuntimeCheck',f'{remote}/lib {remote}/fixtures {remote}/assets {remote}/manual-navigation')
+        if 'ANDROID MANUAL NAVIGATION PASS: 15 ' not in result:raise RuntimeError('Manual navigation result missing/incomplete')
+    if a.return_fixtures and wanted('march-presence'):
+        result=run('MarchPresenceRuntimeCheck',f'{remote}/lib {remote}/fixtures {remote}/assets')
+        if 'ANDROID MARCH PRESENCE PASS: 6 ' not in result:raise RuntimeError('March presence result missing/incomplete')
     if a.adaptive_layouts and wanted('adaptive'):
         part='bear' if a.adaptive_bear_only else 'hunt' if a.adaptive_hunt_only else 'all'
         result=run('AdaptiveRuntimeCheck',f'{remote}/lib {remote}/fixtures {remote}/assets {remote}/adaptive-calibration {part} {a.adaptive_start_index} {a.adaptive_end_index}')

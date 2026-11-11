@@ -24,6 +24,20 @@ final class HuntMarches {
 
     int active(){int n=0;for(int mask:owners)n=Math.max(n,Integer.bitCount(mask));return n;}
 
+    boolean awaitingReturn(){
+        if(previous==null||previous.length==0)return false;
+        for(Row row:previous)if(row.type!=Type.RETURN||row.seconds<0)return false;
+        return true;
+    }
+    // Missing the heading is not an empty roster. Only a new/empty session or
+    // explicitly returning rows whose clocks have expired can support that claim.
+    boolean mayConfirmEmpty(long at){
+        if(previous==null||previous.length==0)return true;
+        if(!awaitingReturn())return false;
+        for(Row row:previous)if(at<observedAt+row.seconds*1000L+1000)return false;
+        return true;
+    }
+
     boolean observe(Row[] rows,long at,boolean confirmingDispatch){
         if(rows==null||rows.length>6)return false;
         for(Row r:rows)if(r==null||r.type==null||(r.seconds<0&&r.type==Type.UNKNOWN))return false;

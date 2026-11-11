@@ -26,7 +26,7 @@ final class HuntFlow {
         int width,height;
         Page page=Page.UNKNOWN; int used=-1,level=-1,category=-1,stock=-1,energy=-1;
         HuntMarches.Row[] marches;
-        boolean lowEnergy; final boolean[] presets=new boolean[6];
+        boolean marchPanelAbsent,lowEnergy; final boolean[] presets=new boolean[6];
         long age; final int[][] points=new int[Kind.values().length][2];final int[][] flags=new int[6][2];
         void point(Kind k,int x,int y){points[k.ordinal()]=new int[]{x,y};}
         boolean contains(int x,int y){return x>0&&y>0&&x<width&&y<height;}
@@ -40,6 +40,7 @@ final class HuntFlow {
     int nextPreset,submitted,cansUsed; private int selected,stableUsed=-2,stableCount;
     private int lastLevel=-1,levelFailures,categoryAttempts,batchLeft,stockBefore=-1,energyBefore=-1;
     private boolean awaitingCan,closingEnergy;private Kind pending,interrupted;private long waitUntil,since,unknownSince=-1;
+    private long absentSince=-1,absentLast=-1;
     HuntFlow(Options options){this.options=options;nextPreset=PresetOrder.next(options.presetSelection,0);}
     // The session ends on stamina/can allowance or a manual stop, not elapsed time.
     void start(long now){running=true;phase=Phase.MAP;since=now;waitUntil=now;stableCount=0;pending=null;interrupted=null;}
@@ -55,7 +56,7 @@ final class HuntFlow {
         else if(action==Kind.PRESET)phase(Phase.FORMATION,now);
         else if(action==Kind.OPEN||action==Kind.SEARCH||action==Kind.TARGET||action==Kind.LAUNCH||action==Kind.CLOSE||action==Kind.DISMISS)interrupted=action;
     }
-    void resume(long now){running=true;pending=null;waitUntil=now;since=now;unknownSince=-1;}
+    void resume(long now){running=true;pending=null;waitUntil=now;since=now;unknownSince=-1;absentSince=absentLast=-1;}
     boolean pending(){return pending!=null;}
     private Action waitFor(String s){return new Action(Kind.WAIT,s,-1);}
     private Action halt(String s){stop();return new Action(Kind.STOP,s,-1);}
@@ -93,7 +94,8 @@ final class HuntFlow {
     }
     Action next(Frame f,long now){
         if(!running||pending!=null)return waitFor("已暂停");
-        if(f.age<0||f.age>4000)return unknown(now,"画面更新较慢，等待新截图");
+        if(f.age<0||f.age>4000){absentSince=absentLast=-1;return unknown(now,"画面更新较慢，等待新截图");}
+        if(f.page!=Page.MAP||!f.marchPanelAbsent)absentSince=absentLast=-1;
         if(now<waitUntil)return waitFor("等待游戏响应");
         if(interrupted!=null){Action recovery=reconcileInterrupted(f,now);if(recovery!=null)return recovery;}
         if(f.page==Page.ENERGY){
@@ -139,6 +141,23 @@ final class HuntFlow {
             if(f.page==Page.SEARCH||f.page==Page.GIANT||f.page==Page.BEAST||f.page==Page.RALLY||f.page==Page.FORMATION)
                 return act(Kind.BACK,"返回地图开始本次任务");
             if(f.page!=Page.MAP)return unknown(now,"请停在野外地图");
+            if(f.marchPanelAbsent){
+                stableUsed=-2;stableCount=0;
+                long capturedAt=now-f.age;
+                if(!marches.mayConfirmEmpty(capturedAt)){
+                    absentSince=absentLast=-1;
+                    if(marches.awaitingReturn()){unknownSince=-1;return waitFor("等待已确认返程的队伍回城");}
+                    return unknown(now,"未读到行军栏，保留本次队伍，等待重新识别");
+                }
+                if(capturedAt<=absentLast)return waitFor("等待新画面确认行军栏");
+                if(absentSince<0||capturedAt-absentLast>4000)absentSince=capturedAt;
+                absentLast=capturedAt;
+                if(capturedAt-absentSince<1000)return waitFor("再次确认地图行军栏");
+                marches.observe(new HuntMarches.Row[0],capturedAt,false);
+                unknownSince=-1;
+                selected=nextPreset;lastLevel=-1;levelFailures=0;categoryAttempts=0;
+                return act(Kind.OPEN,"打开地图搜索");
+            }
             if(f.used<0)return unknown(now,"读取地图行军数量");
             if(f.used!=stableUsed){stableUsed=f.used;stableCount=1;return waitFor("确认行军 "+f.used+"/6");}
             if(++stableCount<2)return waitFor("再次确认行军数量");

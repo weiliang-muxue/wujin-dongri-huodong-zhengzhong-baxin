@@ -4,11 +4,20 @@ JDK 17、Gradle 8.9、Android SDK 35 extension 15、Build Tools 35.0.0。设置 
 
 构建：`gradlew.bat :app:testEngine :app:assembleRelease :app:lintRelease`。
 
-将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.1.12.apk。
+将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.1.13.apk。
 
-检查成品使用 `python tools/verify_android_package.py ../无尽冬日助手-2.1.12.apk --version 2.1.12`。
+检查成品使用 `python tools/verify_android_package.py ../无尽冬日助手-2.1.13.apk --version 2.1.13`。
 
 ### 整页缩放回归
+
+2.1.13 补充以下发布检查，既检查识别结果，也检查识别失败后的状态。手动与自动取样必须分别验证，不能互相替代：
+
+- `run_custom_sample_sweep.ps1 -Suite navigation`：手动校准启用后的完整列表、出征、六个编队及歧义负例；不指定套件时仍跑原有 12 项熊图与绿色＋配对。
+- `run_feedback_regression.py --suite manual-navigation --manual-navigation-fixtures <含 video-315.png 的目录> ...`：Android 实际 Bitmap/Config/OpenCV 的 15 项导航检查。
+- `run_feedback_regression.py --suite bullseye --bullseye-fixtures <目录> ...`：原有布局与新开始按钮位置检查共 28 项；`--bullseye-button-only` 只运行新增 10 项，包含按钮独立移动、上部按钮、重复按钮与空白负例。
+- `run_feedback_regression.py --suite march-presence --return-fixtures <小米回城素材目录> ...`：原生行军标题正常／被遮挡的比例回放；不得把标题丢失转换为零队。`MarchPresenceTest` 同时纳入 JDK 与 ART 逻辑回归，检查无栏首次启动、已有队伍保留、返程到期补队和出征结果确认。
+
+每次发布还需核对 JDK、Android 原生入口、Release 包的源码一致性、版本、签名及 ABI。真实截图变换不能替代真机触控和完整活动测试；测试记录应分别列出本次执行与历史结果。运行中旋转或改变截图尺寸时，打熊会停止使用旧截图；需重新连接地图校准，不能只点继续恢复旧尺寸配置。
 
 `VisualAnchor` 保存实际匹配尺寸，将相邻控件的搜索范围与 OCR 取图范围转换到当前内容比例。只有归一化到屏幕宽度还不够：游戏内容可能在相同截图宽度下独立缩放。公共匹配器同时检查相邻整数像素高度，最终置信度、颜色和页面条件仍须满足。
 

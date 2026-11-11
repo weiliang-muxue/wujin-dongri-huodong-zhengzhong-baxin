@@ -151,7 +151,7 @@ final class Matcher implements AutoCloseable {
         if(f.formation||f.deploy){
             stage="识别预设编队";
             for(int i=0;i<6;i++){
-                Hit flag=presetNear(i,automatic()?formation:null);
+                Hit flag=presetNear(i,formation);
                 f.savedPreset[i]=flag!=null;
                 if(flag!=null){f.presetX[i]=flag.x;f.presetY[i]=flag.y;}
             }
@@ -234,7 +234,6 @@ final class Matcher implements AutoCloseable {
         return new Rect((int)Math.floor(area.x-centerError),(int)Math.floor(area.y-centerError),
                 (int)Math.ceil(area.x+area.width+centerError),(int)Math.ceil(area.y+area.height+centerError));
     }
-    private boolean automatic(){return config.p.getBoolean("referenceLayout",false)&&!config.p.getBoolean("manualCalibration",false);}
     private Hit presetNear(int i,Hit formation){
         int x=config.p.getInt("presetX"+i,0),y=config.p.getInt("presetY"+i,0);
         if(formation==null)return near("preset_marker"+i,x,y);
@@ -248,7 +247,7 @@ final class Matcher implements AutoCloseable {
         return hits.isEmpty()?null:hits.get(0);
     }
     private Hit locateFormation(Rect region){
-        Hit local=nearConfigured("formation");if(!automatic())return local;
+        Hit local=nearConfigured("formation");
         if(local!=null&&presetNear(0,local)!=null&&presetNear(1,local)!=null)return local;
         List<Hit> candidates=find("formation",region,4);candidates.sort(java.util.Comparator.comparingInt(h->h.x));
         for(Hit candidate:candidates){
@@ -259,9 +258,10 @@ final class Matcher implements AutoCloseable {
         return null;
     }
     Hit locate(String key,Rect region){
-        Hit fixed=nearConfigured(key);if(fixed!=null||!automatic())return fixed;
+        Hit fixed=nearConfigured(key);if(fixed!=null)return fixed;
         // Search the page region only after the quick local match misses. Multiple
         // lookalikes are ambiguous; never select an arbitrary one to click.
+        // Manual calibration changes the saved template, not the relocation rules.
         List<Hit> matches=find(key,region,2);
         return matches.size()==1?matches.get(0):null;
     }

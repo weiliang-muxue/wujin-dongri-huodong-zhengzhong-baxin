@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$OpenCvJavaDir,[Parameter(Mandatory=$true)][string]$OutputDir,[Parameter(Mandatory=$true)][string]$Fixtures,[string]$JavaHome=$env:JAVA_HOME)
+param([Parameter(Mandatory=$true)][string]$OpenCvJavaDir,[Parameter(Mandatory=$true)][string]$OutputDir,[Parameter(Mandatory=$true)][string]$Fixtures,[string]$JavaHome=$env:JAVA_HOME,[ValidateSet('pairing','navigation')][string]$Suite='pairing')
 $ErrorActionPreference='Stop'
 $project=Split-Path $PSScriptRoot -Parent
 $OutputDir=[IO.Path]::GetFullPath($OutputDir)
@@ -29,5 +29,6 @@ $files+=Get-ChildItem -LiteralPath "$PSScriptRoot\desktop" -Filter '*.java' -Rec
 $files+="$OutputDir\adapter\Config.java"
 & "$JavaHome\bin\javac.exe" -encoding UTF-8 -cp $jar -d "$OutputDir\classes" @files
 if($LASTEXITCODE -ne 0){throw 'Custom sample checker compilation failed'}
-& "$JavaHome\bin\java.exe" "-Djava.io.tmpdir=$OutputDir\temp" -cp "$OutputDir\classes;$jar" cn.local.winterbear.CustomSampleScaleCheck $dll "$project\app\src\main\assets" "$OutputDir\layout.properties" $Fixtures $OutputDir 2>&1 | Tee-Object -FilePath "$OutputDir\custom-samples.log"
+$checker=if($Suite -eq 'navigation'){'ManualNavigationScaleCheck'}else{'CustomSampleScaleCheck'}
+& "$JavaHome\bin\java.exe" "-Djava.io.tmpdir=$OutputDir\temp" -cp "$OutputDir\classes;$jar" "cn.local.winterbear.$checker" $dll "$project\app\src\main\assets" "$OutputDir\layout.properties" $Fixtures $OutputDir 2>&1 | Tee-Object -FilePath "$OutputDir\custom-samples.log"
 if($LASTEXITCODE -ne 0){throw 'Custom sample regression failed; preserve the report before fixing production code'}

@@ -213,10 +213,8 @@ final class HuntVision implements AutoCloseable {
             }finally{if(canonical!=gray)canonical.release();}
         }
         else{
-            int used=MarchCount.used(read(image,scale,146,290,190,320));
-            // The caller has already identified the map using two independent controls.
-            f.used=used>=0?used:0;
-            if(f.used==0)f.marches=new HuntMarches.Row[0];
+            // A hidden/missed heading cannot turn an existing team into zero teams.
+            f.marchPanelAbsent=true;
         }
     }
     public void close(){for(Mat m:templates.values())m.release();feedback.close();glyphs.close();}

@@ -33,12 +33,62 @@ public final class BullseyeLayoutRuntimeCheck {
         try{require(Vision.similarity(actual,reference)>.72,"Unopened target rejected after relocation: "+index);}
         finally{actual.recycle();reference.recycle();}
     }
+    static void buttonPlacement(Bitmap home,Bitmap board,cn.local.bullseye.Config c){
+        try(LiveLayout v=new LiveLayout(c,home,board)){
+            for(int[] variant:new int[][]{{58,0,0,2400},{80,90,100,3600},{100,0,0,4400}}){
+                float factor=variant[0]/100f;int dx=variant[1],dy=variant[2],height=variant[3];
+                float expectedX=c.start.x*home.getWidth()*factor+dx,expectedY=c.start.y*home.getHeight()*factor+dy;
+                require(expectedY<height/2f,"Button regression must cross the old half-screen boundary");
+                for(boolean isHome:new boolean[]{true,false}){
+                    Bitmap source=isHome?home:board,frame=Bitmap.createBitmap(source.getWidth(),height,Bitmap.Config.ARGB_8888);
+                    Canvas canvas=new Canvas(frame);canvas.drawColor(Color.BLACK);
+                    canvas.drawBitmap(source,null,new android.graphics.Rect(dx,dy,dx+Math.round(source.getWidth()*factor),dy+Math.round(source.getHeight()*factor)),new Paint(Paint.FILTER_BITMAP_FLAG));
+                    try{
+                        LiveLayout.Result r=v.observe(frame);require(r!=null,"Upper button layout missing at "+variant[0]+"% height="+height);
+                        require(r.home==isHome,"Upper button page mismatch at "+variant[0]+"% home="+isHome);
+                        if(isHome){
+                            require(Math.abs(r.config.start.x*frame.getWidth()-expectedX)<8,"Upper button X shifted");
+                            require(Math.abs(r.config.start.y*frame.getHeight()-expectedY)<8,"Upper button Y shifted");
+                        }else for(int i=0;i<12;i++){
+                            PointF original=c.targets.get(i),actual=r.config.targets.get(i);
+                            require(Math.abs(actual.x*frame.getWidth()-(original.x*board.getWidth()*factor+dx))<8,"Upper board target X "+i);
+                            require(Math.abs(actual.y*frame.getHeight()-(original.y*board.getHeight()*factor+dy))<8,"Upper board target Y "+i);
+                        }
+                        checks++;System.out.println("BULLSEYE UPPER BUTTON PASS: "+variant[0]+"% height="+height+" home="+isHome);System.out.flush();
+                    }finally{frame.recycle();}
+                }
+            }
+            // Move only the complete button; the page header and ticket area stay fixed.
+            Bitmap button=Bitmap.createBitmap(home,300,1960,480,200);
+            try{
+                for(int offset:new int[]{-120,120,-240}){
+                    boolean duplicate=offset==-240;Bitmap frame=home.copy(Bitmap.Config.ARGB_8888,true);
+                    try{
+                        Canvas canvas=new Canvas(frame);Paint erase=new Paint();erase.setColor(Color.BLACK);
+                        if(!duplicate)canvas.drawRect(300,1960,780,2160,erase);
+                        canvas.drawBitmap(button,300,1960+offset,null);
+                        LiveLayout.Result r=v.observe(frame);require(r!=null,"Button-only movement lost header layout");
+                        require(r.home!=duplicate,"Moved/ambiguous button classified incorrectly: "+offset);
+                        if(!duplicate){
+                            require(Math.abs(r.config.start.x*frame.getWidth()-c.start.x*home.getWidth())<8,"Independently moved button X");
+                            require(Math.abs(r.config.start.y*frame.getHeight()-(c.start.y*home.getHeight()+offset))<8,"Independently moved button Y");
+                        }
+                        checks++;System.out.println("BULLSEYE LOCAL BUTTON PASS: offset="+offset+" duplicate="+duplicate);System.out.flush();
+                    }finally{frame.recycle();}
+                }
+            }finally{button.recycle();}
+            Bitmap blank=Bitmap.createBitmap(1080,4400,Bitmap.Config.ARGB_8888);
+            try{require(v.observe(blank)==null,"Blank padded page accepted");checks++;}finally{blank.recycle();}
+        }
+    }
     static void run(String[] args)throws Exception{
         System.load(args[0]+"/libc++_shared.so");System.load(args[0]+"/libopencv_java4.so");
         Bitmap home=BitmapFactory.decodeFile(new File(args[1],"bullseye-home.png").getPath()),board=BitmapFactory.decodeFile(new File(args[1],"bullseye-board.png").getPath());
         require(home!=null&&board!=null,"Private bullseye fixtures");cn.local.bullseye.Config c=config(board);
         require(c.matchesReferences(home,board),"Saved reference images rejected");
-        boolean zoomOnly=args.length>2&&"zoom".equals(args[2]);
+        boolean zoomOnly=args.length>2&&"zoom".equals(args[2]),buttonOnly=args.length>2&&"button".equals(args[2]);
+        if(!zoomOnly)buttonPlacement(home,board,c);
+        if(buttonOnly){home.recycle();board.recycle();System.out.println("ANDROID BULLSEYE UPPER BUTTON PASS: "+checks+" image checks; transformed real home, synthetic board and blank; no phone/gesture claims");return;}
         try(LiveLayout v=new LiveLayout(c,home,board)){
             if(!zoomOnly)for(int[] size:new int[][]{{1080,2400,0,0},{1080,2520,24,72},{720,1680,-12,48},{1344,2772,0,30},{1152,2376,0,0}}){
                 int w=size[0],h=size[1],dx=size[2],dy=size[3];
