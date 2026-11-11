@@ -2,6 +2,7 @@ package cn.local.winterbear;
 
 import android.graphics.Bitmap;
 import cn.local.automation.VisualLocator;
+import cn.local.automation.VisualAnchor;
 import android.graphics.Rect;
 import org.opencv.android.OpenCVLoader;
 import org.opencv.android.Utils;
@@ -113,24 +114,26 @@ final class Matcher implements AutoCloseable {
         Hit formation=locateFormation(new Rect(0,height/12,w*2/3,height*2/3));
         f.formation=f.formation||formation!=null;
         f.autoJoin=near("auto_join",config.p.getInt("auto_joinX",0),config.p.getInt("auto_joinY",0))!=null;
-        Hit march=nearConfigured("march_anchor");
+        Hit march=nearConfigured("march_anchor");String marchKey="march_anchor";
+        // The march header moves with in-game scaling and top/bottom insets.
+        // Search the left upper half rather than cutting through its old row.
+        Rect marchArea=new Rect(0,0,(int)(w*.45),height/2);
         if(march==null){
-            List<Hit> moved=find("march_anchor",new Rect(0,(int)(config.height()*.18),(int)(config.width()*.30),(int)(config.height()*.39)),1);
+            List<Hit> moved=find("march_anchor",marchArea,1);
             if(!moved.isEmpty())march=moved.get(0);
         }
         if(march==null){
             // Transparent map backgrounds vary by phone; retain the text and threshold,
             // discarding only the surrounding background. Unreadable visible numbers must wait.
-            List<Hit> core=find("march_anchor_core",new Rect(0,(int)(config.height()*.18),(int)(config.width()*.30),(int)(config.height()*.39)),1);
-            if(!core.isEmpty())march=core.get(0);
+            List<Hit> core=find("march_anchor_core",marchArea,1);
+            if(!core.isEmpty()){march=core.get(0);marchKey="march_anchor_core";}
         }
         boolean mapChrome=f.worldMapChrome||(locate("map_city",new Rect(w*2/3,height*2/3,w,height))!=null&&locate("alliance",new Rect(w/2,height*2/3,w,height))!=null);
         f.map=!f.header&&!f.formation&&!f.deploy&&(march!=null||mapChrome);
         if(f.map&&config.marchReady()){
             stage="读取行军数量";
             // Read the number even if the word anchor missed: a clear 6/6 always means full.
-            Rect count=config.counterRect();
-            if(march!=null)count.offset(march.x-config.p.getInt("march_anchorX",0),march.y-config.p.getInt("march_anchorY",0));
+            Rect count=marchCounter(march,marchKey);
             f.marchUsed=counter.read(currentBitmap,count);
         }
         f.marchHidden=f.map&&march==null&&mapChrome&&!MarchCount.valid(f.marchUsed);
@@ -177,10 +180,8 @@ final class Matcher implements AutoCloseable {
             stage="识别取样的巨熊集结";
             List<RallyOrder.Detection> detections=new ArrayList<>();
             for(Hit bear:find("bear_row",null,20)) {
-                int jx=bear.x+config.p.getInt("rowJoinDx",0),jy=bear.y+config.p.getInt("rowJoinDy",0);
-                boolean inBounds=jx>0&&jy>0&&jx<config.width()&&jy<config.height();
-                Hit join=inBounds?near("join_row",jx,jy):null;
-                detections.add(new RallyOrder.Detection(bear.x,bear.y,join==null?jx:join.x,join==null?jy:join.y,join!=null,bear.confidence));
+                Hit join=customJoin(bear);
+                detections.add(new RallyOrder.Detection(bear.x,bear.y,join==null?0:join.x,join==null?0:join.y,join!=null,bear.confidence));
             }
             Mat bearTemplate=template("bear_row");
             if(bearTemplate==null)throw new IllegalStateException("巨熊模板损坏，请重新取样");
@@ -203,6 +204,36 @@ final class Matcher implements AutoCloseable {
         return f;
     }
     private Hit nearConfigured(String key){return near(key,config.p.getInt(key+"X",0),config.p.getInt(key+"Y",0));}
+    private Hit customJoin(Hit bear){
+        Mat sample=template("bear_row"),join=template("join_row");
+        if(sample==null||sample.empty()||join==null||join.empty())return null;
+        // Manual crops and rowJoinDx/Dy are saved in screenshot pixels. The
+        // detected bear supplies the new content scale for their relative geometry.
+        double q=bear.width*scale/sample.cols();
+        VisualAnchor anchor=new VisualAnchor(bear.x,bear.y,q,1.0/sample.cols());
+        int dx=config.p.getInt("rowJoinDx",0),dy=config.p.getInt("rowJoinDy",0);
+        double halfWidth=join.cols()/(2*scale),halfHeight=join.rows()/(2*scale);
+        org.opencv.core.Rect related=VisualAnchor.near(anchor,dx-halfWidth,dy-halfHeight,dx+halfWidth,dy+halfHeight);
+        int margin=Math.max(12,config.width()/70);
+        Rect area=new Rect(related.x-margin,related.y-margin,related.x+related.width+margin,related.y+related.height+margin);
+        // A larger search envelope never substitutes for a unique, color-checked button.
+        List<Hit> hits=find("join_row",area,2);
+        return hits.size()==1?hits.get(0):null;
+    }
+    private Rect marchCounter(Hit march,String key){
+        Rect count=config.counterRect();if(march==null)return count;
+        Mat label=template(key);if(label==null||label.empty())return count;
+        double q=march.width*scale/label.cols();
+        double centerError=1.0/scale;
+        int x=config.p.getInt("march_anchorX",0),y=config.p.getInt("march_anchorY",0);
+        // Carry the observed label scale to both the number's offset and size.
+        // Core-only matching uses its own cropped template width, not the full label.
+        // A one-pixel template-width/center rounding error is amplified by the
+        // distant counter, so include its geometric envelope before OCR.
+        org.opencv.core.Rect area=VisualAnchor.near(new VisualAnchor(march.x,march.y,q,1.0/label.cols()),count.left-x,count.top-y,count.right-x,count.bottom-y);
+        return new Rect((int)Math.floor(area.x-centerError),(int)Math.floor(area.y-centerError),
+                (int)Math.ceil(area.x+area.width+centerError),(int)Math.ceil(area.y+area.height+centerError));
+    }
     private boolean automatic(){return config.p.getBoolean("referenceLayout",false)&&!config.p.getBoolean("manualCalibration",false);}
     private Hit presetNear(int i,Hit formation){
         int x=config.p.getInt("presetX"+i,0),y=config.p.getInt("presetY"+i,0);

@@ -102,16 +102,15 @@ final class HuntVision implements AutoCloseable {
             Point label=title==null?null:near(gray,"energy_label",title,-160,30,-25,105,false);
             if(title!=null&&label!=null&&label.y-title.y>35*VisualAnchor.scale(title)&&label.y-title.y<100*VisualAnchor.scale(title)){
                 f.page=Page.ENERGY;
-                double q=VisualAnchor.scale(title);
-                Point use=near(gray,"energy_use",new VisualAnchor(title.x,label.y,q),79.5,140,239.5,320,true);
+                Point use=near(gray,"energy_use",VisualAnchor.at(title,title.x,label.y),79.5,140,239.5,320,true);
                 Point can=use==null?null:near(gray,"energy_can",use,-410,-50,-310,40,false);
                 Point close=near(gray,"energy_close",title,190,-25,255,25,false);
                 if(use!=null&&can!=null&&green(small,use)){
                     point(f,Kind.USE,use,s);
-                    org.opencv.core.Rect stock=VisualAnchor.near(new VisualAnchor(can.x,use.y,q),6,15,38,35);
+                    org.opencv.core.Rect stock=VisualAnchor.near(VisualAnchor.at(title,can.x,use.y),6,15,38,35);
                     f.stock=number(read(image,s,stock.x,stock.y,stock.x+stock.width,stock.y+stock.height));
                 }
-                org.opencv.core.Rect value=VisualAnchor.near(new VisualAnchor(title.x,label.y,q),-18.5,27,63.5,52);
+                org.opencv.core.Rect value=VisualAnchor.near(VisualAnchor.at(title,title.x,label.y),-18.5,27,63.5,52);
                 String energy=read(image,s,value.x,value.y,value.x+value.width,value.y+value.height).replaceAll("\\s","");
                 java.util.regex.Matcher m=Pattern.compile("^([0-9]{1,4})[/／]200$").matcher(energy);if(m.matches())f.energy=Integer.parseInt(m.group(1));
                 point(f,Kind.CLOSE,close,s);return f;
@@ -176,14 +175,14 @@ final class HuntVision implements AutoCloseable {
                 Point selected=near(gray,"selection",search,-270,-290,-25,-230,false);
                 if(selected!=null)f.category=Math.abs(selected.x-(beast.x-51*q))<Math.abs(selected.x-(giant.x-51*q))?Mode.BEAST.ordinal():Mode.GIANT.ordinal();
                 else{
-                    Point corner=near(gray,"selection_right",new VisualAnchor(beast.x,search.y,q),32,-290,73,-230,false);
-                    Point other=near(gray,"selection_right",new VisualAnchor(giant.x,search.y,q),32,-290,73,-230,false);
+                    Point corner=near(gray,"selection_right",VisualAnchor.at(search,beast.x,search.y),32,-290,73,-230,false);
+                    Point other=near(gray,"selection_right",VisualAnchor.at(search,giant.x,search.y),32,-290,73,-230,false);
                     if((corner!=null)!=(other!=null))f.category=corner!=null?Mode.BEAST.ordinal():Mode.GIANT.ordinal();
                 }
                 Point less=near(gray,"level_minus",search,-250,-150,-180,-90,false);
                 Point more=near(gray,"level_plus",search,50,-150,125,-90,false);
                 if(less!=null&&(more==null||Math.abs(less.y-more.y)<8*q)){
-                    org.opencv.core.Rect value=VisualAnchor.near(new VisualAnchor(less.x,less.y,q),373,-19,436,13);
+                    org.opencv.core.Rect value=VisualAnchor.near(VisualAnchor.at(search,less.x,less.y),373,-19,436,13);
                     f.level=number(read(image,s,value.x,value.y,value.x+value.width,value.y+value.height));
                     point(f,Kind.LESS,less,s);point(f,Kind.MORE,more,s);
                 }

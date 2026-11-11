@@ -107,10 +107,49 @@ final class HuntGlyphs implements AutoCloseable {
     private int timer(Bitmap image,double scale,int center,int dx){
         Bitmap strip=region(image,scale,55+dx,center+1,145+dx,center+20,180,38);
         if(strip==null)return -1;
-        try{int[] p=new int[180*38];byte[] gray=new byte[p.length];strip.getPixels(p,0,180,0,0,180,38);
-            for(int i=0;i<p.length;i++)gray[i]=(byte)Math.min(Color.red(p[i]),Math.min(Color.green(p[i]),Color.blue(p[i])));
-            return timers.readSmall(gray,180,38);
-        }finally{strip.recycle();}
+        try{return adaptiveTimer(strip);}finally{strip.recycle();}
+    }
+    private int adaptiveTimer(Bitmap strip){
+        int originalWidth=strip.getWidth(),originalHeight=strip.getHeight();byte[] gray=timerGray(strip);
+        int direct=timers.readSmall(gray,originalWidth,originalHeight);if(direct>=0)return direct;
+        // Small fonts change shape when a display scale moves a stroke across a pixel.
+        // Retry nearby sampling sizes with the same glyph confidence and HH:MM:SS
+        // validation. Require independent sizes to agree; ambiguity stays unknown.
+        int value=-1,agree=0;
+        int radius=Math.max(1,Math.round(originalWidth*.045f));
+        // Visit every nearby normalized size so a useful sampling phase is not skipped.
+        for(int width=Math.max(1,originalWidth-radius);width<=originalWidth+radius;width++){
+            if(width==originalWidth)continue;
+            int height=Math.max(1,Math.round(originalHeight*width/(float)originalWidth));
+            byte[] sampled=resampleTimerGray(gray,originalWidth,originalHeight,width,height);
+            int candidate=timers.readSmall(sampled,width,height);
+            if(candidate<0)continue;
+            if(value>=0&&value!=candidate)return -1;
+            value=candidate;agree++;
+        }
+        return agree>=2?value:-1;
+    }
+    private static byte[] timerGray(Bitmap strip){
+        int width=strip.getWidth(),height=strip.getHeight();int[] p=new int[width*height];byte[] gray=new byte[p.length];
+        strip.getPixels(p,0,width,0,0,width,height);
+        for(int i=0;i<p.length;i++)gray[i]=(byte)Math.min(Color.red(p[i]),Math.min(Color.green(p[i]),Color.blue(p[i])));
+        return gray;
+    }
+    /** Pixel-centre bilinear sampling with identical integer rounding on Android/JVM. */
+    private static byte[] resampleTimerGray(byte[] source,int sw,int sh,int tw,int th){
+        byte[] output=new byte[tw*th];long xd=2L*tw,yd=2L*th,den=xd*yd;
+        for(int y=0;y<th;y++){
+            long yn=(2L*y+1)*sh-th;int rawY=(int)Math.floorDiv(yn,yd);long fy=yn-rawY*yd;
+            int y0=Math.max(0,Math.min(sh-1,rawY)),y1=Math.max(0,Math.min(sh-1,rawY+1));
+            for(int x=0;x<tw;x++){
+                long xn=(2L*x+1)*sw-tw;int rawX=(int)Math.floorDiv(xn,xd);long fx=xn-rawX*xd;
+                int x0=Math.max(0,Math.min(sw-1,rawX)),x1=Math.max(0,Math.min(sw-1,rawX+1));
+                long top=(source[y0*sw+x0]&255)*(xd-fx)+(source[y0*sw+x1]&255)*fx;
+                long bottom=(source[y1*sw+x0]&255)*(xd-fx)+(source[y1*sw+x1]&255)*fx;
+                output[y*tw+x]=(byte)((top*(yd-fy)+bottom*fy+den/2)/den);
+            }
+        }
+        return output;
     }
     public void close(){icons.close();}
     private long icon(Bitmap image,double scale,int center,int dx){

@@ -4,11 +4,11 @@ JDK 17、Gradle 8.9、Android SDK 35 extension 15、Build Tools 35.0.0。设置 
 
 构建：`gradlew.bat :app:testEngine :app:assembleRelease :app:lintRelease`。
 
-将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.1.11.apk。
+将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.1.12.apk。
 
-检查成品使用 `python tools/verify_android_package.py ../无尽冬日助手-2.1.11.apk --version 2.1.11`。
+检查成品使用 `python tools/verify_android_package.py ../无尽冬日助手-2.1.12.apk --version 2.1.12`。
 
-### 整页缩放回归（2.1.11）
+### 整页缩放回归
 
 `VisualAnchor` 保存实际匹配尺寸，将相邻控件的搜索范围与 OCR 取图范围转换到当前内容比例。只有归一化到屏幕宽度还不够：游戏内容可能在相同截图宽度下独立缩放。公共匹配器同时检查相邻整数像素高度，最终置信度、颜色和页面条件仍须满足。
 
@@ -26,6 +26,15 @@ python tools/run_page_runtime.py --adb '<adb.exe>' --serial emulator-5580 --bund
 ```
 
 页面素材名称由 PageSweepCheck 列出，回城素材为 `xiaomi-rally.jpg`、`xiaomi-returning.jpg`、`xiaomi-returned.jpg`。输出包含逐项 TSV、日志、失败图和原生回放输入。实际页面分别变换到 90%、94%、98%、100%、102%、110%；94% 叠加平移和 JPEG 压缩。断言页面类型、已知等级、全部六个编队、可用熊队数量、倒计时和坐标；数字取图组只验证标注数字完整落入取图范围，不能声称验证了 OCR 准确率。被裁断的倒计时必须保持未知，非熊页面及灰色＋不得变成可加入的熊队。桌面与原生图像回放均不操作游戏，也不代替真机触控及整场活动测试。
+
+2.1.12 增加以下补测入口，沿用相同的 JDK、OpenCV、素材和输出目录参数：
+
+- `run_page_sweep.ps1 -Suite boundary`：72 项相邻比例、单轴 2% 变化及上下系统留白检查；六个编队必须齐全，熊队倒计时采用独立标注。输出的 `video-170-bars` 可交给 `run_page_runtime.py --case video-170-bars` 原生复测。
+- `run_page_sweep.ps1 -Suite targeted -MarchFixtures <小米回城素材目录>`：10 项行军数字取图范围、6 项仅文字内部 ±2% 缩放、9 项集结→返程→回城追踪。追踪中类型与计时来自实际像素，总行军数由标注提供。`march-tracking/native-fixtures` 导出 39 个预先标注秒数的计时条带。
+- `run_feedback_regression.py --suite march-timers --timer-fixtures <上述 native-fixtures> --adb <adb> --serial emulator-5580 --output <目录>`：需先构建模拟器 Debug 和 AndroidTest APK。原生 Bitmap 读取 39 条计时，另生成 156 条空白、半遮挡和低对比度负例。
+- `run_custom_sample_sweep.ps1`：从私人原图裁取手动熊样本与＋样本，检查 90%、100%、110% 以及平移，共 12 项。使用隔离的桌面 Config 适配副本启用手动样本分支；导航位置独立提供，只验证手动行配对，不冒充完整手动导航流程。
+
+公共 `VisualAnchor` 将小模板一像素宽度误差传播到关联区域边界，避免远端控件被取整误差裁掉；放宽的是搜索区域，匹配置信度不降低。打熊的行军数字与手动熊行配对同时采用实际比例。行军计时仅在原读取失败时尝试相邻采样尺寸；灰度重采样统一使用整数双线性插值，避免 Android 与桌面 Bitmap 缩放取整不同。范围从文字条带尺寸按比例推导，至少两次读数一致才接受，有冲突仍视为未知。
 
 2.1.9 的 `VisualLocator.findAdaptive` 先按图像金字塔生成候选，在原图中按像素尺寸细化，再以调用方的置信度接受结果。比例间隔随模板短边／长边之比调整，长条文字使用更密的比例候选，避免细化前就漏掉正确尺寸。候选范围包含降采样取整误差。同一位置的尺寸候选会合并，不同位置继续接受唯一性检查。按钮颜色按匹配出的实际尺寸核对。打熊、巨兽、野兽、靶心共用该算法，靶心的目标比对区域也随布局比例变化。靶心页面的多个原比例标记已满足几何一致性时直接复用定位结果，只有不一致或不足时才搜索缩放比例，避免普通帧反复扫描所有比例。
 

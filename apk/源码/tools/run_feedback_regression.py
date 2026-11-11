@@ -18,11 +18,12 @@ p.add_argument('--adaptive-layouts',action='store_true')
 p.add_argument('--bullseye-fixtures',type=Path)
 p.add_argument('--bullseye-zoom-only',action='store_true',help='Run content-scale, partial-board and negative layout checks after a recorded normal-layout run')
 p.add_argument('--return-fixtures',type=Path,help='Private Xiaomi rally / returning / returned screenshots')
+p.add_argument('--timer-fixtures',type=Path,help='39 exported march timer strips and timers.tsv from MarchTrackingScaleCheck')
 p.add_argument('--paging-fixtures',type=Path,help='Private short-countdown recording frames')
 p.add_argument('--restart-fixtures',type=Path,help='Private end/reopen recording frames')
 p.add_argument('--restart-start-index',type=int,choices=range(5),default=0,help='Resume at a size group after a recorded partial run')
 p.add_argument('--opencv-threads',type=int,choices=range(9),default=0,help='OpenCV test process thread count; 0 uses its default')
-p.add_argument('--suite',action='append',choices=['core','session','presets','scale','restart','bullseye','adaptive','huawei','huawei-bear','direct','reported','marches','return','paging','overlay','hunt','feedback','countdown','compat'],help='Run selected suites; default runs every supplied suite')
+p.add_argument('--suite',action='append',choices=['core','session','presets','scale','restart','bullseye','adaptive','huawei','huawei-bear','direct','reported','marches','return','march-timers','paging','overlay','hunt','feedback','countdown','compat'],help='Run selected suites; default runs every supplied suite')
 p.add_argument('--adaptive-bear-only',action='store_true')
 p.add_argument('--adaptive-start-index',type=int,choices=range(11),default=0,help='First hunt page, or first of three bear pages with --adaptive-bear-only')
 p.add_argument('--adaptive-end-index',type=int,choices=range(1,12),default=11,help='Exclusive final adaptive page; bear-only default includes all three pages')
@@ -36,6 +37,7 @@ if not a.serial.startswith('emulator-'):p.error('Use a dedicated emulator')
 if (not a.suite or any(suite in a.suite for suite in ('feedback','countdown','compat'))) and not a.fixtures:
     p.error('Base image fixtures are required for feedback, countdown and compatibility suites')
 if (a.reported_fixtures or a.dispatch_fixtures) and not a.hunt_fixtures:p.error('Hunt fixtures are required for reported/dispatch checks')
+if a.suite and 'march-timers' in a.suite and not a.timer_fixtures:p.error('March timer checks require --timer-fixtures')
 if a.adaptive_layouts and not (a.hunt_fixtures and a.huawei_fixtures):p.error('Adaptive layouts require hunt and Huawei fixtures')
 root=Path(__file__).resolve().parents[1];a.output.mkdir(parents=True,exist_ok=True)
 def wanted(name):return not a.suite or name in a.suite
@@ -70,6 +72,11 @@ if a.bullseye_fixtures:
 if a.return_fixtures:
     for name in ('xiaomi-rally','xiaomi-returning','xiaomi-returned-toast','xiaomi-returned'):
         (bundle/'fixtures'/f'{name}.jpg').write_bytes((a.return_fixtures/f'{name}.jpg').read_bytes())
+if a.timer_fixtures:
+    target=bundle/'timer-fixtures';target.mkdir(exist_ok=True)
+    for source in a.timer_fixtures.iterdir():
+        if source.is_file() and (source.suffix=='.png' or source.name=='timers.tsv'):
+            (target/source.name).write_bytes(source.read_bytes())
 if a.paging_fixtures:
     for second in (6,12,18):
         name=f'paging-{second}.png'
@@ -151,6 +158,10 @@ with (a.output/'android-feedback-runtime.txt').open('w',encoding='utf-8') as log
     if a.return_fixtures and wanted('return'):
         result=run('HuntReturnRuntimeCheck',f'{remote}/lib {remote}/fixtures {remote}/assets')
         if 'ANDROID RETURN PASS: 32' not in result:raise RuntimeError('Return image regression result missing')
+    if a.timer_fixtures and wanted('march-timers'):
+        result=run('MarchTimerScaleRuntimeCheck',f'{remote}/lib {remote}/assets {remote}/timer-fixtures {remote}/march-timers.tsv')
+        if 'ANDROID MARCH TIMER SCALE PASS: 195 checks;' not in result:raise RuntimeError('March timer scale regression missing')
+        (a.output/'march-timers.tsv').write_text(adb('shell','cat',f'{remote}/march-timers.tsv'),encoding='utf-8')
     if a.paging_fixtures and wanted('paging'):
         result=run('BearPagingRuntimeCheck',f'{remote}/lib {remote}/fixtures {remote}/assets {remote}/paging-calibration')
         if 'ANDROID PAGING PASS: 15' not in result:raise RuntimeError('Paging regression result missing')

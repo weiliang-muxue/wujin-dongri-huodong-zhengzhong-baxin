@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$OpenCvJavaDir,[Parameter(Mandatory=$true)][string]$OutputDir,[Parameter(Mandatory=$true)][string]$Fixtures,[string]$JavaHome=$env:JAVA_HOME,[ValidateSet('all','bear','errors')][string]$Section='all',[string]$MarchFixtures='')
+param([Parameter(Mandatory=$true)][string]$OpenCvJavaDir,[Parameter(Mandatory=$true)][string]$OutputDir,[Parameter(Mandatory=$true)][string]$Fixtures,[string]$JavaHome=$env:JAVA_HOME,[ValidateSet('all','bear','errors')][string]$Section='all',[string]$MarchFixtures='',[ValidateSet('standard','boundary','targeted')][string]$Suite='standard')
 $ErrorActionPreference='Stop'
 $project=Split-Path $PSScriptRoot -Parent
 $OutputDir=[IO.Path]::GetFullPath($OutputDir)
@@ -18,6 +18,21 @@ $values | Set-Content -LiteralPath "$OutputDir\layout.properties" -Encoding asci
 $files+=Get-ChildItem -LiteralPath "$PSScriptRoot\desktop" -Filter '*.java' -Recurse -File | Select-Object -ExpandProperty FullName
 & "$JavaHome\bin\javac.exe" -encoding UTF-8 -cp $jar -d "$OutputDir\classes" @files
 if($LASTEXITCODE -ne 0){throw 'Page checker compilation failed'}
+if($Suite -eq 'targeted'){
+    if(-not $MarchFixtures){throw 'Targeted checks require -MarchFixtures with the private Xiaomi return sequence'}
+    & "$JavaHome\bin\java.exe" "-Djava.io.tmpdir=$OutputDir\temp" -cp "$OutputDir\classes;$jar" cn.local.winterbear.BearCounterScaleCheck $dll "$project\app\src\main\assets" "$OutputDir\layout.properties" "$Fixtures\huawei-map.png" "$MarchFixtures\xiaomi-returning.jpg" 2>&1 | Tee-Object -FilePath "$OutputDir\bear-counter.log"
+    if($LASTEXITCODE -ne 0){throw 'Bear counter crop coverage failed'}
+    & "$JavaHome\bin\java.exe" "-Djava.io.tmpdir=$OutputDir\temp" -cp "$OutputDir\classes;$jar" cn.local.winterbear.LocalTextScaleCheck $dll "$project\app\src\main\assets" $Fixtures "$OutputDir\local-text" "$OutputDir\layout.properties" 2>&1 | Tee-Object -FilePath "$OutputDir\local-text.log"
+    if($LASTEXITCODE -ne 0){throw 'Local text scale check failed'}
+    & "$JavaHome\bin\java.exe" "-Djava.io.tmpdir=$OutputDir\temp" -cp "$OutputDir\classes;$jar" cn.local.winterbear.MarchTrackingScaleCheck $dll "$project\app\src\main\assets" $MarchFixtures "$OutputDir\march-tracking" 2>&1 | Tee-Object -FilePath "$OutputDir\march-tracking.log"
+    if($LASTEXITCODE -ne 0){throw 'March tracking scale check failed'}
+    return
+}
+if($Suite -eq 'boundary'){
+    & "$JavaHome\bin\java.exe" "-Djava.io.tmpdir=$OutputDir\temp" -cp "$OutputDir\classes;$jar" cn.local.winterbear.BoundaryPageCheck $dll "$project\app\src\main\assets" $Fixtures $OutputDir "$OutputDir\layout.properties" 2>&1 | Tee-Object -FilePath "$OutputDir\boundary-pages.log"
+    if($LASTEXITCODE -ne 0){throw 'Boundary page regression failed; preserve the report'}
+    return
+}
 & "$JavaHome\bin\java.exe" "-Djava.io.tmpdir=$OutputDir\temp" "-Dsection=$Section" -cp "$OutputDir\classes;$jar" cn.local.winterbear.PageSweepCheck $dll "$project\app\src\main\assets" $Fixtures $OutputDir 2>&1 | Tee-Object -FilePath "$OutputDir\pages.log"
 if($LASTEXITCODE -ne 0){throw 'Page sweep failed; preserve the report before fixing production code'}
 & "$JavaHome\bin\java.exe" "-Djava.io.tmpdir=$OutputDir\temp" -cp "$OutputDir\classes;$jar" cn.local.winterbear.NumericCropScaleCheck $dll "$project\app\src\main\assets" $Fixtures 2>&1 | Tee-Object -FilePath "$OutputDir\numeric-crops.log"
