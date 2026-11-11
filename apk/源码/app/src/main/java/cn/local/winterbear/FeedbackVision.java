@@ -2,6 +2,7 @@ package cn.local.winterbear;
 
 import android.graphics.Bitmap;
 import cn.local.automation.VisualLocator;
+import cn.local.automation.VisualAnchor;
 import android.graphics.BitmapFactory;
 import org.opencv.android.Utils;
 import org.opencv.core.*;
@@ -34,8 +35,9 @@ final class FeedbackVision implements AutoCloseable {
     }
     private Point hit(Mat screen,Mat template,Rect region){
         List<VisualLocator.Match> found=VisualLocator.findAdaptive(screen,template,region,.88,1,true);
-        return found.isEmpty()?null:new Point(found.get(0).x,found.get(0).y);
+        return found.isEmpty()?null:VisualAnchor.from(found.get(0),template);
     }
+    private Point near(Mat screen,Mat template,Point anchor,double l,double t,double r,double b){return hit(screen,template,VisualAnchor.near(anchor,l,t,r,b));}
     void observe(Mat fullGray,BearFlow.Frame frame,int width,int height){
         if(!ReferenceLayout.supported(width,height))return;
         int rows=Math.round(height*324f/width);
@@ -48,8 +50,9 @@ final class FeedbackVision implements AutoCloseable {
         try{
             Imgproc.resize(fullGray,small,new Size(324,rows),0,0,Imgproc.INTER_AREA);
             Point warning=hit(small,lateBody,new Rect(0,rows/4,324,rows/2));
-            Point cancelButton=warning==null?null:hit(small,cancel,new Rect((int)warning.x-140,(int)warning.y+35,150,100));
-            if(warning!=null&&cancelButton!=null&&warning.x-cancelButton.x>20&&warning.x-cancelButton.x<110&&cancelButton.y-warning.y>40&&cancelButton.y-warning.y<125){
+            Point cancelButton=warning==null?null:near(small,cancel,warning,-140,35,10,135);
+            double warningScale=VisualAnchor.scale(warning);
+            if(warning!=null&&cancelButton!=null&&warning.x-cancelButton.x>20*warningScale&&warning.x-cancelButton.x<110*warningScale&&cancelButton.y-warning.y>40*warningScale&&cancelButton.y-warning.y<125*warningScale){
                 frame.rallyTooLate=true;frame.cancelX=(int)Math.round(cancelButton.x*width/324);frame.cancelY=(int)Math.round(cancelButton.y*height/rows);return;
             }
             frame.worldMapChrome|=hit(small,city,new Rect(220,rows*2/3,104,rows-rows*2/3))!=null&&hit(small,search,new Rect(55,rows*2/3,150,rows-rows*2/3))!=null;
@@ -57,9 +60,10 @@ final class FeedbackVision implements AutoCloseable {
             Mat[] bodies={body,bodyV2},buttons={button,buttonV2};
             for(int i=0;i<bodies.length;i++){
                 Point text=hit(small,bodies[i],new Rect(0,rows/4,324,rows/2));
-                Point ok=text==null?null:hit(small,buttons[i],new Rect((int)text.x-82,(int)text.y+35,165,100));
+                Point ok=text==null?null:near(small,buttons[i],text,-82,35,83,135);
                 // Specific error + aligned button; the title may be covered by a floating control.
-                if(text!=null&&ok!=null&&Math.abs(text.x-ok.x)<30&&ok.y-text.y>40&&ok.y-text.y<125){
+                double q=VisualAnchor.scale(text);
+                if(text!=null&&ok!=null&&Math.abs(text.x-ok.x)<30*q&&ok.y-text.y>40*q&&ok.y-text.y<125*q){
                     frame.troopOverflow=true;frame.dialogOkX=(int)Math.round(ok.x*width/324);frame.dialogOkY=(int)Math.round(ok.y*height/rows);break;
                 }
             }
@@ -67,7 +71,7 @@ final class FeedbackVision implements AutoCloseable {
     }
     private List<Point> hits(Mat screen,Mat template,Rect region){
         List<Point> result=new ArrayList<>();
-        for(VisualLocator.Match m:VisualLocator.findAdaptive(screen,template,region,.88,8,true))result.add(new Point(m.x,m.y));
+        for(VisualLocator.Match m:VisualLocator.findAdaptive(screen,template,region,.88,8,true))result.add(VisualAnchor.from(m,template));
         return result;
     }
     List<RallyOrder.Detection> rallies(Mat fullGray,Mat fullColor,int width,int height){
@@ -108,8 +112,7 @@ final class FeedbackVision implements AutoCloseable {
         List<Point> labels=hits(gray,formationLabel,new Rect(0,80,200,Math.max(0,rows*2/3-80)));
         labels.sort(java.util.Comparator.comparingDouble(p->p.x));
         for(Point label:labels){
-            int dx=(int)Math.round(label.x-54),dy=(int)Math.round(label.y-190.5);
-            if(hit(gray,preset[0],new Rect(19+dx,117+dy,20,21))!=null&&hit(gray,preset[1],new Rect(53+dx,117+dy,20,21))!=null)return label;
+            if(near(gray,preset[0],label,-35,-73.5,-15,-52.5)!=null&&near(gray,preset[1],label,-1,-73.5,19,-52.5)!=null)return label;
         }return null;
     }
     void formation(Mat fullGray,Mat fullColor,BearFlow.Frame frame,int width,int height,Config config){
@@ -127,11 +130,10 @@ final class FeedbackVision implements AutoCloseable {
             List<Point> buttons=greenHits(gray,color,deploy,deployColor,new Rect(180,rows/2,144,rows-rows/2));
             if(!frame.deploy&&buttons.size()==1){Point p=buttons.get(0);frame.deploy=true;frame.deployX=(int)Math.round(p.x*width/324);frame.deployY=(int)Math.round(p.y*height/rows);}
             Point anchor=formationAnchor(gray,rows);if(anchor==null)return;
-            int dx=(int)Math.round(anchor.x-54),dy=(int)Math.round(anchor.y-190.5);
             int[] x={29,63,96,129,163,196};
             boolean automatic=config.p.getBoolean("referenceLayout",false)&&!config.p.getBoolean("manualCalibration",false);
             for(int i=0;i<6;i++)if(!frame.savedPreset[i]&&(automatic||(Math.abs(config.p.getInt("presetX"+i,0)*324.0/width-x[i])<6&&Math.abs(config.p.getInt("presetY"+i,0)*rows/(double)height-128)<6))){
-                Point p=hit(gray,preset[i],new Rect(x[i]-10+dx,117+dy,20,21));
+                Point p=near(gray,preset[i],anchor,x[i]-64,-73.5,x[i]-44,-52.5);
                 if(p!=null){frame.savedPreset[i]=true;frame.presetX[i]=(int)Math.round(p.x*width/324);frame.presetY[i]=(int)Math.round(p.y*height/rows);}
             }
         }finally{gray.release();color.release();}

@@ -35,7 +35,10 @@ final class HuntGlyphs implements AutoCloseable {
         if(result!=crop)crop.recycle();return result;
     }
     int level(Bitmap image,double scale,int rightOfLabel,int middle,HuntVision.Numbers ocr){
-        Bitmap crop=region(image,scale,rightOfLabel,middle-13,rightOfLabel+64,middle+13,128,52);
+        return level(image,scale,rightOfLabel,middle,1,ocr);
+    }
+    int level(Bitmap image,double scale,int rightOfLabel,int middle,double contentScale,HuntVision.Numbers ocr){
+        Bitmap crop=region(image,scale,rightOfLabel,(int)Math.floor(middle-13*contentScale),(int)Math.ceil(rightOfLabel+64*contentScale),(int)Math.ceil(middle+13*contentScale),128,52);
         if(crop==null)return -1;
         try{
             int[] p=new int[128*52];crop.getPixels(p,0,128,0,0,128,52);

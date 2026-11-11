@@ -2,6 +2,7 @@ package cn.local.winterbear;
 
 import android.graphics.Bitmap;
 import cn.local.automation.VisualLocator;
+import cn.local.automation.VisualAnchor;
 import android.graphics.BitmapFactory;
 import android.graphics.Rect;
 import java.io.InputStream;
@@ -23,15 +24,15 @@ final class HuntVision implements AutoCloseable {
     private static final Pattern INTEGER=Pattern.compile("^[0-9]{1,5}$");
     HuntVision(FeedbackVision.Assets assets,Numbers numbers){
         this.numbers=numbers;feedback=new FeedbackVision(assets);glyphs=new HuntGlyphs(assets);
-        String[] names={"back","level_label","map_search","map_city","search","tab_beast","tab_giant","selection","level_minus","level_plus","rally_action","attack_action","rally_title","rally_start","formation","deploy","march","energy_title","energy_label","energy_can","energy_use","energy_close","flag0","flag1","flag2","flag3","flag4","flag5"};
-        for(String name:names)try(InputStream in=assets.open((name.equals("back")?"reference/":"hunt/")+name+".png")){
+        String[] names={"back","level_label","map_search","map_city","search","tab_beast","tab_giant","selection","level_minus","level_plus","rally_action","attack_action","rally_title","rally_start","formation","deploy","deploy_button","march","energy_title","energy_label","energy_can","energy_use","energy_close","flag0","flag1","flag2","flag3","flag4","flag5"};
+        for(String name:names)try(InputStream in=assets.open(name.equals("deploy_button")?"reference/deploy.png":(name.equals("back")?"reference/":"hunt/")+name+".png")){
             Bitmap b=BitmapFactory.decodeStream(in);Mat rgba=new Mat(),gray=new Mat();
             try{
                 Utils.bitmapToMat(b,rgba);Imgproc.cvtColor(rgba,gray,Imgproc.COLOR_RGBA2GRAY);
                 // The preset's editable name overlaps the bottom of the old sample.
                 // Match only the white flag; names and selected-border colors may vary.
                 if(name.startsWith("flag")){Mat symbol=gray.rowRange(0,15).clone();gray.release();gray=symbol;}
-                if(name.equals("back")){Mat half=new Mat();Imgproc.resize(gray,half,new Size(),.5,.5,Imgproc.INTER_AREA);gray.release();gray=half;}
+                if(name.equals("back")||name.equals("deploy_button")){Mat half=new Mat();Imgproc.resize(gray,half,new Size(),.5,.5,Imgproc.INTER_AREA);gray.release();gray=half;}
                 templates.put(name,gray);
             }finally{b.recycle();rgba.release();}
         }catch(Exception e){throw new IllegalStateException("狩猎识别素材不完整："+name,e);}
@@ -54,7 +55,11 @@ final class HuntVision implements AutoCloseable {
     private Point hit(Mat image,String key,int l,int t,int r,int b,double threshold,boolean unique){
         java.util.List<VisualLocator.Match> matches=VisualLocator.findAdaptive(image,templates.get(key),new org.opencv.core.Rect(l,t,Math.max(0,r-l),Math.max(0,b-t)),threshold,unique?2:1,true);
         if(matches.isEmpty()||(unique&&matches.size()!=1))return null;
-        VisualLocator.Match m=matches.get(0);return new Point(m.x,m.y);
+        return VisualAnchor.from(matches.get(0),templates.get(key));
+    }
+    private Point near(Mat image,String key,Point anchor,double l,double t,double r,double b,boolean unique){
+        org.opencv.core.Rect area=VisualAnchor.near(anchor,l,t,r,b);
+        return hit(image,key,area.x,area.y,area.x+area.width,area.y+area.height,.88,unique);
     }
     private Point formation(Mat gray,int rows){
         // “暂无战争增益” also contains this label. The left label owns the preset
@@ -62,9 +67,10 @@ final class HuntVision implements AutoCloseable {
         java.util.List<VisualLocator.Match> candidates=VisualLocator.findAdaptive(gray,templates.get("formation"),new org.opencv.core.Rect(0,100,300,Math.max(0,rows*2/3-100)),.88,4,true);
         candidates.sort(java.util.Comparator.comparingDouble(m->m.x));
         for(VisualLocator.Match m:candidates){
-            Point first=hit(gray,"flag0",(int)m.x-65,(int)m.y-131,(int)m.x-20,(int)m.y-77);
-            Point second=hit(gray,"flag1",(int)m.x-8,(int)m.y-131,(int)m.x+36,(int)m.y-77);
-            if(first!=null&&second!=null)return new Point(m.x,m.y);
+            Point anchor=VisualAnchor.from(m,templates.get("formation"));
+            Point first=near(gray,"flag0",anchor,-65,-131,-20,-77,false);
+            Point second=near(gray,"flag1",anchor,-8,-131,36,-77,false);
+            if(first!=null&&second!=null)return anchor;
         }
         return null;
     }
@@ -73,13 +79,13 @@ final class HuntVision implements AutoCloseable {
         return region.width()>0&&region.height()>0?numbers.text(image,region):"";
     }
     private void point(Frame f,Kind k,Point p,double s){if(p!=null)f.point(k,(int)Math.round(p.x*s),(int)Math.round(p.y*s));}
-    private boolean green(Mat color,Point p){if(p==null)return false;double[] v=color.get((int)p.y,(int)p.x-28);return v!=null&&v[1]>v[0]*1.25&&v[1]>v[2]*1.1;}
+    private boolean green(Mat color,Point p){if(p==null)return false;int x=(int)Math.round(p.x-28*VisualAnchor.scale(p)),y=(int)Math.round(p.y);if(x<0||y<0||x>=color.cols()||y>=color.rows())return false;double[] v=color.get(y,x);return v!=null&&v[1]>v[0]*1.25&&v[1]>v[2]*1.1;}
     private boolean orangeAction(Mat color,Point p){
         if(p==null)return false;
         int orange=0,total=0;
         // Sample the button fill on both sides of its text, not the white label.
         for(int dx:new int[]{-65,-55,55,65})for(int dy:new int[]{-4,0,4}){
-            int x=(int)Math.round(p.x)+dx,y=(int)Math.round(p.y)+dy;
+            int x=(int)Math.round(p.x+dx*VisualAnchor.scale(p)),y=(int)Math.round(p.y+dy*VisualAnchor.scale(p));
             if(x<0||y<0||x>=color.cols()||y>=color.rows())continue;
             double[] v=color.get(y,x);total++;
             if(v[0]>180&&v[1]>40&&v[1]<180&&v[0]>v[1]*1.4&&v[2]<80)orange++;
@@ -93,77 +99,95 @@ final class HuntVision implements AutoCloseable {
         try{
             Utils.bitmapToMat(image,rgba);Imgproc.resize(rgba,small,new Size(540,rows),0,0,Imgproc.INTER_AREA);Imgproc.cvtColor(small,gray,Imgproc.COLOR_RGBA2GRAY);
             Point title=unique(gray,"energy_title",50,60,510,rows-250);
-            Point label=title==null?null:hit(gray,"energy_label",(int)title.x-160,(int)title.y+30,(int)title.x-25,(int)title.y+105);
-            if(title!=null&&label!=null&&label.y-title.y>35&&label.y-title.y<100){
+            Point label=title==null?null:near(gray,"energy_label",title,-160,30,-25,105,false);
+            if(title!=null&&label!=null&&label.y-title.y>35*VisualAnchor.scale(title)&&label.y-title.y<100*VisualAnchor.scale(title)){
                 f.page=Page.ENERGY;
-                int dx=(int)Math.round(title.x-270.5);
-                Point use=unique(gray,"energy_use",350+dx,(int)label.y+140,510+dx,Math.min(rows,(int)label.y+320));
-                Point can=use==null?null:hit(gray,"energy_can",(int)use.x-410,(int)use.y-50,(int)use.x-310,(int)use.y+40);
-                Point close=hit(gray,"energy_close",(int)title.x+190,(int)title.y-25,(int)title.x+255,(int)title.y+25);
+                double q=VisualAnchor.scale(title);
+                Point use=near(gray,"energy_use",new VisualAnchor(title.x,label.y,q),79.5,140,239.5,320,true);
+                Point can=use==null?null:near(gray,"energy_can",use,-410,-50,-310,40,false);
+                Point close=near(gray,"energy_close",title,190,-25,255,25,false);
                 if(use!=null&&can!=null&&green(small,use)){
                     point(f,Kind.USE,use,s);
-                    int stockX=(int)Math.round(can.x);
-                    f.stock=number(read(image,s,stockX+6,(int)use.y+15,stockX+38,(int)use.y+35));
+                    org.opencv.core.Rect stock=VisualAnchor.near(new VisualAnchor(can.x,use.y,q),6,15,38,35);
+                    f.stock=number(read(image,s,stock.x,stock.y,stock.x+stock.width,stock.y+stock.height));
                 }
-                String energy=read(image,s,252+dx,(int)label.y+27,334+dx,(int)label.y+52).replaceAll("\\s","");
+                org.opencv.core.Rect value=VisualAnchor.near(new VisualAnchor(title.x,label.y,q),-18.5,27,63.5,52);
+                String energy=read(image,s,value.x,value.y,value.x+value.width,value.y+value.height).replaceAll("\\s","");
                 java.util.regex.Matcher m=Pattern.compile("^([0-9]{1,4})[/／]200$").matcher(energy);if(m.matches())f.energy=Integer.parseInt(m.group(1));
                 point(f,Kind.CLOSE,close,s);return f;
             }
             BearFlow.Frame error=new BearFlow.Frame();feedback.observe(gray,error,w,h);
             if(error.troopOverflow||error.rallyTooLate){f.page=Page.ERROR;f.point(Kind.DISMISS,error.rallyTooLate?error.cancelX:error.dialogOkX,error.rallyTooLate?error.cancelY:error.dialogOkY);return f;}
-            Point rallyTitle=unique(gray,"rally_title",40,100,520,rows-250);
-            Point launch=rallyTitle==null?null:unique(gray,"rally_start",(int)rallyTitle.x-120,(int)rallyTitle.y+230,(int)rallyTitle.x+120,(int)rallyTitle.y+410);
-            if(rallyTitle!=null&&launch!=null&&launch.y-rallyTitle.y>240&&launch.y-rallyTitle.y<400){f.page=Page.RALLY;point(f,Kind.LAUNCH,launch,s);point(f,Kind.BACK,hit(gray,"energy_close",(int)rallyTitle.x+180,(int)rallyTitle.y-30,(int)rallyTitle.x+250,(int)rallyTitle.y+30),s);return f;}
+            // The title and blue button both say 发起集结. Resolve the pair by
+            // their relationship instead of requiring the title text to be unique.
+            Point rallyTitle=null,launch=null;int rallyPairs=0;
+            for(VisualLocator.Match m:VisualLocator.findAdaptive(gray,templates.get("rally_title"),new org.opencv.core.Rect(40,100,480,Math.max(0,rows-350)),.88,4,true)){
+                Point candidate=VisualAnchor.from(m,templates.get("rally_title"));
+                Point button=near(gray,"rally_start",candidate,-120,230,120,410,true);
+                if(button!=null){rallyTitle=candidate;launch=button;rallyPairs++;}
+            }
+            if(rallyPairs!=1){rallyTitle=null;launch=null;}
+            if(rallyTitle!=null&&launch!=null&&launch.y-rallyTitle.y>240*VisualAnchor.scale(rallyTitle)&&launch.y-rallyTitle.y<400*VisualAnchor.scale(rallyTitle)){f.page=Page.RALLY;point(f,Kind.LAUNCH,launch,s);point(f,Kind.BACK,near(gray,"energy_close",rallyTitle,180,-30,250,30,false),s);return f;}
             Point form=formation(gray,rows),deploy=unique(gray,"deploy",220,rows/2,540,rows);
+            // Existing bear button sample includes more context around the text.
+            // Use it only on a verified formation page when the smaller glyph
+            // sample loses strokes during downsampling; keep the same threshold.
+            if(form!=null&&deploy==null)deploy=unique(gray,"deploy_button",220,rows/2,540,rows);
             if(form!=null&&deploy!=null){
                 int flags=0;
                 for(int i=0;i<6;i++){
-                    int x=(int)Math.round(form.x-42+55.5*i),y=(int)Math.round(form.y-104);
-                    Point flag=hit(gray,"flag"+i,x-22,y-27,x+22,y+27);
+                    double x=-42+55.5*i;
+                    Point flag=near(gray,"flag"+i,form,x-22,-131,x+22,-77,false);
                     if(flag!=null){flags++;f.presets[i]=true;f.flags[i]=new int[]{(int)Math.round(flag.x*s),(int)Math.round(flag.y*s)};}
                 }
                 if(flags>=2){
                     f.page=Page.FORMATION;point(f,Kind.DEPLOY,deploy,s);
                     point(f,Kind.BACK,unique(gray,"back",0,0,150,(int)form.y-110),s);
-                    int redY=(int)deploy.y+27,redX=(int)deploy.x+8;
-                    double[] red=redY<rows&&redX<540?small.get(redY,redX):null;f.lowEnergy=red!=null&&red[0]>red[1]*1.4;return f;
+                    int redY=(int)Math.round(deploy.y+27*VisualAnchor.scale(deploy)),redX=(int)Math.round(deploy.x+8*VisualAnchor.scale(deploy));
+                    double[] red=redY>=0&&redX>=0&&redY<rows&&redX<540?small.get(redY,redX):null;f.lowEnergy=red!=null&&red[0]>red[1]*1.4;return f;
                 }
             }
             VisualLocator.Match searchMatch=VisualLocator.uniqueAdaptive(gray,templates.get("search"),new org.opencv.core.Rect(70,rows/2,430,rows-rows/2),.88,true);
-            Point search=searchMatch==null?null:new Point(searchMatch.x,searchMatch.y);
+            Point search=searchMatch==null?null:VisualAnchor.from(searchMatch,templates.get("search"));
             int sx=search==null?270:(int)Math.round(search.x),sy=search==null?rows-50:(int)Math.round(search.y);
-            Point beast=hit(gray,"tab_beast",sx-245,sy-235,sx-155,sy-165),giant=hit(gray,"tab_giant",sx-145,sy-235,sx-30,sy-165);
+            Point sheetAnchor=search==null?new Point(sx,sy):search;
+            Point beast=near(gray,"tab_beast",sheetAnchor,-245,-235,-155,-165,false),giant=near(gray,"tab_giant",sheetAnchor,-145,-235,-30,-165,false);
             boolean sheet=search!=null&&beast!=null&&giant!=null;
             {
                 // A target card can cover the Search label behind it. Its own
                 // orange action and level label identify the card independently.
                 Point rally=unique(gray,"rally_action",80,250,470,rows-30),attack=unique(gray,"attack_action",80,250,470,rows-30);
                 Point action=rally!=null&&attack==null?rally:attack!=null&&rally==null?attack:null;
-                Point prefix=action==null?null:hit(gray,"level_label",(int)action.x-105,(int)action.y-183,(int)action.x+30,(int)action.y-142);
+                // Short action labels provide a noisier scale estimate than the
+                // level prefix, especially after JPEG resampling. Keep enough
+                // relative vertical margin to contain the complete prefix.
+                Point prefix=action==null?null:near(gray,"level_label",action,-105,-205,30,-125,false);
                 if(prefix!=null&&orangeAction(small,action)){
                     f.page=rally!=null?Page.GIANT:Page.BEAST;point(f,Kind.TARGET,action,s);
-                    f.level=glyphs.level(image,s,(int)Math.round(prefix.x+templates.get("level_label").cols()/2.),(int)Math.round(prefix.y),numbers);
-                    f.point(Kind.BACK,(int)(Math.max(8,action.x-250)*s),(int)((prefix.y-70)*s));return f;
+                    double q=VisualAnchor.scale(prefix);
+                    f.level=glyphs.level(image,s,(int)Math.round(prefix.x+templates.get("level_label").cols()*q/2.),(int)Math.round(prefix.y),q,numbers);
+                    f.point(Kind.BACK,(int)(Math.max(8,action.x-250*q)*s),(int)((prefix.y-70*q)*s));return f;
                 }
             }
             if(sheet){
                 f.page=Page.SEARCH;point(f,Kind.SEARCH,search,s);
                 point(f,Kind.CATEGORY,mode==Mode.GIANT?giant:beast,s);
-                Point selected=hit(gray,"selection",sx-270,sy-290,sx-25,sy-230);
-                if(selected!=null)f.category=Math.abs(selected.x-(beast.x-51))<Math.abs(selected.x-(giant.x-51))?Mode.BEAST.ordinal():Mode.GIANT.ordinal();
+                double q=VisualAnchor.scale(search);
+                Point selected=near(gray,"selection",search,-270,-290,-25,-230,false);
+                if(selected!=null)f.category=Math.abs(selected.x-(beast.x-51*q))<Math.abs(selected.x-(giant.x-51*q))?Mode.BEAST.ordinal():Mode.GIANT.ordinal();
                 else{
-                    Point corner=hit(gray,"selection_right",(int)beast.x+32,sy-290,(int)beast.x+73,sy-230);
-                    Point other=hit(gray,"selection_right",(int)giant.x+32,sy-290,(int)giant.x+73,sy-230);
+                    Point corner=near(gray,"selection_right",new VisualAnchor(beast.x,search.y,q),32,-290,73,-230,false);
+                    Point other=near(gray,"selection_right",new VisualAnchor(giant.x,search.y,q),32,-290,73,-230,false);
                     if((corner!=null)!=(other!=null))f.category=corner!=null?Mode.BEAST.ordinal():Mode.GIANT.ordinal();
                 }
-                Point less=hit(gray,"level_minus",sx-250,sy-150,sx-180,sy-90);
-                Point more=hit(gray,"level_plus",sx+50,sy-150,sx+125,sy-90);
-                if(less!=null&&(more==null||Math.abs(less.y-more.y)<8)){
-                    int dx=(int)Math.round(less.x-52),y=(int)Math.round(less.y);
-                    f.level=number(read(image,s,425+dx,y-19,488+dx,y+13));
+                Point less=near(gray,"level_minus",search,-250,-150,-180,-90,false);
+                Point more=near(gray,"level_plus",search,50,-150,125,-90,false);
+                if(less!=null&&(more==null||Math.abs(less.y-more.y)<8*q)){
+                    org.opencv.core.Rect value=VisualAnchor.near(new VisualAnchor(less.x,less.y,q),373,-19,436,13);
+                    f.level=number(read(image,s,value.x,value.y,value.x+value.width,value.y+value.height));
                     point(f,Kind.LESS,less,s);point(f,Kind.MORE,more,s);
                 }
-                f.point(Kind.BACK,(int)(search.x*s),(int)(Math.max(30,beast.y-200)*s));return f;
+                f.point(Kind.BACK,(int)(search.x*s),(int)(Math.max(30,beast.y-200*q)*s));return f;
             }
             Point city=unique(gray,"map_city",390,rows*2/3,540,rows),entry=unique(gray,"map_search",0,rows/2,120,rows-100);
             if(city!=null&&entry!=null&&city.x-entry.x>300&&city.y-entry.y>150&&city.y-entry.y<450){
@@ -176,7 +200,19 @@ final class HuntVision implements AutoCloseable {
     /** Called after map identification; the list has its own movable header anchor. */
     void observeMarchPanel(Bitmap image,double scale,Mat gray,Frame f){
         Point march=hit(gray,"march",0,100,180,gray.rows()/2,.72);
-        if(march!=null){int y=(int)march.y,dx=(int)Math.round(march.x-52);f.used=MarchCount.used(read(image,scale,146+dx,y-16,190+dx,y+16));f.marches=glyphs.marches(image,scale,y,f.used,dx,gray);}
+        if(march!=null){
+            double q=VisualAnchor.scale(march);
+            org.opencv.core.Rect count=VisualAnchor.near(march,94,-16,138,16);
+            f.used=MarchCount.used(read(image,scale,count.x,count.y,count.x+count.width,count.y+count.height));
+            // Normalize the whole panel coordinate system, not just its title.
+            // Row icons, spacing, timers and ownership hashes then share the
+            // same scale when the UI is zoomed independently of screen width.
+            Mat canonical=gray;
+            try{
+                if(Math.abs(q-1)>.001){canonical=new Mat();Imgproc.resize(gray,canonical,new Size(),1/q,1/q,Imgproc.INTER_AREA);}
+                f.marches=glyphs.marches(image,scale*q,(int)Math.round(march.y/q),f.used,(int)Math.round(march.x/q-52),canonical);
+            }finally{if(canonical!=gray)canonical.release();}
+        }
         else{
             int used=MarchCount.used(read(image,scale,146,290,190,320));
             // The caller has already identified the map using two independent controls.

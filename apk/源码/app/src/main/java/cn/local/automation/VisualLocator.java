@@ -134,9 +134,21 @@ public final class VisualLocator {
         return new ArrayList<>(result.subList(0,Math.min(limit,result.size())));
     }
     private static double refine(Mat image,Mat template,Rect area,int width,double threshold,boolean soften,Predicate<Match> accepted,int candidates,List<Match> result){
+        int height=Math.max(1,(int)Math.round(width*template.rows()/(double)template.cols()));
+        double score=refineShape(image,template,area,width,height,threshold,soften,accepted,candidates,result);
+        // Screen rasterization rounds the two axes independently. A one-pixel
+        // height difference can erase a thin glyph after whole-frame resizing,
+        // even when its width is correct. Verify these neighbours at the same
+        // confidence/color thresholds; never relax acceptance for a new model.
+        if(score>=.70&&score<threshold){
+            if(height>8)score=Math.max(score,refineShape(image,template,area,width,height-1,threshold,soften,accepted,candidates,result));
+            score=Math.max(score,refineShape(image,template,area,width,height+1,threshold,soften,accepted,candidates,result));
+        }
+        return score;
+    }
+    private static double refineShape(Mat image,Mat template,Rect area,int width,int height,double threshold,boolean soften,Predicate<Match> accepted,int candidates,List<Match> result){
         Mat adjusted=new Mat();
         try{
-            int height=Math.max(1,(int)Math.round(width*template.rows()/(double)template.cols()));
             Imgproc.resize(template,adjusted,new Size(width,height),0,0,width<template.cols()?Imgproc.INTER_AREA:Imgproc.INTER_CUBIC);
             List<Match> peak=find(image,adjusted,area,0,1,false);
             if(peak.isEmpty())return -1;

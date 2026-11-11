@@ -147,10 +147,8 @@ final class Matcher implements AutoCloseable {
         }
         if(f.formation||f.deploy){
             stage="识别预设编队";
-            int dx=automatic()&&formation!=null?formation.x-config.p.getInt("formationX",0):0;
-            int dy=automatic()&&formation!=null?formation.y-config.p.getInt("formationY",0):0;
             for(int i=0;i<6;i++){
-                Hit flag=near("preset_marker"+i,config.p.getInt("presetX"+i,0)+dx,config.p.getInt("presetY"+i,0)+dy);
+                Hit flag=presetNear(i,automatic()?formation:null);
                 f.savedPreset[i]=flag!=null;
                 if(flag!=null){f.presetX[i]=flag.x;f.presetY[i]=flag.y;}
             }
@@ -160,7 +158,12 @@ final class Matcher implements AutoCloseable {
             stage="识别巨熊集结";
             List<RallyOrder.Detection> detections=new ArrayList<>();
             Rect targetColumn=new Rect(0,(int)(config.height()*.16),(int)(config.width()*.45),(int)(config.height()*.94));
-            for(Hit target:find("bear_label",targetColumn,8)){
+            List<Hit> targets=new ArrayList<>(find("bear_label",targetColumn,8));
+            // The level caption may be covered or clipped while the fixed bear
+            // portrait is still fully visible. Both are activity-specific assets;
+            // the paired join button must independently pass its color check.
+            targets.addAll(find("bear_reference",targetColumn,8));
+            for(Hit target:targets){
                 int halfWidth=(int)Math.ceil(target.width/2.0),halfHeight=(int)Math.ceil(target.height/2.0);
                 Hit join=joinBeside(new Rect(target.x-halfWidth,target.y-halfHeight,target.x+halfWidth,target.y+halfHeight));
                 detections.add(new RallyOrder.Detection(target.x,target.y,join==null?0:join.x,join==null?0:join.y,join!=null,target.confidence));
@@ -188,7 +191,12 @@ final class Matcher implements AutoCloseable {
             stage="读取每条集结倒计时";
             for(int i=0;i<f.rows.size();i++){
                 BearFlow.Row row=f.rows.get(i);
-                int seconds=row.available&&row.x>0&&row.y>0?countdown.read(gray,config.width(),row.x,row.y,scale):-1;
+                int seconds=-1;
+                if(row.available&&row.x>0&&row.y>0){
+                    Hit join=near("join_reference",row.x,row.y);Mat sample=template("join_reference");
+                    double q=join!=null&&sample!=null?join.width*scale/sample.cols():1;
+                    seconds=countdown.read(gray,(int)Math.round(config.width()*q),row.x,row.y,scale);
+                }
                 f.rows.set(i,new BearFlow.Row(row.order,row.x,row.y,row.available,seconds));
             }
         }
@@ -196,12 +204,25 @@ final class Matcher implements AutoCloseable {
     }
     private Hit nearConfigured(String key){return near(key,config.p.getInt(key+"X",0),config.p.getInt(key+"Y",0));}
     private boolean automatic(){return config.p.getBoolean("referenceLayout",false)&&!config.p.getBoolean("manualCalibration",false);}
+    private Hit presetNear(int i,Hit formation){
+        int x=config.p.getInt("presetX"+i,0),y=config.p.getInt("presetY"+i,0);
+        if(formation==null)return near("preset_marker"+i,x,y);
+        Mat label=template("formation"),flag=template("preset_marker"+i);if(label==null||flag==null)return null;
+        double q=formation.width*scale/label.cols();
+        x=(int)Math.round(formation.x+(x-config.p.getInt("formationX",0))*q);
+        y=(int)Math.round(formation.y+(y-config.p.getInt("formationY",0))*q);
+        int halfWidth=(int)Math.ceil(flag.cols()*q/scale/2),halfHeight=(int)Math.ceil(flag.rows()*q/scale/2);
+        int margin=Math.max(12,config.width()/70);
+        List<Hit> hits=find("preset_marker"+i,new Rect(x-halfWidth-margin,y-halfHeight-margin,x+halfWidth+margin,y+halfHeight+margin),1);
+        return hits.isEmpty()?null:hits.get(0);
+    }
     private Hit locateFormation(Rect region){
-        Hit local=nearConfigured("formation");if(local!=null||!automatic())return local;
+        Hit local=nearConfigured("formation");if(!automatic())return local;
+        if(local!=null&&presetNear(0,local)!=null&&presetNear(1,local)!=null)return local;
         List<Hit> candidates=find("formation",region,4);candidates.sort(java.util.Comparator.comparingInt(h->h.x));
         for(Hit candidate:candidates){
-            int dx=candidate.x-config.p.getInt("formationX",0),dy=candidate.y-config.p.getInt("formationY",0),flags=0;
-            for(int i=0;i<2;i++)if(near("preset_marker"+i,config.p.getInt("presetX"+i,0)+dx,config.p.getInt("presetY"+i,0)+dy)!=null)flags++;
+            int flags=0;
+            for(int i=0;i<2;i++)if(presetNear(i,candidate)!=null)flags++;
             if(flags==2)return candidate;
         }
         return null;

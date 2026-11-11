@@ -4,9 +4,28 @@ JDK 17、Gradle 8.9、Android SDK 35 extension 15、Build Tools 35.0.0。设置 
 
 构建：`gradlew.bat :app:testEngine :app:assembleRelease :app:lintRelease`。
 
-将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.1.10.apk。
+将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.1.11.apk。
 
-检查成品使用 `python tools/verify_android_package.py ../无尽冬日助手-2.1.10.apk --version 2.1.10`。
+检查成品使用 `python tools/verify_android_package.py ../无尽冬日助手-2.1.11.apk --version 2.1.11`。
+
+### 整页缩放回归（2.1.11）
+
+`VisualAnchor` 保存实际匹配尺寸，将相邻控件的搜索范围与 OCR 取图范围转换到当前内容比例。只有归一化到屏幕宽度还不够：游戏内容可能在相同截图宽度下独立缩放。公共匹配器同时检查相邻整数像素高度，最终置信度、颜色和页面条件仍须满足。
+
+修改公共匹配、活动页面识别或相对坐标后，发布前同时运行下面三层检查并保存报告；某一层通过不能替代其余层：
+
+- `run_scale_sweep.ps1`：公共模板的连续像素尺寸、边缘、遮挡、按钮颜色与布局变换。
+- `run_page_sweep.ps1`：生产用 HuntVision / Matcher 的完整页面、数字取图范围及行军图标；只替换桌面的 Bitmap 解码和配置适配器，没有替代识别算法。
+- `run_page_runtime.py`：把上一组导出的 PNG 和预期几何交给真实 Android Bitmap、Config、OpenCV，使用专用模拟器执行测试 APK 中的 PageScaleRuntimeCheck。
+
+整页组需要本地私人素材，不上传用户截图。例如：
+
+```powershell
+tools/run_page_sweep.ps1 -JavaHome $env:JAVA_HOME -OpenCvJavaDir '<OpenCV build/java>' -Fixtures '<页面素材目录>' -MarchFixtures '<小米回城素材目录>' -OutputDir 'E:\CodeXWork\无尽冬日\.build\page-check'
+python tools/run_page_runtime.py --adb '<adb.exe>' --serial emulator-5580 --bundle '<run_feedback_regression 生成的 android-feedback-input>' --fixtures 'E:\CodeXWork\无尽冬日\.build\page-check\native-fixtures' --output 'E:\CodeXWork\无尽冬日\.build\page-native' --case giant_detail-0.94 --case rally-1.02 --case huawei-formation-0.9 --case video-315-0.98
+```
+
+页面素材名称由 PageSweepCheck 列出，回城素材为 `xiaomi-rally.jpg`、`xiaomi-returning.jpg`、`xiaomi-returned.jpg`。输出包含逐项 TSV、日志、失败图和原生回放输入。实际页面分别变换到 90%、94%、98%、100%、102%、110%；94% 叠加平移和 JPEG 压缩。断言页面类型、已知等级、全部六个编队、可用熊队数量、倒计时和坐标；数字取图组只验证标注数字完整落入取图范围，不能声称验证了 OCR 准确率。被裁断的倒计时必须保持未知，非熊页面及灰色＋不得变成可加入的熊队。桌面与原生图像回放均不操作游戏，也不代替真机触控及整场活动测试。
 
 2.1.9 的 `VisualLocator.findAdaptive` 先按图像金字塔生成候选，在原图中按像素尺寸细化，再以调用方的置信度接受结果。比例间隔随模板短边／长边之比调整，长条文字使用更密的比例候选，避免细化前就漏掉正确尺寸。候选范围包含降采样取整误差。同一位置的尺寸候选会合并，不同位置继续接受唯一性检查。按钮颜色按匹配出的实际尺寸核对。打熊、巨兽、野兽、靶心共用该算法，靶心的目标比对区域也随布局比例变化。靶心页面的多个原比例标记已满足几何一致性时直接复用定位结果，只有不一致或不足时才搜索缩放比例，避免普通帧反复扫描所有比例。
 
