@@ -4,6 +4,24 @@ import static org.junit.Assert.*;
 import static cn.local.winterbear.HuntFlow.*;
 
 public class HuntFlowTest {
+    @Test public void huntTargetsUseTheirCapturedDisplayBounds(){
+        Frame frame=new Frame();frame.width=1152;frame.height=2376;
+        // A bottom search button remains on the captured display even when the
+        // assistant's own floating Activity is only 900 pixels tall.
+        assertTrue(frame.contains(576,2250));
+        assertTrue(frame.contains(1,1));
+        assertTrue(frame.contains(1151,2375));
+        assertFalse(frame.contains(0,2250));
+        assertFalse(frame.contains(576,0));
+        assertFalse(frame.contains(1152,2250));
+        assertFalse(frame.contains(576,2376));
+        assertFalse(frame.contains(-1,200));
+    }
+    @Test public void unknownFrameDimensionsCannotAuthorizeATarget(){
+        Frame frame=new Frame();assertFalse(frame.contains(10,10));
+        frame.width=620;assertFalse(frame.contains(310,1200));
+        frame.height=1280;assertTrue(frame.contains(310,1200));
+    }
     @Test public void equalOptionsResumeTheSameTaskOnlyWhenEverySettingMatches(){
         Options original=new Options(Mode.GIANT,8,2,100,18);
         assertTrue(original.sameTask(new Options(Mode.GIANT,8,2,100,18)));

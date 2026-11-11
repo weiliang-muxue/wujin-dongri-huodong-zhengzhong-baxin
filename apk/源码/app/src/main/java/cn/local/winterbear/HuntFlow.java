@@ -23,11 +23,13 @@ final class HuntFlow {
         }
     }
     static final class Frame {
+        int width,height;
         Page page=Page.UNKNOWN; int used=-1,level=-1,category=-1,stock=-1,energy=-1;
         HuntMarches.Row[] marches;
         boolean lowEnergy; final boolean[] presets=new boolean[6];
         long age; final int[][] points=new int[Kind.values().length][2];final int[][] flags=new int[6][2];
         void point(Kind k,int x,int y){points[k.ordinal()]=new int[]{x,y};}
+        boolean contains(int x,int y){return x>0&&y>0&&x<width&&y<height;}
     }
     static final class Action {
         final Kind kind;final String message;final int preset;

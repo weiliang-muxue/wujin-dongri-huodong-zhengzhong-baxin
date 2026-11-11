@@ -31,7 +31,7 @@ final class MarchRowVision implements AutoCloseable {
         List<Marker> candidates=new ArrayList<>(),found=new ArrayList<>();
         org.opencv.core.Rect area=new org.opencv.core.Rect(dx+5,header+23,43,335);
         for(Map.Entry<HuntMarches.Type,Mat> e:templates.entrySet())
-            for(VisualLocator.Match m:VisualLocator.find(gray,e.getValue(),area,.88,6,true))candidates.add(new Marker(e.getKey(),m));
+            for(VisualLocator.Match m:VisualLocator.findAdaptive(gray,e.getValue(),area,.88,6,true))candidates.add(new Marker(e.getKey(),m));
         candidates.sort(Comparator.comparingDouble((Marker m)->m.confidence).reversed());
         for(Marker m:candidates){boolean duplicate=false;for(Marker old:found)if(Math.abs(old.y-m.y)<20){duplicate=true;break;}if(!duplicate)found.add(m);}
         found.sort(Comparator.comparingInt(m->m.y));return found;

@@ -23,7 +23,8 @@ public class Vision implements AutoCloseable {
         int right=Math.max(x+1,Math.min(b.getWidth(),(int)(r[2]*b.getWidth()))),bottom=Math.max(y+1,Math.min(b.getHeight(),(int)(r[3]*b.getHeight())));
         return Bitmap.createBitmap(b,x,y,right-x,bottom-y);
     }
-    public static Bitmap patch(Bitmap b,PointF p,float radius){return crop(b,new float[]{Math.max(0,p.x-radius),Math.max(0,p.y-radius),Math.min(1,p.x+radius),Math.min(1,p.y+radius)});}
+    public static Bitmap patch(Bitmap b,PointF p,float radius){return patch(b,p,radius,radius);}
+    public static Bitmap patch(Bitmap b,PointF p,float radiusX,float radiusY){return crop(b,new float[]{Math.max(0,p.x-radiusX),Math.max(0,p.y-radiusY),Math.min(1,p.x+radiusX),Math.min(1,p.y+radiusY)});}
     public static class MultiplierButton {
         public final int value;public final PointF point;
         MultiplierButton(int value,PointF point){this.value=value;this.point=point;}
@@ -68,6 +69,9 @@ public class Vision implements AutoCloseable {
         for(int i=0;i<mask.length;i++)if(mask[i]==1){int head=0,tail=1,minX=i%w,maxX=minX,minY=i/w,maxY=minY;queue[0]=i;mask[i]=0;
             while(head<tail){int q=queue[head++],x=q%w,y=q/w;minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);int[] ns={x>0?q-1:-1,x+1<w?q+1:-1,y>0?q-w:-1,y+1<h?q+w:-1};for(int n:ns)if(n>=0&&mask[n]==1){mask[n]=0;queue[tail++]=n;}}
             float bw=maxX-minX+1,bh=maxY-minY+1;
+            // A target ring cut by the display edge has a shifted bounding-box
+            // center. Use its intact inner disk (or the learned layout) instead.
+            if(color==0&&(minX==0||minY==0||maxX==w-1||maxY==h-1))continue;
             if(tail>(color==1?8:45)&&bw/bh>.6&&bw/bh<1.6&&bw>4)out.add(new Blob((minX+maxX)/2f/w,(minY+maxY)/2f/h,Math.max(bw,bh)/scale,tail));
         }
         out.sort((a,c)->Integer.compare(c.area,a.area));List<Blob> dedup=new ArrayList<>();for(Blob p:out){boolean near=false;for(Blob q:dedup)if(Math.hypot((p.x-q.x)*original.getWidth(),(p.y-q.y)*original.getHeight())<Math.min(p.d,q.d)*.35){near=true;break;}if(!near)dedup.add(p);if(dedup.size()>=160)break;}return dedup;

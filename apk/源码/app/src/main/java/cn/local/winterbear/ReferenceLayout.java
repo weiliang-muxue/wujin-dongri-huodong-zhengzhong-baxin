@@ -4,7 +4,7 @@ package cn.local.winterbear;
 final class ReferenceLayout {
     final int width,height;
     ReferenceLayout(int width,int height){this.width=width;this.height=height;}
-    static boolean supported(int w,int h){return w>=540&&h>=960&&w/(double)h>=.40&&w/(double)h<=.5625;}
+    static boolean supported(int w,int h){return w>=320&&h>=480&&h>w;}
     float scale(){return width/1080f;}
     int x(int reference){return Math.round(reference*scale());}
     int y(int reference){return reference>=1800?height-Math.round((2400-reference)*scale()):x(reference);}

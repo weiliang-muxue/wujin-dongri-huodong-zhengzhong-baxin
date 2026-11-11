@@ -75,6 +75,13 @@ def verify(apk: Path, version: str) -> dict:
         obsolete='靶心截图与当前屏幕不一致，请在助手中更新截图。'
         if any(obsolete.encode('utf-8') in blob for blob in dex):
             raise ValueError('APK still blocks relocated reference layouts')
+    hunt_restart_recovery = tuple(map(int,version.split('.'))) >= (2,1,9)
+    if hunt_restart_recovery:
+        for marker in ('按钮位置未读清，点继续重新识别', '悬浮条挡住按钮，请收起后继续', '点按展开，拖动移动', '等待回城', '运行中'):
+            if not any(marker.encode('utf-8') in blob for blob in dex):
+                raise ValueError('APK is missing hunt input diagnostics: ' + marker)
+        if any('按钮未确认，已暂停'.encode('utf-8') in blob for blob in dex):
+            raise ValueError('APK still contains the ambiguous hunt input failure')
     for text in ('首页实际余券', '正在切换 1 倍，等待画面确认', '首页确认余券为 0，已全部用完', '结算完成，自动返回首页'):
         if not any(text.encode('utf-8') in blob for blob in dex):
             raise ValueError('APK is missing expected behavior marker: ' + text)
@@ -88,6 +95,8 @@ def verify(apk: Path, version: str) -> dict:
             'preset_selection': preset_selection,
             'session_recovery': session_recovery,
             'device_recovery': device_recovery,
+            'hunt_restart_recovery': hunt_restart_recovery,
+            'collapsed_status': hunt_restart_recovery,
             'sha256': hashlib.sha256(apk.read_bytes()).hexdigest()}
 
 

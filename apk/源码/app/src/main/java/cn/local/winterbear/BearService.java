@@ -70,7 +70,7 @@ public final class BearService extends AccessibilityService {
     private Button runButton,setupButton,moreButton;
     private Box bubbleBounds;
     private long overlayRevision;
-    private boolean dragging,overlayMoving;
+    private boolean dragging,overlayMoving,bearRunStarted;
     private Matcher matcher;
     private String status="准备就绪",captureMode="";
     private int captureSlot,generation,captureId;
@@ -104,6 +104,7 @@ public final class BearService extends AccessibilityService {
         updateControls();
     }
     private void updateControls(){
+        if(bubbleFold!=null)bubbleFold.updateStatus(flow.running,checkingMap||capturing?"识别中":bearRunStarted||flow.canResume(SystemClock.elapsedRealtime())?"已暂停":"待开始",status);
         if(moreButton!=null)moreButton.setVisibility(!captureMode.isEmpty()&&!flow.running&&!checkingMap&&!capturing?View.VISIBLE:View.GONE);
         if(runButton!=null){
             String label=flow.running?"暂停":checkingMap?"读取中":captureMode.equals("auto_map")?"连接":!captureMode.isEmpty()?"取样":config.dry()?"识别":flow.canResume(SystemClock.elapsedRealtime())?"继续":"开始";
@@ -210,6 +211,7 @@ public final class BearService extends AccessibilityService {
         long now=SystemClock.elapsedRealtime();
         boolean resuming=flow.canResume(now);
         if(resuming)flow.resume(now);else flow.start(now);
+        bearRunStarted=true;
         foregroundGate.reset();
         overlayRecovery.reset();
         if(controls!=null)controls.setVisibility(View.GONE);
@@ -261,7 +263,7 @@ public final class BearService extends AccessibilityService {
         bubble.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->publishBubbleBounds());
         updateControls();
     }
-    private void removeBubble(){overlayRevision++;dragging=false;overlayMoving=false;bubbleBounds=null;if(bubble!=null){windows.removeView(bubble);bubble=null;statusLabel=null;runButton=null;setupButton=null;moreButton=null;}}
+    private void removeBubble(){overlayRevision++;dragging=false;overlayMoving=false;bearRunStarted=false;bubbleBounds=null;bubbleFold=null;if(bubble!=null){windows.removeView(bubble);bubble=null;statusLabel=null;runButton=null;setupButton=null;moreButton=null;}}
     private int overlayDp(int value){
         Rect screen=windows.getCurrentWindowMetrics().getBounds();
         return Math.round(value*BearOverlayGuard.panelScale(screen.width(),screen.height(),getResources().getDisplayMetrics().density));

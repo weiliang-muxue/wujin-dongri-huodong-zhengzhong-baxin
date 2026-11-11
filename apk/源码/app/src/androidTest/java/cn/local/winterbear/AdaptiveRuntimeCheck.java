@@ -24,9 +24,11 @@ public final class AdaptiveRuntimeCheck {
         if(name.equals("map_one"))return "1/6";
         return name.startsWith("beast")?"30":"8";
     };}
-    static void hunt(File fixtures,FeedbackVision.Assets assets)throws Exception{
+    static void hunt(File fixtures,FeedbackVision.Assets assets,int start,int end)throws Exception{
         String[] names={"map","giant_search","giant_detail","rally","giant_formation","map_one","beast_search","beast_detail","beast_formation","low_energy","energy"};
-        for(String name:names){
+        require(start>=0&&start<end&&end<=names.length,"Invalid adaptive test slice");
+        for(int index=start;index<end;index++){
+            String name=names[index];
             Bitmap original=load(fixtures,name);Mode mode=name.startsWith("beast")?Mode.BEAST:Mode.GIANT;
             Frame base;try(HuntVision v=new HuntVision(assets,numbers(name,0))){base=v.observe(original,mode);}
             require(base.page!=Page.UNKNOWN,name+" baseline unknown");
@@ -62,8 +64,14 @@ public final class AdaptiveRuntimeCheck {
     static void run(String[] args)throws Exception{
         System.load(args[0]+"/libc++_shared.so");System.load(args[0]+"/libopencv_java4.so");
         File fixtures=new File(args[1]),assets=new File(args[2]),work=new File(args[3]);
-        if(args.length<5||!args[4].equals("bear"))hunt(fixtures,p->new FileInputStream(new File(assets,p)));
-        for(String name:new String[]{"huawei-bear-list","video-315","video-170"}){
+        String part=args.length>4?args[4]:"all";
+        int start=args.length>5?Integer.parseInt(args[5]):0,end=args.length>6?Integer.parseInt(args[6]):11;
+        if(!part.equals("bear"))hunt(fixtures,p->new FileInputStream(new File(assets,p)),start,end);
+        String[] bearNames={"huawei-bear-list","video-315","video-170"};
+        int bearStart=part.equals("bear")?start:0,bearEnd=part.equals("bear")?Math.min(end,bearNames.length):bearNames.length;
+        if(!part.equals("hunt"))require(bearStart>=0&&bearStart<bearEnd,"Invalid bear test slice");
+        if(!part.equals("hunt"))for(int index=bearStart;index<bearEnd;index++){
+            String name=bearNames[index];
             Bitmap source=load(fixtures,name),original=HuntRuntimeCheck.resized(source,1152,2376,false);source.recycle();
             BearFlow.Frame base=bear(original,assets,new File(work,name+"-base"));
             for(int direction:new int[]{-1,1}){
@@ -85,6 +93,7 @@ public final class AdaptiveRuntimeCheck {
                 }finally{moved.recycle();}
             }original.recycle();
         }
+        if(part.equals("bear"))require(checks==2*(bearEnd-bearStart),"Incomplete bear slice");
         System.out.println("ANDROID ADAPTIVE PASS: "+checks+" shifted-layout image checks; real matched coordinates; synthetic padding; no gestures");
     }
     public static void main(String[] args){try{run(args);}catch(Throwable e){e.printStackTrace(System.out);System.exit(1);}}

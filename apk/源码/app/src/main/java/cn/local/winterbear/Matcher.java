@@ -5,10 +5,7 @@ import cn.local.automation.VisualLocator;
 import android.graphics.Rect;
 import org.opencv.android.OpenCVLoader;
 import org.opencv.android.Utils;
-import org.opencv.core.Core;
-import org.opencv.core.CvType;
 import org.opencv.core.Mat;
-import org.opencv.core.Scalar;
 import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
 import java.util.ArrayList;
@@ -18,8 +15,8 @@ import java.util.Map;
 
 final class Matcher implements AutoCloseable {
     static final class Hit {
-        final int x,y; final double confidence;
-        Hit(int x,int y,double confidence) { this.x=x;this.y=y;this.confidence=confidence; }
+        final int x,y,width,height; final double confidence;
+        Hit(int x,int y,int width,int height,double confidence) { this.x=x;this.y=y;this.width=width;this.height=height;this.confidence=confidence; }
     }
     private final Config config;
     private final Map<String,Mat> templates=new HashMap<>();
@@ -60,12 +57,10 @@ final class Matcher implements AutoCloseable {
     }
     private Mat template(String key) {
         if(templates.containsKey(key)) return templates.get(key);
-        boolean referenceScale=key.startsWith("bear_label@");
+        boolean referenceScale=key.equals("bear_label");
         boolean marchCore=key.equals("march_anchor_core");
-        int variant=key.indexOf('@');
-        String sourceKey=marchCore?"march_anchor":variant>=0?key.substring(0,variant):key;
+        String sourceKey=marchCore?"march_anchor":key;
         double factor=referenceScale?config.width()/1080.0:config.p.getFloat(sourceKey+"Scale",1f);
-        if(variant>=0)factor*=Double.parseDouble(key.substring(variant+1));
         Bitmap bitmap=config.image(sourceKey); if(bitmap==null) return null;
         Mat rgba=new Mat(), original=new Mat(), result=new Mat(),rgb=new Mat();
         try {
@@ -89,9 +84,11 @@ final class Matcher implements AutoCloseable {
             left=Math.max(0,(int)(region.left*scale)); top=Math.max(0,(int)(region.top*scale));
             right=Math.min(right,(int)Math.ceil(region.right*scale)); bottom=Math.min(bottom,(int)Math.ceil(region.bottom*scale));
         }
-        if(right-left<tpl.cols() || bottom-top<tpl.rows()) return hits;
-        for(VisualLocator.Match m:VisualLocator.find(gray,tpl,new org.opencv.core.Rect(left,top,right-left,bottom-top),config.threshold(),limit,false))
-            hits.add(new Hit((int)Math.round(m.x/scale),(int)Math.round(m.y/scale),m.confidence));
+        if(right<=left || bottom<=top) return hits;
+        Mat expected=colorTemplates.get(key);
+        for(VisualLocator.Match m:VisualLocator.findAdaptive(gray,tpl,new org.opencv.core.Rect(left,top,right-left,bottom-top),config.threshold(),limit,false,
+                expected==null?null:candidate->VisualLocator.sameColor(color,expected,candidate,35)))
+            hits.add(new Hit((int)Math.round(m.x/scale),(int)Math.round(m.y/scale),(int)Math.ceil(m.width/scale),(int)Math.ceil(m.height/scale),m.confidence));
         return hits;
     }
     Hit near(String key,int x,int y) {
@@ -100,17 +97,7 @@ final class Matcher implements AutoCloseable {
         int margin=Math.max(12,config.width()/70);
         List<Hit> hits=find(key,new Rect(x-w/2-margin,y-h/2-margin,x+w/2+margin,y+h/2+margin),1);
         if(hits.isEmpty())return null;
-        Hit hit=hits.get(0);Mat expected=colorTemplates.get(key);
-        if(expected!=null) {
-            int left=(int)Math.round(hit.x*scale-expected.cols()/2.0),top=(int)Math.round(hit.y*scale-expected.rows()/2.0);
-            if(left<0||top<0||left+expected.cols()>color.cols()||top+expected.rows()>color.rows())return null;
-            Mat actual=color.submat(top,top+expected.rows(),left,left+expected.cols()),delta=new Mat();
-            try{
-                Core.absdiff(expected,actual,delta);Scalar difference=Core.mean(delta);
-                if((difference.val[0]+difference.val[1]+difference.val[2])/3.0>35)return null;
-            }finally{actual.release();delta.release();}
-        }
-        return hit;
+        return hits.get(0);
     }
     BearFlow.Frame observe() {
         stage="识别页面";
@@ -173,16 +160,10 @@ final class Matcher implements AutoCloseable {
             stage="识别巨熊集结";
             List<RallyOrder.Detection> detections=new ArrayList<>();
             Rect targetColumn=new Rect(0,(int)(config.height()*.16),(int)(config.width()*.45),(int)(config.height()*.94));
-            // Width normalization still leaves 1–2% font rasterization differences on
-            // Huawei screenshots. Keep the confidence threshold and refine near 1:1.
-            for(String factor:new String[]{"0.85","0.90","0.95","0.98","0.99","1.00","1.01","1.02","1.05","1.10","1.15"}){
-                String key="bear_label@"+factor;
-                Mat tpl=template(key);if(tpl==null)continue;
-                int halfWidth=(int)Math.ceil(tpl.cols()/scale/2),halfHeight=(int)Math.ceil(tpl.rows()/scale/2);
-                for(Hit target:find(key,targetColumn,8)){
-                    Hit join=joinBeside(new Rect(target.x-halfWidth,target.y-halfHeight,target.x+halfWidth,target.y+halfHeight));
-                    detections.add(new RallyOrder.Detection(target.x,target.y,join==null?0:join.x,join==null?0:join.y,join!=null,target.confidence));
-                }
+            for(Hit target:find("bear_label",targetColumn,8)){
+                int halfWidth=(int)Math.ceil(target.width/2.0),halfHeight=(int)Math.ceil(target.height/2.0);
+                Hit join=joinBeside(new Rect(target.x-halfWidth,target.y-halfHeight,target.x+halfWidth,target.y+halfHeight));
+                detections.add(new RallyOrder.Detection(target.x,target.y,join==null?0:join.x,join==null?0:join.y,join!=null,target.confidence));
             }
             List<RallyOrder.Detection> recorded=feedback.rallies(gray,color,config.width(),config.height());
             int distance=Math.max(24,config.height()/12);
@@ -230,36 +211,16 @@ final class Matcher implements AutoCloseable {
         // Search the page region only after the quick local match misses. Multiple
         // lookalikes are ambiguous; never select an arbitrary one to click.
         List<Hit> matches=find(key,region,2);
-        if(matches.size()==1){Hit h=matches.get(0);return near(key,h.x,h.y);}
-        if(!matches.isEmpty()||(!key.equals("header")&&!key.equals("rally_tab")))return null;
-        // Recorded phone text is about 2% larger than the reference after width
-        // normalization. Keep the normal confidence and require one location.
-        Hit result=null;
-        for(String factor:new String[]{"0.98","1.02"}){
-            List<Hit> adjusted=find(key+"@"+factor,region,2);
-            if(adjusted.size()>1)return null;
-            if(adjusted.isEmpty())continue;
-            Hit hit=adjusted.get(0);
-            if(result!=null&&Math.hypot(result.x-hit.x,result.y-hit.y)>config.width()*.02)return null;
-            if(result==null||hit.confidence>result.confidence)result=hit;
-        }
-        return result;
+        return matches.size()==1?matches.get(0):null;
     }
     Hit joinBeside(Rect target){
         if(!config.has("join_reference"))return null;
         int band=(int)(config.height()*.13);
         Rect area=new Rect(Math.max(target.right,(int)(config.width()*.70)),Math.max(0,target.centerY()-band),config.width(),Math.min(config.height(),target.centerY()+band));
         Hit result=null;
-        for(String key:new String[]{"join_reference","join_reference@0.98","join_reference@1.02","join_reference@1.05"}){
-            for(Hit hit:find(key,area,4)){
-                Hit colored=near(key,hit.x,hit.y);
-                if(colored==null)continue;
-                if(result!=null&&Math.hypot(result.x-colored.x,result.y-colored.y)>config.width()*.025)return null;
-                if(result==null||colored.confidence>result.confidence)result=colored;
-            }
-            // The original size is the fast path. Nearby sizes are used only
-            // when it did not confirm a green button in this row.
-            if(result!=null&&key.equals("join_reference"))return result;
+        for(Hit hit:find("join_reference",area,4)){
+            if(result!=null&&Math.hypot(result.x-hit.x,result.y-hit.y)>config.width()*.025)return null;
+            if(result==null||hit.confidence>result.confidence)result=hit;
         }
         return result;
     }

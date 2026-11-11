@@ -4,9 +4,25 @@ JDK 17、Gradle 8.9、Android SDK 35 extension 15、Build Tools 35.0.0。设置 
 
 构建：`gradlew.bat :app:testEngine :app:assembleRelease :app:lintRelease`。
 
-将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.1.8.apk。
+将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.1.9.apk。
 
-检查成品使用 `python tools/verify_android_package.py ../无尽冬日助手-2.1.8.apk --version 2.1.8`。
+检查成品使用 `python tools/verify_android_package.py ../无尽冬日助手-2.1.9.apk --version 2.1.9`。
+
+2.1.9 的 `VisualLocator.findAdaptive` 先按图像金字塔生成候选，在原图中按像素尺寸细化，再以调用方的置信度接受结果。比例间隔随模板短边／长边之比调整，长条文字使用更密的比例候选，避免细化前就漏掉正确尺寸。候选范围包含降采样取整误差。同一位置的尺寸候选会合并，不同位置继续接受唯一性检查。按钮颜色按匹配出的实际尺寸核对。打熊、巨兽、野兽、靶心共用该算法，靶心的目标比对区域也随布局比例变化。靶心页面的多个原比例标记已满足几何一致性时直接复用定位结果，只有不一致或不足时才搜索缩放比例，避免普通帧反复扫描所有比例。
+
+`HuntController` 在点击前校验截图宽高、屏幕旋转、截图时效和浮窗遮挡。结束任务时清除拖动、窗口及任务所有权状态，旧浮窗回调校验所属流程。`OverlayFold.updateStatus` 在收起后显示活动名和当前状态，固定浮标尺寸，点按展开。
+
+靶盘红色连通区域若被截图边缘裁切，不使用其包围框中心，避免放大时靶心偏移。完整内圈或已定位布局提供坐标。`--bullseye-zoom-only` 可在保留普通布局通过记录后，单独接续缩放、部分靶盘与负例回归。
+
+Release 构建自动依赖 `testEngine`。图像回放使用 `run_feedback_regression.py`，其中 `--suite scale` 验证缩放、重复目标和颜色，`--suite restart --restart-fixtures <目录>` 回放结束重开录屏，`--suite overlay` 检查浮窗状态与文字边界。图像组需要本地测试素材和专用模拟器，执行结果记录在项目验证文档中。
+
+`core`、`session`、`presets`、`scale`、`overlay` 组可直接使用源码内的素材。构建带 `-PemulatorTest` 的 Debug 与 AndroidTest APK 后，为脚本传入 `--adb <路径> --serial emulator-<端口> --output <输出目录>` 和所需 `--suite`。私人截图回放组另传素材目录。软件模拟器可通过 `--opencv-threads 1` 调整测试进程线程数，日志记录所用设置。
+
+布局回放可用 `--adaptive-start-index` / `--adaptive-end-index` 按 `AdaptiveRuntimeCheck` 中的页面顺序分组，结束索引不包含在内。`--adaptive-hunt-only` 只检查选中的狩猎页；`--adaptive-bear-only` 使用打熊的三个页面编号（0 华为列表、1 历史列表、2 出征页），不传索引时检查全部三页。每页均检查左右两个偏移方向。各组使用独立模拟器与输出目录，最后按页面和偏移方向合并记录，重复的负例只计一次。
+
+`--suite huawei-bear --huawei-fixtures <目录>` 可单独复测华为反馈的巨熊列表，检查长条名称、绿色／灰色加入按钮和被裁切的倒计时；该用例也包含在完整 `huawei` 组中。
+
+华为组支持 `--huawei-start-index` / `--huawei-end-index`，按 `HuaweiRuntimeCheck` 的 0～19 号用例分段（结束索引不包含）。0～9 为详情及缺失标记，10～17 为出征及编队，18 为地图，19 为巨熊列表。每段输出起止编号及实际通过数，完整结果必须覆盖全部 20 项。
 
 一个 launcher：ModeActivity；一个无障碍服务：BearService。cn.local.bullseye.GameService 和 HuntController 是该服务内的模块，不是其他 Android Service。ModeGate、运行代次和输入前检查共同限制旧任务回调。返回活动选择会停止所有模块。
 
@@ -68,7 +84,7 @@ python tools/build_minimal_opencv.py --source <opencv源码目录> --ndk <NDK目
 
 `run_feedback_regression.py` 新增 `--reported-fixtures <目录>`：目录包含私人原图 `reported-map.png` 和 `reported-level.png`，另需 `--hunt-fixtures` 提供旧巨兽/野兽原图。HuntReportedRuntimeCheck 直接读取原图等级字形、四个采集队倒计时和新增集结队倒计时，再驱动状态机；仅总行军数字 4/6、1/6 使用标注，等级不允许用标注替代。全图、录屏和测试 APK 不提交仓库。
 
-HuntOverlayGuard 使用当前窗口系统栏/刘海边距，在固定识别区域之外选择浮窗位置。BearService / GameService 放不下展开浮窗时尝试收起后重新避让；收起操作会使旧截图失效。新增宽竖屏检查仅验证窗口几何，未扩宽 ReferenceLayout 的游戏识别比例白名单。
+HuntOverlayGuard 使用当前窗口系统栏/刘海边距，在识别区域之外选择浮窗位置。BearService / GameService 放不下展开浮窗时尝试收起后重新避让；收起操作会使旧截图失效。2.1.9 的 ReferenceLayout 接受满足最小尺寸的竖屏画面，仍需通过实际页面识别后才能操作。宽竖屏窗口几何检查不等于对应机型的游戏流程已通过实机验证。
 
 PermissionActivity 将系统前置限制与无障碍启用分开，优先打开本服务详情，不存在时回退到公开无障碍列表；跳转未离开本页面会明确提示。查询服务列表仅用于排查，不将“服务未列出”武断解释为用户拒绝。它不写系统权限、不绕过受限设置、不申请额外权限，不保证卓易通支持系统截图与点击。
 

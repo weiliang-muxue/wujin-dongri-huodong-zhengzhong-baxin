@@ -52,14 +52,14 @@ final class HuntVision implements AutoCloseable {
         return hit(image,key,l,t,r,b,.88,true);
     }
     private Point hit(Mat image,String key,int l,int t,int r,int b,double threshold,boolean unique){
-        java.util.List<VisualLocator.Match> matches=VisualLocator.find(image,templates.get(key),new org.opencv.core.Rect(l,t,Math.max(0,r-l),Math.max(0,b-t)),threshold,unique?2:1,true);
+        java.util.List<VisualLocator.Match> matches=VisualLocator.findAdaptive(image,templates.get(key),new org.opencv.core.Rect(l,t,Math.max(0,r-l),Math.max(0,b-t)),threshold,unique?2:1,true);
         if(matches.isEmpty()||(unique&&matches.size()!=1))return null;
         VisualLocator.Match m=matches.get(0);return new Point(m.x,m.y);
     }
     private Point formation(Mat gray,int rows){
         // “暂无战争增益” also contains this label. The left label owns the preset
         // row; the right caption cannot be used as its coordinate origin.
-        java.util.List<VisualLocator.Match> candidates=VisualLocator.find(gray,templates.get("formation"),new org.opencv.core.Rect(0,100,300,Math.max(0,rows*2/3-100)),.88,4,true);
+        java.util.List<VisualLocator.Match> candidates=VisualLocator.findAdaptive(gray,templates.get("formation"),new org.opencv.core.Rect(0,100,300,Math.max(0,rows*2/3-100)),.88,4,true);
         candidates.sort(java.util.Comparator.comparingDouble(m->m.x));
         for(VisualLocator.Match m:candidates){
             Point first=hit(gray,"flag0",(int)m.x-65,(int)m.y-131,(int)m.x-20,(int)m.y-77);
@@ -87,7 +87,7 @@ final class HuntVision implements AutoCloseable {
         return total==12&&orange>=9;
     }
     Frame observe(Bitmap image,Mode mode){
-        Frame f=new Frame();int w=image.getWidth(),h=image.getHeight();if(!ReferenceLayout.supported(w,h))return f;
+        Frame f=new Frame();int w=image.getWidth(),h=image.getHeight();f.width=w;f.height=h;if(!ReferenceLayout.supported(w,h))return f;
         double s=w/540.;int rows=(int)Math.round(h/s),delta=rows-1200;
         Mat rgba=new Mat(),small=new Mat(),gray=new Mat();
         try{
@@ -129,7 +129,8 @@ final class HuntVision implements AutoCloseable {
                     double[] red=redY<rows&&redX<540?small.get(redY,redX):null;f.lowEnergy=red!=null&&red[0]>red[1]*1.4;return f;
                 }
             }
-            Point search=unique(gray,"search",70,rows/2,500,rows);
+            VisualLocator.Match searchMatch=VisualLocator.uniqueAdaptive(gray,templates.get("search"),new org.opencv.core.Rect(70,rows/2,430,rows-rows/2),.88,true);
+            Point search=searchMatch==null?null:new Point(searchMatch.x,searchMatch.y);
             int sx=search==null?270:(int)Math.round(search.x),sy=search==null?rows-50:(int)Math.round(search.y);
             Point beast=hit(gray,"tab_beast",sx-245,sy-235,sx-155,sy-165),giant=hit(gray,"tab_giant",sx-145,sy-235,sx-30,sy-165);
             boolean sheet=search!=null&&beast!=null&&giant!=null;

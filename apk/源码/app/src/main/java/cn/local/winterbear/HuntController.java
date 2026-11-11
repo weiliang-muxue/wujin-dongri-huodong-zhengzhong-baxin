@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.GestureDescription;
 import android.graphics.*;
 import android.hardware.HardwareBuffer;
+import android.hardware.display.DisplayManager;
 import android.os.*;
 import android.view.*;
 import android.widget.*;
@@ -45,6 +46,8 @@ final class HuntController {
     }
     void stop(){
         pause("已结束");if(panel!=null){wm.removeView(panel);panel=null;status=null;run=null;bounds=null;}
+        dragging=false;folding=null;layout=null;bounds=null;revision++;
+        overlayRecovery.reset();foregroundGate.reset();ownership=null;modeToken=0;
         HuntVision old=vision;CounterOcr oldOcr=ocr;vision=null;ocr=null;
         if(!worker.isShutdown())worker.execute(()->{if(old!=null)old.close();if(oldOcr!=null)oldOcr.close();});
         flow=null;started=false;target="";
@@ -68,25 +71,29 @@ final class HuntController {
     }
     private void update(String text){
         if(status!=null&&!text.contentEquals(status.getText()))status.setText(text);
+        if(folding!=null)folding.updateStatus(flow!=null&&flow.running,started?"已暂停":"待开始",text);
         String label=flow!=null&&flow.running?"暂停":started?"继续":"开始";
         if(run!=null&&!label.contentEquals(run.getText()))run.setText(label);
     }
     private void show(){
+        final HuntFlow shownFlow=flow;
         WindowMetrics metrics=wm.getCurrentWindowMetrics();Rect screen=metrics.getBounds();
         Insets insets=metrics.getWindowInsets().getInsetsIgnoringVisibility(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());
         String label=flow.options.mode==Mode.GIANT?"巨兽":"野兽";
         OverlayFold.Controls ui=new OverlayFold.Controls(host,screen.width(),insets.top,label,
-                ()->{if(flow.running)pause("已暂停 · 已用罐头 "+flow.cansUsed);else begin();},this::stop);
+                ()->{if(flow!=shownFlow||!owns())return;if(flow.running)pause("已暂停 · 已用罐头 "+flow.cansUsed);else begin();},
+                ()->{if(flow==shownFlow&&owns())stop();});
         panel=ui.panel;status=ui.status;run=ui.run;TextView title=ui.title;
         layout=new WindowManager.LayoutParams(ui.width,-2,WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,PixelFormat.TRANSLUCENT);
         layout.gravity=Gravity.TOP|Gravity.LEFT;layout.x=(int)(screen.width()*.4);layout.y=(int)(screen.height()*.025);
         title.setOnTouchListener(new View.OnTouchListener(){float sx,sy;int x,y;boolean moved;
             public boolean onTouch(View v,MotionEvent e){
+                if(flow!=shownFlow||panel!=ui.panel)return false;
                 if(e.getActionMasked()==MotionEvent.ACTION_DOWN){dragging=true;revision++;moved=false;sx=e.getRawX();sy=e.getRawY();x=layout.x;y=layout.y;return true;}
                 if(e.getActionMasked()==MotionEvent.ACTION_MOVE){moved|=Math.hypot(e.getRawX()-sx,e.getRawY()-sy)>ViewConfiguration.get(host).getScaledTouchSlop();Rect r=wm.getCurrentWindowMetrics().getBounds();layout.x=Math.max(0,Math.min(r.width()-panel.getWidth(),x+(int)(e.getRawX()-sx)));layout.y=Math.max(0,Math.min(r.height()-panel.getHeight(),y+(int)(e.getRawY()-sy)));wm.updateViewLayout(panel,layout);return true;}
                 if(e.getActionMasked()==MotionEvent.ACTION_UP||e.getActionMasked()==MotionEvent.ACTION_CANCEL){revision++;dragging=false;if(!moved&&e.getActionMasked()==MotionEvent.ACTION_UP)v.performClick();return true;}return true;
             }});
-        folding=new OverlayFold(host,panel,title,label,ui.width,ui.compactWidth,ui.titleHeight,width->{revision++;layout.width=width;layout.x=Math.min(layout.x,wm.getCurrentWindowMetrics().getBounds().width()-width);wm.updateViewLayout(panel,layout);},host::showTaskPicker);
+        folding=new OverlayFold(host,panel,title,label,ui.width,ui.compactWidth,ui.titleHeight,width->{if(flow!=shownFlow||panel!=ui.panel)return;revision++;layout.width=width;layout.x=Math.min(layout.x,wm.getCurrentWindowMetrics().getBounds().width()-width);wm.updateViewLayout(panel,layout);},()->{if(flow==shownFlow&&owns())host.showTaskPicker();});
         panel.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->publish());wm.addView(panel,layout);
     }
     private void publish(){if(panel==null||panel.getWidth()==0)return;int[] xy=new int[2];panel.getLocationOnScreen(xy);Box b=new Box(xy[0],xy[1],xy[0]+panel.getWidth(),xy[1]+panel.getHeight());if(!b.same(bounds)){bounds=b;revision++;}}
@@ -115,6 +122,10 @@ final class HuntController {
         update("正在调整浮窗位置");return false;
     }
     private void later(long delay){main.postDelayed(this::tick,delay);}
+    private int displayRotation(){
+        Display display=host.getSystemService(DisplayManager.class).getDisplay(Display.DEFAULT_DISPLAY);
+        return display==null?-1:display.getRotation();
+    }
     private boolean gameAvailable(){
         if(!host.getSystemService(PowerManager.class).isInteractive()){pause("屏幕已关闭，任务暂停");return false;}
         String foreground=host.foregroundPackage();
@@ -127,6 +138,7 @@ final class HuntController {
         if(!gameAvailable())return;
         if(!safePosition()){if(flow.running)later(250);return;}
         busy=true;long token=generation,viewRevision=revision,id=++captureId,at=SystemClock.elapsedRealtime();Box mask=bounds.padded(6);
+        final int rotation=displayRotation();
         final HuntVision reader=vision;
         try{host.takeScreenshot(Display.DEFAULT_DISPLAY,host.getMainExecutor(),new AccessibilityService.TakeScreenshotCallback(){
             @Override public void onSuccess(AccessibilityService.ScreenshotResult result){
@@ -153,7 +165,7 @@ final class HuntController {
                         overlayRecovery.reset();
                         f.age=SystemClock.elapsedRealtime()-at;Action a=flow.next(f,SystemClock.elapsedRealtime());update(a.message);
                         if(a.kind==Kind.WAIT){later(800);return;}if(a.kind==Kind.STOP)return;
-                        gesture(a,f,token,viewRevision,at);
+                        gesture(a,f,token,viewRevision,at,rotation);
                     });
                 });
             }
@@ -161,17 +173,23 @@ final class HuntController {
         });}catch(Exception e){busy=false;pause("无法读取游戏画面");}
         main.postDelayed(()->{if(id==captureId&&token==generation&&busy)pause("识别超时，已暂停");},6000);
     }
-    private void gesture(Action a,Frame f,long token,long viewRevision,long captured){
+    private void gesture(Action a,Frame f,long token,long viewRevision,long captured,int rotation){
         if(token!=generation||!owns())return;
         if(!gameAvailable()){
             if(flow.running){flow.suspend(SystemClock.elapsedRealtime(),false);flow.resume(SystemClock.elapsedRealtime());}
             return;
         }
-        if(dragging||revision!=viewRevision||SystemClock.elapsedRealtime()-captured>4000){pause("点击前画面已变化，请继续重试");return;}
+        if(dragging||revision!=viewRevision||rotation<0||rotation!=displayRotation()||SystemClock.elapsedRealtime()-captured>4000){pause("点击前画面已变化，请继续重试");return;}
         // Use the recognized game's back/dismiss target. Android Back can leave
         // the WeChat mini-game instead of returning to its map.
-        int[] p=a.kind==Kind.PRESET?f.flags[a.preset]:f.points[a.kind.ordinal()];Rect r=wm.getCurrentWindowMetrics().getBounds();
-        if(p[0]<=0||p[1]<=0||p[0]>=r.width()||p[1]>=r.height()||bounds==null||bounds.padded(8).contains(p[0],p[1])){pause("按钮未确认，已暂停");return;}
+        int[] p=a.kind==Kind.PRESET?f.flags[a.preset]:f.points[a.kind.ordinal()];
+        // Screenshot locations are display pixels. An assistant opened in a
+        // floating Activity can have different WindowMetrics from the game.
+        if(!f.contains(p[0],p[1])){
+            android.util.Log.w("WinterHunt","Missing target "+a.kind+" at "+p[0]+","+p[1]+" in frame "+f.width+"x"+f.height);
+            pause("按钮位置未读清，点继续重新识别");return;
+        }
+        if(bounds==null||bounds.padded(8).contains(p[0],p[1])){pause("悬浮条挡住按钮，请收起后继续");return;}
         busy=true;Path path=new Path();path.moveTo(p[0],p[1]);GestureDescription g=new GestureDescription.Builder().addStroke(new GestureDescription.StrokeDescription(path,0,70)).build();
         long ticket=gestures.begin();
         try{

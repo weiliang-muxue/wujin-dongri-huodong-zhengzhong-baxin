@@ -7,11 +7,12 @@ import java.io.*;
 public final class DirectDeployRuntimeCheck {
     static void require(boolean value,String message){if(!value)throw new AssertionError(message);}
     public static void main(String[] args){try{run(args);}catch(Throwable e){e.printStackTrace(System.out);System.exit(1);}}
-    static void hunt(Bitmap image,FeedbackVision.Assets assets){
+    static HuntFlow.Frame hunt(Bitmap image,FeedbackVision.Assets assets){
         HuntVision.Numbers noOcr=(b,r)->{throw new AssertionError("Formation called numeric OCR: "+r);};
+        HuntFlow.Frame last=null;
         try(HuntVision reader=new HuntVision(assets,noOcr)){
             for(HuntFlow.Mode mode:HuntFlow.Mode.values()){
-                HuntFlow.Frame frame=reader.observe(image,mode);
+                HuntFlow.Frame frame=reader.observe(image,mode);last=frame;
                 require(frame.page==HuntFlow.Page.FORMATION,"Hunt formation not recognized");
                 int[] tap=frame.points[HuntFlow.Kind.DEPLOY.ordinal()];
                 require(tap[0]>image.getWidth()*.55&&tap[1]>image.getHeight()*.90,"Wrong deploy button");
@@ -33,6 +34,7 @@ public final class DirectDeployRuntimeCheck {
                 }
             }
         }
+        return last;
     }
     static void bear(Bitmap image,File assets,File work)throws Exception{
         Config config=CompatibilityRuntimeCheck.config(assets,work,image.getWidth(),image.getHeight());

@@ -26,13 +26,21 @@ public final class BullseyeLayoutRuntimeCheck {
         float s=w/(float)originalWidth;
         require(Math.abs(actual.x*w-(source.x*originalWidth*s+dx))<8&&Math.abs(actual.y*h-(source.y*originalHeight*s+dy))<8,what+" stale coordinate "+actual);
     }
+    static void targetSimilarity(Bitmap frame,Bitmap board,LiveLayout.Result layout,PointF original,int index){
+        float radiusX=(float)(.018*layout.scale);
+        float radiusY=radiusX*board.getHeight()/board.getWidth()*frame.getWidth()/frame.getHeight();
+        Bitmap actual=Vision.patch(frame,layout.config.targets.get(index),radiusX,radiusY),reference=Vision.patch(board,original,.018f);
+        try{require(Vision.similarity(actual,reference)>.72,"Unopened target rejected after relocation: "+index);}
+        finally{actual.recycle();reference.recycle();}
+    }
     static void run(String[] args)throws Exception{
         System.load(args[0]+"/libc++_shared.so");System.load(args[0]+"/libopencv_java4.so");
         Bitmap home=BitmapFactory.decodeFile(new File(args[1],"bullseye-home.png").getPath()),board=BitmapFactory.decodeFile(new File(args[1],"bullseye-board.png").getPath());
         require(home!=null&&board!=null,"Private bullseye fixtures");cn.local.bullseye.Config c=config(board);
         require(c.matchesReferences(home,board),"Saved reference images rejected");
+        boolean zoomOnly=args.length>2&&"zoom".equals(args[2]);
         try(LiveLayout v=new LiveLayout(c,home,board)){
-            for(int[] size:new int[][]{{1080,2400,0,0},{1080,2520,24,72},{720,1680,-12,48},{1344,2772,0,30},{1152,2376,0,0}}){
+            if(!zoomOnly)for(int[] size:new int[][]{{1080,2400,0,0},{1080,2520,24,72},{720,1680,-12,48},{1344,2772,0,30},{1152,2376,0,0}}){
                 int w=size[0],h=size[1],dx=size[2],dy=size[3];
                 for(boolean isHome:new boolean[]{true,false}){
                     Bitmap frame=moved(isHome?home:board,w,h,dx,dy);
@@ -46,11 +54,33 @@ public final class BullseyeLayoutRuntimeCheck {
                         if(isHome)point(c.start,r.config.start,c.width,c.height,w,h,dx,dy,"Start button");
                         else for(int i=0;i<12;i++){
                             point(c.targets.get(i),r.config.targets.get(i),c.width,c.height,w,h,dx,dy,"Target "+i);
-                            Bitmap actual=Vision.patch(frame,r.config.targets.get(i),.018f),original=Vision.patch(board,c.targets.get(i),.018f);
-                            try{require(Vision.similarity(actual,original)>.72,"Unopened target rejected after relocation: "+i+" at "+w+"x"+h);}
-                            finally{actual.recycle();original.recycle();}
+                            targetSimilarity(frame,board,r,c.targets.get(i),i);
                         }
                         checks++;System.out.println("BULLSEYE LAYOUT PASS: "+w+"x"+h+" home="+isHome);System.out.flush();
+                    }finally{frame.recycle();}
+                }
+            }
+            for(int[] zoom:new int[][]{{85,70,200},{112,-60,-100}}){
+                float factor=zoom[0]/100f;
+                for(boolean isHome:new boolean[]{true,false}){
+                    Bitmap source=isHome?home:board;
+                    Bitmap frame=Bitmap.createBitmap(source.getWidth(),source.getHeight(),Bitmap.Config.ARGB_8888);
+                    Canvas canvas=new Canvas(frame);canvas.drawColor(Color.BLACK);
+                    canvas.drawBitmap(source,null,new android.graphics.Rect(zoom[1],zoom[2],zoom[1]+Math.round(source.getWidth()*factor),zoom[2]+Math.round(source.getHeight()*factor)),new Paint(Paint.FILTER_BITMAP_FLAG));
+                    try{
+                        LiveLayout.Result r=v.observe(frame);require(r!=null&&r.home==isHome,"Content zoom missing "+factor+" home="+isHome);
+                        require(Math.abs(r.scale-factor)<.04,"Content scale estimate incorrect");
+                        if(isHome){
+                            require(Math.abs(r.config.start.x*frame.getWidth()-(c.start.x*home.getWidth()*factor+zoom[1]))<8,"Zoomed start X");
+                            require(Math.abs(r.config.start.y*frame.getHeight()-(c.start.y*home.getHeight()*factor+zoom[2]))<8,"Zoomed start Y");
+                        }else for(int i=0;i<12;i++){
+                            PointF original=c.targets.get(i),actual=r.config.targets.get(i);
+                            float expectedX=original.x*board.getWidth()*factor+zoom[1],expectedY=original.y*board.getHeight()*factor+zoom[2];
+                            require(Math.abs(actual.x*frame.getWidth()-expectedX)<8,"Zoomed target X "+i+" actual="+actual.x*frame.getWidth()+" expected="+expectedX);
+                            require(Math.abs(actual.y*frame.getHeight()-expectedY)<8,"Zoomed target Y "+i+" actual="+actual.y*frame.getHeight()+" expected="+expectedY);
+                            targetSimilarity(frame,board,r,original,i);
+                        }
+                        checks++;System.out.println("BULLSEYE CONTENT ZOOM PASS: "+factor+" home="+isHome);System.out.flush();
                     }finally{frame.recycle();}
                 }
             }

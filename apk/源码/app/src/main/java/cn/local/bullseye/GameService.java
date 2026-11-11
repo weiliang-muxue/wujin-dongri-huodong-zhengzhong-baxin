@@ -121,7 +121,23 @@ public class GameService extends ContextWrapper {
         if(FloatingGuard.blocked(floatingBounds,protectedAreas,dp(8)))pause("悬浮条挡住游戏，请拖到空白处后继续");
     }
     boolean frameCurrent(){return running&&!paused&&SessionGuard.freshFrame(frameCapturedAt,SystemClock.elapsedRealtime())&&FloatingGuard.current(frameRevision,overlayRevision,dragging);}
-    void update(String message){getSharedPreferences("progress",0).edit().putInt("remaining",remaining).putInt("rounds",rounds).putString("state",message).apply();main.post(()->{if(status!=null){String text="首页余券 "+remaining+" · "+message;if(!text.contentEquals(status.getText()))status.setText(text);status.setContentDescription(text);}if(pauseButton!=null){String label=paused?"继续":"暂停";if(!label.contentEquals(pauseButton.getText()))pauseButton.setText(label);}});}
+    void update(String message){
+        getSharedPreferences("progress",0).edit().putInt("remaining",remaining).putInt("rounds",rounds).putString("state",message).apply();
+        final long token=generation;
+        main.post(()->{
+            if(token!=generation)return;
+            if(status!=null){
+                String text="首页余券 "+remaining+" · "+message;
+                if(!text.contentEquals(status.getText()))status.setText(text);
+                status.setContentDescription(text);
+            }
+            if(pauseButton!=null){
+                String label=paused?"继续":"暂停";
+                if(!label.contentEquals(pauseButton.getText()))pauseButton.setText(label);
+            }
+            if(floatingFold!=null)floatingFold.updateStatus(running&&!paused,paused?"已暂停":"待开始",message);
+        });
+    }
     void pause(String message){synchronized(tapLock){paused=true;overlayRevision++;cancelCaptureWait();gestureId++;gestureInFlight=false;}update(message);}
     public void pauseForTaskSelection(){if(running)pause("选择任务");}
     public boolean awaitingCapture(){return busy||captureInFlight;}
@@ -219,7 +235,12 @@ public class GameService extends ContextWrapper {
         },main);if(!accepted){finishGesture(request,token);pause("点击未被系统接受");}
         else main.postDelayed(()->{if(finishGesture(request,token)&&running)pause("点击响应超时，点继续确认画面");},3000);
         return accepted;}}
-    double match(Bitmap frame,Bitmap ref,PointF actual,PointF original,float radius){Bitmap a=Vision.patch(frame,actual,radius),b=Vision.patch(ref,original,radius);try{return Vision.similarity(a,b);}finally{a.recycle();b.recycle();}}
+    double match(Bitmap frame,Bitmap ref,PointF actual,PointF original,float radius,double layoutScale){
+        float radiusX=(float)(radius*layoutScale);
+        float radiusY=radiusX*ref.getHeight()/ref.getWidth()*frame.getWidth()/frame.getHeight();
+        Bitmap a=Vision.patch(frame,actual,radiusX,radiusY),b=Vision.patch(ref,original,radius);
+        try{return Vision.similarity(a,b);}finally{a.recycle();b.recycle();}
+    }
     boolean protectLayout(Config c){
         float[] xs=new float[c.targets.size()],ys=new float[c.targets.size()];
         for(int i=0;i<xs.length;i++){xs[i]=c.targets.get(i).x;ys[i]=c.targets.get(i).y;}
@@ -268,7 +289,7 @@ public class GameService extends ContextWrapper {
             if(starting&&++retries>3){retries=0;pause("开始按钮没有响应，请检查游戏");return;}
             if(tap(config.start)){starting=true;tickets.started();update("按游戏当前倍率开始，回首页后更新余券");}return;
         }
-        List<Integer> available=new ArrayList<>();for(int i=0;i<config.targets.size();i++)if(match(frame,board,config.targets.get(i),referenceConfig.targets.get(i),.018f)>.72)available.add(i);
+        List<Integer> available=new ArrayList<>();for(int i=0;i<config.targets.size();i++)if(match(frame,board,config.targets.get(i),referenceConfig.targets.get(i),.018f,layout.scale)>.72)available.add(i);
         if(!available.isEmpty()){
             lastKnown=SystemClock.uptimeMillis();if(starting){starting=false;inRound=true;retries=0;}
             if(!inRound){if(allowInitialBoard&&available.size()==12){inRound=true;allowInitialBoard=false;update("继续已开启的一轮，结束后读取券数");}else{pause("请回到首页或完整的 12 靶子页再运行");return;}}

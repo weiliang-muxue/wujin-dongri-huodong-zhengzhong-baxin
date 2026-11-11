@@ -5,6 +5,13 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class BearOverlayGuardTest {
+    @Test public void portraitRecognitionAcceptsWideAndTallLayouts(){
+        for(int[] size:new int[][]{{480,960},{720,1600},{1152,2376},{1248,2004},{1440,2160},{1080,3000}})
+            assertTrue(ReferenceLayout.supported(size[0],size[1]));
+        assertFalse(ReferenceLayout.supported(0,2000));
+        assertFalse(ReferenceLayout.supported(200,300));
+        assertFalse(ReferenceLayout.supported(2004,1248));
+    }
     @Test public void recordingPanelCannotBlockTheNextPageSwipe(){
         for(int[] size:new int[][]{{620,1280},{1080,2400},{1152,2376},{1344,2772},{1260,2800}}){
             int width=size[0],height=size[1],gap=Math.max(4,width/60);

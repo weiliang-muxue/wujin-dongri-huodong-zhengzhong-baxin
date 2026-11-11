@@ -17,8 +17,8 @@ public final class LiveLayout implements AutoCloseable {
     private LayoutTransform gridAt;
     private int gridWidth,gridHeight;
     public static final class Result {
-        public final Config config;public final boolean home;
-        Result(Config config,boolean home){this.config=config;this.home=home;}
+        public final Config config;public final boolean home;public final double scale;
+        Result(Config config,boolean home,double scale){this.config=config;this.home=home;this.scale=scale;}
     }
     public LiveLayout(Config c,Bitmap home,Bitmap board){
         reference=c;
@@ -49,7 +49,7 @@ public final class LiveLayout implements AutoCloseable {
             int w=frame.getWidth(),h=frame.getHeight();Config c=new Config();c.width=w;c.height=h;c.count=reference.count;
             c.start=map(reference.start,t,w,h);c.region=map(reference.region,t,w,h);c.countRect=map(reference.countRect,t,w,h);
             if(c.countRect[2]<=c.countRect[0]||c.countRect[3]<=c.countRect[1])return null;
-            VisualLocator.Match button=VisualLocator.unique(gray,start,new Rect(0,gray.rows()/2,gray.cols(),gray.rows()-gray.rows()/2),.87,true);
+            VisualLocator.Match button=VisualLocator.uniqueAdaptive(gray,start,new Rect(0,gray.rows()/2,gray.cols(),gray.rows()-gray.rows()/2),.87,true);
             List<PointF> found=button==null?Vision.targets(frame):Collections.emptyList();
             if(found.size()==12){grid=found;gridAt=t;gridWidth=w;gridHeight=h;}
             if(grid!=null){
@@ -59,7 +59,7 @@ public final class LiveLayout implements AutoCloseable {
             c.exitRect=Vision.exitRegion(c.targets);
             if(button!=null)c.start=new PointF((float)(button.x/540),(float)(button.y*w/540/h));
             for(PointF p:c.targets)if(p.x<=0||p.x>=1||p.y<=0||p.y>=1)return null;
-            return new Result(c,button!=null);
+            return new Result(c,button!=null,t.scale);
         }finally{gray.release();}
     }
     @Override public void close(){anchors.close();start.release();}

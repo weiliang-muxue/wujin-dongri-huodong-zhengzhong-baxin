@@ -71,7 +71,7 @@ public final class OverlayUiRuntimeCheck {
             });
             java.lang.reflect.Field managerField=Class.forName("android.view.WindowManagerGlobal").getDeclaredField("sWindowManagerService");
             managerField.setAccessible(true);managerField.set(null,manager);
-            File output=new File(args[0]);output.mkdirs();int checks=0,presetChecks=0;
+            File output=new File(args[0]);output.mkdirs();int checks=0,presetChecks=0,statusChecks=0;
             for(int width:new int[]{620,720,1080,1152,1260,1344})for(float font:new float[]{1f,1.3f}){
                 Configuration configuration=new Configuration(system.getResources().getConfiguration());
                 configuration.densityDpi=Math.round(width/360f*160);configuration.fontScale=font;
@@ -135,6 +135,25 @@ public final class OverlayUiRuntimeCheck {
                     if(expectedCollapsed<0)expectedCollapsed=ui.panel.getHeight();
                     require(ui.panel.getHeight()==expectedCollapsed&&currentWidth[0]==ui.compactWidth,"Different collapsed size");
                     require(!ui.run.isShown(),"Collapsed controls still cover the game");
+                    String[] messages={"回到游戏开始","正在加入队伍","总行军 6/6 · 等待空位","等待本次队伍回城","等待游戏窗口恢复","已手动暂停","继续当前任务","等待游戏响应"};
+                    String[] states={"待开始","运行中","等待空位","等待回城","等待游戏","已暂停","运行中","运行中"};
+                    for(int index=0;index<states.length;index++){
+                        boolean running=index!=0&&index!=5;
+                        CharSequence previous=ui.title.getText();
+                        fold.updateStatus(running,index==5?"已暂停":"待开始",messages[index]);
+                        if(index==7)require(previous==ui.title.getText(),"Short action wait rewrote the running label");
+                        layout(ui.panel,currentWidth[0]);
+                        require((label+"\n"+states[index]).contentEquals(ui.title.getText()),"Collapsed status stale");
+                        require(ui.title.getContentDescription().toString().contains("点按展开"),"Expand action unlabeled");
+                        require(fold.isCollapsed()&&currentWidth[0]==ui.compactWidth&&ui.panel.getHeight()==expectedCollapsed,"Status change resized or expanded controls");
+                        require(ui.title.getLayout()!=null&&ui.title.getLayout().getLineCount()==2,"Collapsed state clipped");
+                        for(int line=0;line<2;line++){
+                            require(ui.title.getLayout().getEllipsisCount(line)==0,"Collapsed state ellipsized");
+                            require(ui.title.getLayout().getLineWidth(line)<=ui.title.getWidth()-ui.title.getCompoundPaddingLeft()-ui.title.getCompoundPaddingRight(),"Collapsed state exceeds width");
+                        }
+                        require(ui.title.getLayout().getLineBottom(1)<=ui.title.getHeight()-ui.title.getCompoundPaddingTop()-ui.title.getCompoundPaddingBottom(),"Collapsed state exceeds height");
+                        statusChecks++;
+                    }
                     if(width==1080&&font==1f)save(ui.panel,new File(output,label+"-collapsed.png"));
                     ui.title.performClick();layout(ui.panel,currentWidth[0]);
                     require(!fold.isCollapsed()&&ui.panel.getHeight()==height,"Cannot expand again");checks++;
@@ -142,6 +161,7 @@ public final class OverlayUiRuntimeCheck {
             }
             System.out.println("ANDROID OVERLAY UI PASS: "+checks+" actual View layouts; pause/start/end/switch/fold callbacks; no game gestures");
             System.out.println("ANDROID PRESET PICKER PASS: "+presetChecks+" layouts; single, multiple, empty selection and callbacks");
+            System.out.println("ANDROID COLLAPSED STATUS PASS: "+statusChecks+" transitions; all activities, six widths and two font scales; fixed bounds and tap-to-expand");
         }catch(Throwable error){error.printStackTrace(System.out);System.exit(1);}
     }
 }

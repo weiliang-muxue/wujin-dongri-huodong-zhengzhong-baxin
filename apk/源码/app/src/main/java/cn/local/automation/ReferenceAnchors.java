@@ -38,16 +38,34 @@ public final class ReferenceAnchors implements AutoCloseable {
     public LayoutTransform locate(Mat frame){
         List<Anchor> source=new ArrayList<>();List<VisualLocator.Match> observed=new ArrayList<>();
         Rect all=new Rect(0,0,frame.cols(),frame.rows());
+        // Most frames preserve the reference scale after width normalization.
+        // A geometrically consistent set of distinct landmarks already locates
+        // that page; only missing/inconsistent sets need the scale pyramid.
         for(Anchor a:anchors){
             VisualLocator.Match m=VisualLocator.unique(frame,a.patch,all,.89,true);
             if(m!=null){source.add(a);observed.add(m);}
         }
+        LayoutTransform exact=consistent(source,observed);
+        if(exact!=null)return exact;
+        source.clear();observed.clear();
+        for(Anchor a:anchors){
+            VisualLocator.Match m=VisualLocator.uniqueAdaptive(frame,a.patch,all,.89,true);
+            if(m!=null){source.add(a);observed.add(m);}
+        }
+        return consistent(source,observed);
+    }
+    private static LayoutTransform consistent(List<Anchor> source,List<VisualLocator.Match> observed){
         LayoutTransform best=null;int support=0;
         for(int i=0;i<source.size();i++)for(int j=i+1;j<source.size();j++){
             Anchor a=source.get(i),b=source.get(j);VisualLocator.Match u=observed.get(i),v=observed.get(j);
             LayoutTransform candidate=LayoutTransform.between(a.x,a.y,b.x,b.y,u.x,u.y,v.x,v.y,3);
-            if(candidate==null||candidate.scale<.9||candidate.scale>1.1)continue;
-            int n=0;for(int k=0;k<source.size();k++)if(candidate.agrees(source.get(k).x,source.get(k).y,observed.get(k).x,observed.get(k).y,4))n++;
+            if(candidate==null)continue;
+            int n=0;for(int k=0;k<source.size();k++){
+                Anchor anchor=source.get(k);VisualLocator.Match match=observed.get(k);
+                double iconScale=match.width/(double)anchor.patch.cols();
+                if(Math.abs(iconScale-candidate.scale)<=.1*candidate.scale
+                        &&candidate.agrees(anchor.x,anchor.y,match.x,match.y,4*Math.max(1,candidate.scale)))n++;
+            }
             if(n>support){support=n;best=candidate;}
         }
         return support>=3?best:null;

@@ -57,7 +57,8 @@ public final class OverlayFold {
     private final Button fold;
     private final Button switchTask;
     private final CharSequence expandedTitle;
-    private final String compactTitle;
+    private final String label;
+    private String compactStatus="待开始";
     private final int expandedWidth,compactWidth;
     private final IntConsumer resize;
     private boolean collapsed;
@@ -68,7 +69,7 @@ public final class OverlayFold {
     }
     public OverlayFold(Context context,LinearLayout root,TextView handle,String label,
                        int expandedWidth,int compactWidth,int touchHeight,IntConsumer resize,Runnable chooseTask){
-        this.handle=handle;this.expandedTitle=handle.getText();compactTitle=label+"\n展开";
+        this.handle=handle;this.expandedTitle=handle.getText();this.label=label;
         this.expandedWidth=expandedWidth;this.compactWidth=compactWidth;this.resize=resize;
         ((ViewGroup)handle.getParent()).removeView(handle);
         body=new LinearLayout(context);body.setOrientation(LinearLayout.VERTICAL);
@@ -103,6 +104,25 @@ public final class OverlayFold {
         handle.setOnClickListener(v->{if(collapsed)setCollapsed(false);});
     }
     public boolean isCollapsed(){return collapsed;}
+    public void updateStatus(boolean running,String idleStatus,String message){
+        String next=idleStatus;
+        if(running){
+            next="运行中";
+            if(message.contains("等待")){
+                if(message.contains("回城"))next="等待回城";
+                else if(message.contains("空位"))next="等待空位";
+                else if(message.contains("窗口")||message.contains("前台"))next="等待游戏";
+            }
+        }
+        if(next.equals(compactStatus))return;
+        compactStatus=next;
+        if(collapsed)renderTitle();
+    }
+    private void renderTitle(){
+        CharSequence title=collapsed?label+"\n"+compactStatus:expandedTitle;
+        if(!title.toString().contentEquals(handle.getText()))handle.setText(title);
+        handle.setContentDescription(collapsed?label+"，"+compactStatus+"，点按展开，拖动移动":label+"，拖动移动");
+    }
     public static void fitText(TextView view,int height,int maxSp){
         int min=Math.max(8,height/6),max=Math.max(min+1,Math.round(maxSp*view.getResources().getDisplayMetrics().scaledDensity));
         view.setAutoSizeTextTypeUniformWithConfiguration(min,max,1,android.util.TypedValue.COMPLEX_UNIT_PX);
@@ -111,8 +131,7 @@ public final class OverlayFold {
         if(value==collapsed)return;collapsed=value;
         body.setVisibility(value?View.GONE:View.VISIBLE);fold.setVisibility(value?View.GONE:View.VISIBLE);
         switchTask.setVisibility(value?View.GONE:View.VISIBLE);
-        handle.setText(value?compactTitle:expandedTitle);
-        handle.setContentDescription(value?compactTitle+"；拖动移动":expandedTitle);
+        renderTitle();
         resize.accept(value?compactWidth:expandedWidth);
     }
 }

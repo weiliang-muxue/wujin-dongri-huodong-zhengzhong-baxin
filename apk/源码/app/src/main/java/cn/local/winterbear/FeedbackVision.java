@@ -33,7 +33,7 @@ final class FeedbackVision implements AutoCloseable {
         }catch(Exception e){return new Mat();}
     }
     private Point hit(Mat screen,Mat template,Rect region){
-        List<VisualLocator.Match> found=VisualLocator.find(screen,template,region,.88,1,true);
+        List<VisualLocator.Match> found=VisualLocator.findAdaptive(screen,template,region,.88,1,true);
         return found.isEmpty()?null:new Point(found.get(0).x,found.get(0).y);
     }
     void observe(Mat fullGray,BearFlow.Frame frame,int width,int height){
@@ -67,7 +67,7 @@ final class FeedbackVision implements AutoCloseable {
     }
     private List<Point> hits(Mat screen,Mat template,Rect region){
         List<Point> result=new ArrayList<>();
-        for(VisualLocator.Match m:VisualLocator.find(screen,template,region,.88,8,true))result.add(new Point(m.x,m.y));
+        for(VisualLocator.Match m:VisualLocator.findAdaptive(screen,template,region,.88,8,true))result.add(new Point(m.x,m.y));
         return result;
     }
     List<RallyOrder.Detection> rallies(Mat fullGray,Mat fullColor,int width,int height){
@@ -100,12 +100,8 @@ final class FeedbackVision implements AutoCloseable {
     }
     private List<Point> greenHits(Mat gray,Mat color,Mat shape,Mat expected,Rect region){
         List<Point> result=new ArrayList<>();if(expected.empty())return result;
-        for(Point p:hits(gray,shape,region)){
-            int x=(int)Math.round(p.x-expected.cols()/2.0),y=(int)Math.round(p.y-expected.rows()/2.0);
-            Mat actual=color.submat(new Rect(x,y,expected.cols(),expected.rows())),delta=new Mat();
-            try{Core.absdiff(actual,expected,delta);Scalar d=Core.mean(delta);if((d.val[0]+d.val[1]+d.val[2])/3.0<=35)result.add(p);}
-            finally{actual.release();delta.release();}
-        }
+        for(VisualLocator.Match match:VisualLocator.findAdaptive(gray,shape,region,.88,8,true,
+                candidate->VisualLocator.sameColor(color,expected,candidate,35)))result.add(new Point(match.x,match.y));
         return result;
     }
     private Point formationAnchor(Mat gray,int rows){
