@@ -4,9 +4,19 @@ JDK 17、Gradle 8.9、Android SDK 35 extension 15、Build Tools 35.0.0。设置 
 
 构建：`gradlew.bat :app:testEngine :app:assembleRelease :app:lintRelease`。
 
-将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.1.14.apk。
+将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.1.15.apk。
 
-检查成品使用 `python tools/verify_android_package.py ../无尽冬日助手-2.1.14.apk --version 2.1.14`。
+检查成品使用 `python tools/verify_android_package.py ../无尽冬日助手-2.1.15.apk --version 2.1.15`。
+
+### 动态搜索分类（2.1.15）
+
+`VisualTabStrip` 在整条可见分类栏查找名称，并将选中边框绑定到该标签自己的位置和比例。巨兽、野兽不再通过栏目序号或“最靠近的已知分类”推断选择。新增的临时活动无需加入名称白名单；只有目标类别被确认选中才读取它的等级。分类缺失、重复或两个已知分类同时显示边框时，流程继续等待或重新选择，不会按旧坐标搜索。
+
+`HuntVision` 用搜索按钮的字形与蓝色实心区域、加减按钮及分类标签识别无遮挡搜索栏；加减按钮允许启用／禁用颜色变化。目标卡的橙色操作按钮和等级标记优先，避免透过仍可见的背景搜索栏点击。缺失目标不会自动横向滑动，只提示将分类滑到可见范围。截图时效、识别看门狗及最终匹配阈值保持原值。
+
+桌面回放：`tools/run_page_sweep.ps1 -Suite search -OpenCvJavaDir <OpenCV Java目录> -JavaHome <JDK17目录> -OutputDir <E盘输出目录> -Fixtures <原始狩猎页面目录> -SearchCases <PNG和独立properties标注目录> -SearchRecording <新增活动录屏帧>`。标注包含页面、选中分类、两类目标坐标、等级及数字所在矩形；测试位置、选中状态、流程动作和取图范围。`SearchTransitionCheck` 继续回放搜索、目标、巨兽集结设置、编队、出征，并检查出征点击后仍等待游戏确认。
+
+Android 回放：先构建 `-PemulatorTest :app:assembleDebug :app:assembleDebugAndroidTest`，再执行 `tools/run_feedback_regression.py --adb <adb> --serial <专用模拟器> --suite core --suite search --search-fixtures <上述标注目录> --output <E盘输出目录>`。原生组使用八张代表图，每张运行一种模式，覆盖巨兽、野兽及栏目变化、选中状态和按钮颜色。所有这些回放中的等级 OCR 是取图标注，不能当作模型准确率、手机性能或真实游戏触控验证。
 
 ### 地图循环与取消识别（2.1.14）
 

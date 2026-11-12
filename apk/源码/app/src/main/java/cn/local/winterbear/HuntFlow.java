@@ -172,6 +172,8 @@ final class HuntFlow {
         if(phase==Phase.SEARCH){
             if(f.page!=Page.SEARCH)return unknown(now,"等待搜索面板");
             if(f.category!=options.mode.ordinal()){
+                int[] category=f.points[Kind.CATEGORY.ordinal()];
+                if(!f.contains(category[0],category[1]))return unknown(now,"寻找"+(options.mode==Mode.GIANT?"冰原巨兽":"野兽")+"分类，请将该分类滑到可见位置");
                 if(categoryAttempts++>=3)return halt("未确认目标分类，请检查搜索面板");
                 return act(Kind.CATEGORY,"选择"+(options.mode==Mode.GIANT?"冰原巨兽":"野兽"));
             }

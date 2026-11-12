@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$OpenCvJavaDir,[Parameter(Mandatory=$true)][string]$OutputDir,[Parameter(Mandatory=$true)][string]$Fixtures,[string]$JavaHome=$env:JAVA_HOME,[ValidateSet('all','bear','errors')][string]$Section='all',[string]$MarchFixtures='',[ValidateSet('standard','boundary','targeted')][string]$Suite='standard')
+param([Parameter(Mandatory=$true)][string]$OpenCvJavaDir,[Parameter(Mandatory=$true)][string]$OutputDir,[Parameter(Mandatory=$true)][string]$Fixtures,[string]$JavaHome=$env:JAVA_HOME,[ValidateSet('all','bear','errors')][string]$Section='all',[string]$MarchFixtures='',[ValidateSet('standard','boundary','targeted','search')][string]$Suite='standard',[string]$SearchCases='',[string]$SearchRecording='')
 $ErrorActionPreference='Stop'
 $project=Split-Path $PSScriptRoot -Parent
 $OutputDir=[IO.Path]::GetFullPath($OutputDir)
@@ -7,7 +7,7 @@ $env:TEMP="$OutputDir\temp";$env:TMP=$env:TEMP
 $jar=(Get-ChildItem -LiteralPath $OpenCvJavaDir -Filter 'opencv-*.jar' -File).FullName
 $dll=(Get-ChildItem -LiteralPath "$OpenCvJavaDir\x64" -Filter 'opencv_java*.dll' -File).FullName
 $source=Join-Path $project 'app\src\main\java'
-$files=@('RecognitionWorker','VisualLocator','VisualAnchor','ReferenceAnchors','LayoutTransform') | ForEach-Object {"$source\cn\local\automation\$_.java"}
+$files=@('RecognitionWorker','VisualLocator','VisualAnchor','VisualTabStrip','ReferenceAnchors','LayoutTransform') | ForEach-Object {"$source\cn\local\automation\$_.java"}
 $files+=@('HuntVision','HuntGlyphs','FeedbackVision','MarchRowVision','HuntFlow','HuntMarches','PresetOrder','BearFlow','MarchFlow','MarchCount','ReferenceLayout','RallyOrder','CountdownDigits','CountdownVision','Matcher') | ForEach-Object {"$source\cn\local\winterbear\$_.java"}
 $layout=Get-Content -LiteralPath "$project\app\src\main\assets\reference\layout.json" -Raw | ConvertFrom-Json
 $values=@()
@@ -18,6 +18,14 @@ $values | Set-Content -LiteralPath "$OutputDir\layout.properties" -Encoding asci
 $files+=Get-ChildItem -LiteralPath "$PSScriptRoot\desktop" -Filter '*.java' -Recurse -File | Select-Object -ExpandProperty FullName
 & "$JavaHome\bin\javac.exe" -encoding UTF-8 -cp $jar -d "$OutputDir\classes" @files
 if($LASTEXITCODE -ne 0){throw 'Page checker compilation failed'}
+if($Suite -eq 'search'){
+    if(-not $SearchCases -or -not $SearchRecording){throw 'Search checks require annotated -SearchCases and -SearchRecording frame'}
+    & "$JavaHome\bin\java.exe" "-Djava.io.tmpdir=$OutputDir\temp" -cp "$OutputDir\classes;$jar" cn.local.winterbear.SearchLayoutCheck $dll "$project\app\src\main\assets" $SearchCases "$OutputDir\search-layout.log"
+    if($LASTEXITCODE -ne 0){throw 'Search layout regression failed'}
+    & "$JavaHome\bin\java.exe" "-Djava.io.tmpdir=$OutputDir\temp" -cp "$OutputDir\classes;$jar" cn.local.winterbear.SearchTransitionCheck $dll "$project\app\src\main\assets" $Fixtures $SearchRecording 2>&1 | Tee-Object -FilePath "$OutputDir\search-transition.log"
+    if($LASTEXITCODE -ne 0){throw 'Search transition regression failed'}
+    return
+}
 if($Suite -eq 'targeted'){
     if(-not $MarchFixtures){throw 'Targeted checks require -MarchFixtures with the private Xiaomi return sequence'}
     & "$JavaHome\bin\java.exe" "-Djava.io.tmpdir=$OutputDir\temp" -cp "$OutputDir\classes;$jar" cn.local.winterbear.BearCounterScaleCheck $dll "$project\app\src\main\assets" "$OutputDir\layout.properties" "$Fixtures\huawei-map.png" "$MarchFixtures\xiaomi-returning.jpg" 2>&1 | Tee-Object -FilePath "$OutputDir\bear-counter.log"

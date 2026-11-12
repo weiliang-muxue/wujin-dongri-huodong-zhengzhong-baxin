@@ -159,7 +159,7 @@ public class HuntFlowTest {
     long now=1000;
     HuntFlow create(Mode m,int cap,int cans){HuntFlow f=new HuntFlow(new Options(m,m==Mode.GIANT?8:30,cap,cans));f.start(now);return f;}
     Frame map(int n){Frame f=new Frame();f.page=Page.MAP;f.used=n;if(n>=0){f.marches=new HuntMarches.Row[n];for(int i=0;i<n;i++)f.marches[i]=new HuntMarches.Row(i*0x9e3779b97f4a7c15L,3600+i*1800-(int)((now+2000)/1000));}return f;}
-    static Frame search(Mode m,int n){Frame f=new Frame();f.page=Page.SEARCH;f.category=m.ordinal();f.level=n;return f;}
+    static Frame search(Mode m,int n){Frame f=new Frame();f.width=540;f.height=1200;f.page=Page.SEARCH;f.category=m.ordinal();f.level=n;f.point(Kind.CATEGORY,300,950);return f;}
     static Frame form(){Frame f=new Frame();f.page=Page.FORMATION;java.util.Arrays.fill(f.presets,true);return f;}
     static Frame page(Page p,int level){Frame f=new Frame();f.page=p;f.level=level;return f;}
     static Frame energy(int stock,int stamina){Frame f=page(Page.ENERGY,-1);f.stock=stock;f.energy=stamina;return f;}
@@ -204,6 +204,23 @@ public class HuntFlowTest {
     @Test public void staleFrameCannotClick(){HuntFlow f=create(Mode.BEAST,6,0);Frame a=map(0);a.age=4001;assertEquals(Kind.WAIT,see(f,a).kind);assertEquals(Phase.MAP,f.phase);}
     @Test public void levelAdjustmentsAreObserved(){HuntFlow f=create(Mode.GIANT,1,0);enter(f,0);click(f,search(Mode.GIANT,7),Kind.MORE);click(f,search(Mode.GIANT,8),Kind.SEARCH);}
     @Test public void cannotSearchWrongCategory(){HuntFlow f=create(Mode.GIANT,1,0);enter(f,0);click(f,search(Mode.BEAST,8),Kind.CATEGORY);assertEquals(Phase.SEARCH,f.phase);}
+    @Test public void hiddenOrAmbiguousCategoryWaitsWithoutClickingAnotherTab(){
+        for(Mode mode:Mode.values()){
+            HuntFlow f=create(mode,1,100);enter(f,0);
+            Frame unknown=search(mode,8);unknown.category=-1;unknown.point(Kind.CATEGORY,0,0);
+            for(int i=0;i<4;i++)assertEquals(Kind.WAIT,see(f,unknown).kind);
+            unknown.point(Kind.CATEGORY,420,950);click(f,unknown,Kind.CATEGORY);
+            click(f,search(mode,f.options.level),Kind.SEARCH);
+            assertEquals(0,f.cansUsed);assertEquals(0,f.submitted);
+        }
+    }
+    @Test public void selectingAnEventNeverAuthorizesSearchEvenIfLevelMatches(){
+        for(Mode mode:Mode.values()){
+            HuntFlow f=create(mode,1,0);enter(f,0);Frame event=search(mode,f.options.level);event.category=-1;
+            click(f,event,Kind.CATEGORY);assertEquals(Phase.SEARCH,f.phase);
+            click(f,search(mode,f.options.level),Kind.SEARCH);
+        }
+    }
     @Test public void stuckLevelPausesInsteadOfClickingForever(){HuntFlow f=create(Mode.BEAST,1,0);enter(f,0);for(int i=0;i<3;i++)click(f,search(Mode.BEAST,29),Kind.MORE);assertEquals(Kind.STOP,see(f,search(Mode.BEAST,29)).kind);}
     @Test public void wrongTargetLevelNeverAttacked(){HuntFlow f=create(Mode.BEAST,1,0);enter(f,0);click(f,search(Mode.BEAST,30),Kind.SEARCH);assertEquals(Kind.STOP,see(f,page(Page.BEAST,29)).kind);}
     @Test public void wrongTargetTypeNeverAttacked(){HuntFlow f=create(Mode.BEAST,1,0);enter(f,0);click(f,search(Mode.BEAST,30),Kind.SEARCH);assertEquals(Kind.WAIT,see(f,page(Page.GIANT,30)).kind);}

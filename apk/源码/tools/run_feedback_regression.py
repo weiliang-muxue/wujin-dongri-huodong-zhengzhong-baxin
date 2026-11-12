@@ -22,11 +22,12 @@ p.add_argument('--manual-navigation-fixtures',type=Path,help='Private video-315.
 p.add_argument('--return-fixtures',type=Path,help='Private Xiaomi rally / returning / returned screenshots')
 p.add_argument('--timer-fixtures',type=Path,help='39 exported march timer strips and timers.tsv from MarchTrackingScaleCheck')
 p.add_argument('--loop-fixtures',type=Path,help='Full map pipeline recording fixtures exported by HuntLoopReplayCheck')
+p.add_argument('--search-fixtures',type=Path,help='Private search row variants and independent .properties annotations')
 p.add_argument('--paging-fixtures',type=Path,help='Private short-countdown recording frames')
 p.add_argument('--restart-fixtures',type=Path,help='Private end/reopen recording frames')
 p.add_argument('--restart-start-index',type=int,choices=range(5),default=0,help='Resume at a size group after a recorded partial run')
 p.add_argument('--opencv-threads',type=int,choices=range(9),default=0,help='OpenCV test process thread count; 0 uses its default')
-p.add_argument('--suite',action='append',choices=['core','session','presets','scale','restart','bullseye','manual-navigation','march-presence','adaptive','huawei','huawei-bear','direct','reported','marches','return','march-timers','loop','paging','overlay','hunt','feedback','countdown','compat'],help='Run selected suites; default runs every supplied suite')
+p.add_argument('--suite',action='append',choices=['core','session','presets','scale','restart','bullseye','manual-navigation','march-presence','adaptive','huawei','huawei-bear','direct','reported','marches','return','march-timers','loop','search','paging','overlay','hunt','feedback','countdown','compat'],help='Run selected suites; default runs every supplied suite')
 p.add_argument('--adaptive-bear-only',action='store_true')
 p.add_argument('--adaptive-start-index',type=int,choices=range(11),default=0,help='First hunt page, or first of three bear pages with --adaptive-bear-only')
 p.add_argument('--adaptive-end-index',type=int,choices=range(1,12),default=11,help='Exclusive final adaptive page; bear-only default includes all three pages')
@@ -44,6 +45,7 @@ if a.suite and 'march-timers' in a.suite and not a.timer_fixtures:p.error('March
 if a.suite and 'manual-navigation' in a.suite and not a.manual_navigation_fixtures:p.error('Manual navigation checks require --manual-navigation-fixtures')
 if a.suite and 'march-presence' in a.suite and not a.return_fixtures:p.error('March presence checks require --return-fixtures')
 if a.suite and 'loop' in a.suite and not a.loop_fixtures:p.error('Full map checks require --loop-fixtures')
+if a.suite and 'search' in a.suite and not a.search_fixtures:p.error('Search checks require --search-fixtures')
 if a.bullseye_zoom_only and a.bullseye_button_only:p.error('Select either bullseye zoom or button checks')
 if a.adaptive_layouts and not (a.hunt_fixtures and a.huawei_fixtures):p.error('Adaptive layouts require hunt and Huawei fixtures')
 root=Path(__file__).resolve().parents[1];a.output.mkdir(parents=True,exist_ok=True)
@@ -94,6 +96,10 @@ if a.paging_fixtures:
     for second in (6,12,18):
         name=f'paging-{second}.png'
         (bundle/'fixtures'/name).write_bytes((a.paging_fixtures/name).read_bytes())
+if a.search_fixtures:
+    target=bundle/'search-fixtures';target.mkdir(exist_ok=True)
+    for name in ('event-present-1.0','event-present-0.98','event-removed-1.0','giant-first-1.02','event-selected','giant-selected','plus-enabled-1.0','minus-disabled-1.02'):
+        for extension in ('.png','.properties'):(target/(name+extension)).write_bytes((a.search_fixtures/(name+extension)).read_bytes())
 if a.restart_fixtures:
     if not a.hunt_fixtures:p.error('Restart checks also need the original hunt fixtures')
     for name in ('restart-map','restart-search','restart-paused-search'):
@@ -158,6 +164,9 @@ with (a.output/'android-feedback-runtime.txt').open('w',encoding='utf-8') as log
     if a.loop_fixtures and wanted('loop'):
         result=run('HuntLoopRuntimeCheck',f'{remote}/lib {remote}/loop-fixtures {remote}/assets')
         if 'ANDROID FULL LOOP PASS: 6 ' not in result:raise RuntimeError('Full map loop result missing/incomplete')
+    if a.search_fixtures and wanted('search'):
+        result=run('SearchLayoutRuntimeCheck',f'{remote}/lib {remote}/search-fixtures {remote}/assets')
+        if 'ANDROID SEARCH LAYOUT PASS: 8;' not in result:raise RuntimeError('Search layout result missing/incomplete')
     if a.adaptive_layouts and wanted('adaptive'):
         part='bear' if a.adaptive_bear_only else 'hunt' if a.adaptive_hunt_only else 'all'
         result=run('AdaptiveRuntimeCheck',f'{remote}/lib {remote}/fixtures {remote}/assets {remote}/adaptive-calibration {part} {a.adaptive_start_index} {a.adaptive_end_index}')

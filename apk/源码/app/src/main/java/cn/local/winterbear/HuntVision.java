@@ -3,6 +3,7 @@ package cn.local.winterbear;
 import android.graphics.Bitmap;
 import cn.local.automation.VisualLocator;
 import cn.local.automation.VisualAnchor;
+import cn.local.automation.VisualTabStrip;
 import android.graphics.BitmapFactory;
 import android.graphics.Rect;
 import java.io.InputStream;
@@ -19,6 +20,7 @@ final class HuntVision implements AutoCloseable {
     interface Numbers { String text(Bitmap image,Rect region); }
     private final Map<String,Mat> templates=new HashMap<>();
     private final Map<String,Mat> mapColors=new HashMap<>();
+    private final Map<String,Mat> tabLabels=new java.util.LinkedHashMap<>();
     private final Numbers numbers;
     private final FeedbackVision feedback;
     private final HuntGlyphs glyphs;
@@ -41,6 +43,7 @@ final class HuntVision implements AutoCloseable {
             }finally{b.recycle();rgba.release();}
         }catch(Exception e){throw new IllegalStateException("狩猎识别素材不完整："+name,e);}
         Mat right=new Mat();Core.flip(templates.get("selection"),right,1);templates.put("selection_right",right);
+        tabLabels.put("beast",templates.get("tab_beast"));tabLabels.put("giant",templates.get("tab_giant"));
     }
     static int number(String text){String s=text==null?"":text.replaceAll("\\s","");return INTEGER.matcher(s).matches()?Integer.parseInt(s):-1;}
     static int level(String text){
@@ -110,6 +113,10 @@ final class HuntVision implements AutoCloseable {
             if(mapEntry!=null){
                 f.page=Page.MAP;point(f,Kind.OPEN,mapEntry,s);observeMarchPanel(image,s,gray,f);return f;
             }
+            // A clear search drawer has three independent, unobscured controls.
+            // Check it before unrelated modal pyramids, without treating the
+            // dimmed/covered drawer behind a target card as the foreground page.
+            if(observeSearch(image,s,gray,small,f,mode))return f;
             Point title=unique(gray,"energy_title",50,60,510,rows-250);
             Point label=title==null?null:near(gray,"energy_label",title,-160,30,-25,105,false);
             if(title!=null&&label!=null&&label.y-title.y>35*VisualAnchor.scale(title)&&label.y-title.y<100*VisualAnchor.scale(title)){
@@ -158,50 +165,73 @@ final class HuntVision implements AutoCloseable {
                     double[] red=redY>=0&&redX>=0&&redY<rows&&redX<540?small.get(redY,redX):null;f.lowEnergy=red!=null&&red[0]>red[1]*1.4;return f;
                 }
             }
-            VisualLocator.Match searchMatch=VisualLocator.uniqueAdaptive(gray,templates.get("search"),new org.opencv.core.Rect(70,rows/2,430,rows-rows/2),.88,true);
-            Point search=searchMatch==null?null:VisualAnchor.from(searchMatch,templates.get("search"));
-            int sx=search==null?270:(int)Math.round(search.x),sy=search==null?rows-50:(int)Math.round(search.y);
-            Point sheetAnchor=search==null?new Point(sx,sy):search;
-            Point beast=near(gray,"tab_beast",sheetAnchor,-245,-235,-155,-165,false),giant=near(gray,"tab_giant",sheetAnchor,-145,-235,-30,-165,false);
-            boolean sheet=search!=null&&beast!=null&&giant!=null;
-            {
-                // A target card can cover the Search label behind it. Its own
-                // orange action and level label identify the card independently.
-                Point rally=unique(gray,"rally_action",80,250,470,rows-30),attack=unique(gray,"attack_action",80,250,470,rows-30);
-                Point action=rally!=null&&attack==null?rally:attack!=null&&rally==null?attack:null;
-                // Short action labels provide a noisier scale estimate than the
-                // level prefix, especially after JPEG resampling. Keep enough
-                // relative vertical margin to contain the complete prefix.
-                Point prefix=action==null?null:near(gray,"level_label",action,-105,-205,30,-125,false);
-                if(prefix!=null&&orangeAction(small,action)){
-                    f.page=rally!=null?Page.GIANT:Page.BEAST;point(f,Kind.TARGET,action,s);
-                    double q=VisualAnchor.scale(prefix);
-                    f.level=glyphs.level(image,s,(int)Math.round(prefix.x+templates.get("level_label").cols()*q/2.),(int)Math.round(prefix.y),q,numbers);
-                    f.point(Kind.BACK,(int)(Math.max(8,action.x-250*q)*s),(int)((prefix.y-70*q)*s));return f;
-                }
-            }
-            if(sheet){
-                f.page=Page.SEARCH;point(f,Kind.SEARCH,search,s);
-                point(f,Kind.CATEGORY,mode==Mode.GIANT?giant:beast,s);
-                double q=VisualAnchor.scale(search);
-                Point selected=near(gray,"selection",search,-270,-290,-25,-230,false);
-                if(selected!=null)f.category=Math.abs(selected.x-(beast.x-51*q))<Math.abs(selected.x-(giant.x-51*q))?Mode.BEAST.ordinal():Mode.GIANT.ordinal();
-                else{
-                    Point corner=near(gray,"selection_right",VisualAnchor.at(search,beast.x,search.y),32,-290,73,-230,false);
-                    Point other=near(gray,"selection_right",VisualAnchor.at(search,giant.x,search.y),32,-290,73,-230,false);
-                    if((corner!=null)!=(other!=null))f.category=corner!=null?Mode.BEAST.ordinal():Mode.GIANT.ordinal();
-                }
-                Point less=near(gray,"level_minus",search,-250,-150,-180,-90,false);
-                Point more=near(gray,"level_plus",search,50,-150,125,-90,false);
-                if(less!=null&&(more==null||Math.abs(less.y-more.y)<8*q)){
-                    org.opencv.core.Rect value=VisualAnchor.near(VisualAnchor.at(search,less.x,less.y),373,-19,436,13);
-                    f.level=number(read(image,s,value.x,value.y,value.x+value.width,value.y+value.height));
-                    point(f,Kind.LESS,less,s);point(f,Kind.MORE,more,s);
-                }
-                f.point(Kind.BACK,(int)(search.x*s),(int)(Math.max(30,beast.y-200*q)*s));return f;
-            }
+            observeTarget(image,s,gray,small,f);
             return f;
         }finally{rgba.release();small.release();gray.release();}
+    }
+    private boolean observeTarget(Bitmap image,double scale,Mat gray,Mat rgba,Frame f){
+        // Target cards can leave all search controls visible behind them.
+        // Their own action + level pair always takes precedence over the drawer.
+        Point rally=unique(gray,"rally_action",80,250,470,gray.rows()-30),attack=unique(gray,"attack_action",80,250,470,gray.rows()-30);
+        Point action=rally!=null&&attack==null?rally:attack!=null&&rally==null?attack:null;
+        Point prefix=action==null?null:near(gray,"level_label",action,-105,-205,30,-125,false);
+        if(prefix==null||!orangeAction(rgba,action))return false;
+        f.page=rally!=null?Page.GIANT:Page.BEAST;point(f,Kind.TARGET,action,scale);
+        double q=VisualAnchor.scale(prefix);
+        f.level=glyphs.level(image,scale,(int)Math.round(prefix.x+templates.get("level_label").cols()*q/2.),(int)Math.round(prefix.y),q,numbers);
+        f.point(Kind.BACK,(int)(Math.max(8,action.x-250*q)*scale),(int)((prefix.y-70*q)*scale));return true;
+    }
+    private boolean observeSearch(Bitmap image,double scale,Mat gray,Mat rgba,Frame f,Mode mode){
+        Mat rgb=new Mat();
+        try{
+            Imgproc.cvtColor(rgba,rgb,Imgproc.COLOR_RGBA2RGB);
+            java.util.List<VisualLocator.Match> searchMatches=VisualLocator.findAdaptive(gray,templates.get("search"),
+                    new org.opencv.core.Rect(0,gray.rows()/2,gray.cols(),gray.rows()-gray.rows()/2),.88,2,true,
+                    m->blueSearchFill(rgb,VisualAnchor.from(m,templates.get("search"))));
+            Point search=searchMatches.size()==1?VisualAnchor.from(searchMatches.get(0),templates.get("search")):null;
+            if(search==null)return false;
+            // Plus/minus change between blue and grey at the level limits.
+            // Match their shape; the search button already confirms foreground colour.
+            Point less=near(gray,"level_minus",search,-270,-165,-155,-75,false);
+            Point more=near(gray,"level_plus",search,35,-165,145,-75,false);
+            double q=VisualAnchor.scale(search);
+            if(less==null||more==null||Math.abs(less.y-more.y)>12*q)return false;
+            if(observeTarget(image,scale,gray,rgba,f))return true;
+            org.opencv.core.Rect band=VisualAnchor.near(search,0,-255,1,-150);
+            // The row's vertical relationship is retained, but its entire visible
+            // width is searched. Seasonal entries may appear/disappear/reorder.
+            band.x=0;band.width=gray.cols();
+            Map<String,VisualTabStrip.Tab> tabs=VisualTabStrip.find(gray,tabLabels,band,
+                    templates.get("selection"),templates.get("selection_right"),.88);
+            if(tabs.isEmpty())return false;
+            VisualTabStrip.Tab beast=tabs.get("beast"),giant=tabs.get("giant");
+            if(beast!=null&&giant!=null&&Math.abs(beast.label.y-giant.label.y)>20*q)return false;
+            f.page=Page.SEARCH;point(f,Kind.SEARCH,search,scale);
+            VisualTabStrip.Tab desired=mode==Mode.GIANT?giant:beast;
+            if(desired!=null)point(f,Kind.CATEGORY,desired.label,scale);
+            boolean b=beast!=null&&beast.selected,g=giant!=null&&giant.selected;
+            if(b!=g)f.category=b?Mode.BEAST.ordinal():Mode.GIANT.ordinal();
+            org.opencv.core.Rect value=VisualAnchor.near(VisualAnchor.at(search,less.x,less.y),373,-19,436,13);
+            // Only read the level after the requested tab is confirmed selected.
+            // Otherwise this could read the previous category's level needlessly.
+            if(f.category==mode.ordinal())f.level=number(read(image,scale,value.x,value.y,value.x+value.width,value.y+value.height));
+            point(f,Kind.LESS,less,scale);point(f,Kind.MORE,more,scale);
+            double tabY=tabs.values().iterator().next().label.y;
+            f.point(Kind.BACK,(int)(search.x*scale),(int)(Math.max(30,tabY-200*q)*scale));
+            return true;
+        }finally{rgb.release();}
+    }
+    private boolean blueSearchFill(Mat rgb,Point label){
+        // Validate the solid button fill away from glyph edges. Comparing each
+        // text pixel's RGB would reintroduce sensitivity to 1 px raster changes.
+        double q=VisualAnchor.scale(label);int clear=0;
+        for(int dx:new int[]{-80,-60,60,80})for(int dy:new int[]{-6,0,6}){
+            int x=(int)Math.round(label.x+dx*q),y=(int)Math.round(label.y+dy*q);
+            if(x<0||y<0||x>=rgb.cols()||y>=rgb.rows())return false;
+            double[] color=rgb.get(y,x);
+            if(color[2]>185&&color[1]>110&&color[2]>color[0]*1.25)clear++;
+        }
+        return clear>=10;
     }
     private Point clearMapEntry(Mat gray,Mat rgba,int rows){
         Mat rgb=new Mat();
