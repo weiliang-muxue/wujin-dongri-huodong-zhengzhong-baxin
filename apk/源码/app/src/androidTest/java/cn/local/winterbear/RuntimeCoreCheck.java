@@ -21,6 +21,8 @@ public final class RuntimeCoreCheck {
         System.out.println("FIX VERIFIED ON ART: 179810/179810 usable; unreadable count stays unknown");
         Result tests=JUnitCore.runClasses(
             cn.local.automation.LayoutTransformTest.class,
+            cn.local.automation.RecognitionWorkerTest.class,
+            MarchClockTest.class,
             BearOverlayGuardTest.class,cn.local.bullseye.FloatingGuardTest.class,cn.local.bullseye.SessionGuardTest.class,
             ModeGateTest.class,MarchCountTest.class,MarchFlowTest.class,RallyOrderTest.class,PresetOrderTest.class,
             GestureGateTest.class,MarchSimulationTest.class,LiveMapCheckTest.class,

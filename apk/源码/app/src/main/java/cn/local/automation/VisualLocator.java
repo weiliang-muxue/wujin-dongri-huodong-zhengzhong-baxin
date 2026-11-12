@@ -18,6 +18,7 @@ public final class VisualLocator {
         Match(double x,double y,double confidence,int width,int height){this.x=x;this.y=y;this.confidence=confidence;this.width=width;this.height=height;}
     }
     public static List<Match> find(Mat image,Mat template,Rect area,double threshold,int limit,boolean soften){
+        RecognitionWorker.checkCancelled();
         List<Match> found=new ArrayList<>();
         int l=Math.max(0,area.x),t=Math.max(0,area.y),r=Math.min(image.cols(),area.x+area.width),b=Math.min(image.rows(),area.y+area.height);
         if(image.empty()||template.empty()||r-l<template.cols()||b-t<template.rows()||limit<1)return found;

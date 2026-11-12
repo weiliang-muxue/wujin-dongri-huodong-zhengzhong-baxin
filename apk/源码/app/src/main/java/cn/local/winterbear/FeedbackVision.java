@@ -39,13 +39,19 @@ final class FeedbackVision implements AutoCloseable {
     }
     private Point near(Mat screen,Mat template,Point anchor,double l,double t,double r,double b){return hit(screen,template,VisualAnchor.near(anchor,l,t,r,b));}
     void observe(Mat fullGray,BearFlow.Frame frame,int width,int height){
+        observe(fullGray,frame,width,height,false);
+    }
+    void observeErrors(Mat fullGray,BearFlow.Frame frame,int width,int height){
+        observe(fullGray,frame,width,height,true);
+    }
+    private void observe(Mat fullGray,BearFlow.Frame frame,int width,int height,boolean errorsOnly){
         if(!ReferenceLayout.supported(width,height))return;
         int rows=Math.round(height*324f/width);
-        observeAt(fullGray,frame,width,height,rows);
+        observeAt(fullGray,frame,width,height,rows,errorsOnly);
         int legacy=new ReferenceLayout(width,height).feedbackHeight();
-        if(rows!=legacy&&!frame.troopOverflow&&!frame.rallyTooLate)observeAt(fullGray,frame,width,height,legacy);
+        if(rows!=legacy&&!frame.troopOverflow&&!frame.rallyTooLate)observeAt(fullGray,frame,width,height,legacy,errorsOnly);
     }
-    private void observeAt(Mat fullGray,BearFlow.Frame frame,int width,int height,int rows){
+    private void observeAt(Mat fullGray,BearFlow.Frame frame,int width,int height,int rows,boolean errorsOnly){
         Mat small=new Mat();
         try{
             Imgproc.resize(fullGray,small,new Size(324,rows),0,0,Imgproc.INTER_AREA);
@@ -55,8 +61,10 @@ final class FeedbackVision implements AutoCloseable {
             if(warning!=null&&cancelButton!=null&&warning.x-cancelButton.x>20*warningScale&&warning.x-cancelButton.x<110*warningScale&&cancelButton.y-warning.y>40*warningScale&&cancelButton.y-warning.y<125*warningScale){
                 frame.rallyTooLate=true;frame.cancelX=(int)Math.round(cancelButton.x*width/324);frame.cancelY=(int)Math.round(cancelButton.y*height/rows);return;
             }
-            frame.worldMapChrome|=hit(small,city,new Rect(220,rows*2/3,104,rows-rows*2/3))!=null&&hit(small,search,new Rect(55,rows*2/3,150,rows-rows*2/3))!=null;
-            frame.formation|=formationAnchor(small,rows)!=null;
+            if(!errorsOnly){
+                frame.worldMapChrome|=hit(small,city,new Rect(220,rows*2/3,104,rows-rows*2/3))!=null&&hit(small,search,new Rect(55,rows*2/3,150,rows-rows*2/3))!=null;
+                frame.formation|=formationAnchor(small,rows)!=null;
+            }
             Mat[] bodies={body,bodyV2},buttons={button,buttonV2};
             for(int i=0;i<bodies.length;i++){
                 Point text=hit(small,bodies[i],new Rect(0,rows/4,324,rows/2));

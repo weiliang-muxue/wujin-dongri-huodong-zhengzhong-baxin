@@ -15,6 +15,11 @@ final class CountdownDigits {
         int minutes=d[2]*10+d[3],seconds=d[4]*10+d[5];
         return minutes<60&&seconds<60?(d[0]*10+d[1])*3600+minutes*60+seconds:-1;
     }
+    static int clockText(String text){
+        String s=text==null?"":text.replaceAll("\\s","").replace('：',':');
+        if(!s.matches("[0-9]{2}:[0-9]{2}:[0-9]{2}"))return -1;
+        return seconds(new int[]{s.charAt(0)-'0',s.charAt(1)-'0',s.charAt(3)-'0',s.charAt(4)-'0',s.charAt(6)-'0',s.charAt(7)-'0'});
+    }
     static final class Glyph {
         final int left,right,top,bottom;
         Glyph(int l,int r,int t,int b){left=l;right=r;top=t;bottom=b;}

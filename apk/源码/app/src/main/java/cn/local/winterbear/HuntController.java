@@ -9,6 +9,7 @@ import android.os.*;
 import android.view.*;
 import android.widget.*;
 import java.util.concurrent.*;
+import cn.local.automation.RecognitionWorker;
 import cn.local.bullseye.FloatingGuard.Box;
 import org.opencv.android.OpenCVLoader;
 import static cn.local.winterbear.HuntFlow.*;
@@ -17,7 +18,7 @@ import static cn.local.winterbear.HuntFlow.*;
 final class HuntController {
     private final BearService host;
     private final Handler main=new Handler(Looper.getMainLooper());
-    private final ExecutorService worker=Executors.newSingleThreadExecutor();
+    private final RecognitionWorker worker=new RecognitionWorker();
     private final WindowManager wm;
     private LinearLayout panel;private TextView status;private Button run;
     private OverlayFold folding;
@@ -42,6 +43,7 @@ final class HuntController {
     void pause(String message){
         if(flow!=null)flow.suspend(SystemClock.elapsedRealtime(),gestureDispatched);
         gestureDispatched=false;gestures.cancel();generation++;captureId++;busy=false;
+        worker.cancel();
         main.removeCallbacksAndMessages(null);update(message);
     }
     void stop(){
@@ -49,7 +51,7 @@ final class HuntController {
         dragging=false;folding=null;layout=null;bounds=null;revision++;
         overlayRecovery.reset();foregroundGate.reset();ownership=null;modeToken=0;
         HuntVision old=vision;CounterOcr oldOcr=ocr;vision=null;ocr=null;
-        if(!worker.isShutdown())worker.execute(()->{if(old!=null)old.close();if(oldOcr!=null)oldOcr.close();});
+        if(old!=null||oldOcr!=null)worker.dispose(()->{if(old!=null)old.close();if(oldOcr!=null)oldOcr.close();});
         flow=null;started=false;target="";
     }
     void destroy(){stop();destroyed=true;worker.shutdown();}
@@ -150,9 +152,11 @@ final class HuntController {
                 if(copy==null){busy=false;pause("截图读取失败，请重试");return;}
                 Paint paint=new Paint();paint.setColor(Color.BLACK);new Canvas(copy).drawRect(mask.left,mask.top,mask.right,mask.bottom,paint);
                 final Bitmap frame=copy;final Mode mode=flow.options.mode;
-                worker.execute(()->{
+                worker.submit(()->{
                     Frame observation=null;String failure=null;
-                    try{observation=reader.observe(frame,mode);}catch(Exception e){android.util.Log.e("WinterHunt","识别失败",e);failure="识别失败："+e.getClass().getSimpleName();}finally{frame.recycle();}
+                    try{observation=reader.observe(frame,mode);RecognitionWorker.checkCancelled();}
+                    catch(CancellationException e){return;}
+                    catch(Exception e){android.util.Log.e("WinterHunt","识别失败",e);failure="识别失败："+e.getClass().getSimpleName();}
                     final Frame f=observation;final String error=failure;
                     main.post(()->{
                         if(id!=captureId||token!=generation||!owns())return;busy=false;
@@ -167,7 +171,7 @@ final class HuntController {
                         if(a.kind==Kind.WAIT){later(800);return;}if(a.kind==Kind.STOP)return;
                         gesture(a,f,token,viewRevision,at,rotation);
                     });
-                });
+                },frame::recycle);
             }
             @Override public void onFailure(int code){if(id==captureId&&token==generation){busy=false;pause("截图失败（"+code+"）");}}
         });}catch(Exception e){busy=false;pause("无法读取游戏画面");}

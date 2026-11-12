@@ -21,11 +21,12 @@ p.add_argument('--bullseye-button-only',action='store_true',help='Run upper-page
 p.add_argument('--manual-navigation-fixtures',type=Path,help='Private video-315.png rally list for manual calibration navigation checks')
 p.add_argument('--return-fixtures',type=Path,help='Private Xiaomi rally / returning / returned screenshots')
 p.add_argument('--timer-fixtures',type=Path,help='39 exported march timer strips and timers.tsv from MarchTrackingScaleCheck')
+p.add_argument('--loop-fixtures',type=Path,help='Full map pipeline recording fixtures exported by HuntLoopReplayCheck')
 p.add_argument('--paging-fixtures',type=Path,help='Private short-countdown recording frames')
 p.add_argument('--restart-fixtures',type=Path,help='Private end/reopen recording frames')
 p.add_argument('--restart-start-index',type=int,choices=range(5),default=0,help='Resume at a size group after a recorded partial run')
 p.add_argument('--opencv-threads',type=int,choices=range(9),default=0,help='OpenCV test process thread count; 0 uses its default')
-p.add_argument('--suite',action='append',choices=['core','session','presets','scale','restart','bullseye','manual-navigation','march-presence','adaptive','huawei','huawei-bear','direct','reported','marches','return','march-timers','paging','overlay','hunt','feedback','countdown','compat'],help='Run selected suites; default runs every supplied suite')
+p.add_argument('--suite',action='append',choices=['core','session','presets','scale','restart','bullseye','manual-navigation','march-presence','adaptive','huawei','huawei-bear','direct','reported','marches','return','march-timers','loop','paging','overlay','hunt','feedback','countdown','compat'],help='Run selected suites; default runs every supplied suite')
 p.add_argument('--adaptive-bear-only',action='store_true')
 p.add_argument('--adaptive-start-index',type=int,choices=range(11),default=0,help='First hunt page, or first of three bear pages with --adaptive-bear-only')
 p.add_argument('--adaptive-end-index',type=int,choices=range(1,12),default=11,help='Exclusive final adaptive page; bear-only default includes all three pages')
@@ -42,6 +43,7 @@ if (a.reported_fixtures or a.dispatch_fixtures) and not a.hunt_fixtures:p.error(
 if a.suite and 'march-timers' in a.suite and not a.timer_fixtures:p.error('March timer checks require --timer-fixtures')
 if a.suite and 'manual-navigation' in a.suite and not a.manual_navigation_fixtures:p.error('Manual navigation checks require --manual-navigation-fixtures')
 if a.suite and 'march-presence' in a.suite and not a.return_fixtures:p.error('March presence checks require --return-fixtures')
+if a.suite and 'loop' in a.suite and not a.loop_fixtures:p.error('Full map checks require --loop-fixtures')
 if a.bullseye_zoom_only and a.bullseye_button_only:p.error('Select either bullseye zoom or button checks')
 if a.adaptive_layouts and not (a.hunt_fixtures and a.huawei_fixtures):p.error('Adaptive layouts require hunt and Huawei fixtures')
 root=Path(__file__).resolve().parents[1];a.output.mkdir(parents=True,exist_ok=True)
@@ -84,6 +86,10 @@ if a.timer_fixtures:
     for source in a.timer_fixtures.iterdir():
         if source.is_file() and (source.suffix=='.png' or source.name=='timers.tsv'):
             (target/source.name).write_bytes(source.read_bytes())
+if a.loop_fixtures:
+    target=bundle/'loop-fixtures';target.mkdir(exist_ok=True)
+    for name in ('map-2','map-8','zoom-0.98','zoom-1.02','covered-row','dimmed'):
+        (target/(name+'.png')).write_bytes((a.loop_fixtures/(name+'.png')).read_bytes())
 if a.paging_fixtures:
     for second in (6,12,18):
         name=f'paging-{second}.png'
@@ -149,6 +155,9 @@ with (a.output/'android-feedback-runtime.txt').open('w',encoding='utf-8') as log
     if a.return_fixtures and wanted('march-presence'):
         result=run('MarchPresenceRuntimeCheck',f'{remote}/lib {remote}/fixtures {remote}/assets')
         if 'ANDROID MARCH PRESENCE PASS: 6 ' not in result:raise RuntimeError('March presence result missing/incomplete')
+    if a.loop_fixtures and wanted('loop'):
+        result=run('HuntLoopRuntimeCheck',f'{remote}/lib {remote}/loop-fixtures {remote}/assets')
+        if 'ANDROID FULL LOOP PASS: 6 ' not in result:raise RuntimeError('Full map loop result missing/incomplete')
     if a.adaptive_layouts and wanted('adaptive'):
         part='bear' if a.adaptive_bear_only else 'hunt' if a.adaptive_hunt_only else 'all'
         result=run('AdaptiveRuntimeCheck',f'{remote}/lib {remote}/fixtures {remote}/assets {remote}/adaptive-calibration {part} {a.adaptive_start_index} {a.adaptive_end_index}')

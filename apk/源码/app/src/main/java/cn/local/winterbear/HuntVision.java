@@ -18,6 +18,7 @@ import static cn.local.winterbear.HuntFlow.*;
 final class HuntVision implements AutoCloseable {
     interface Numbers { String text(Bitmap image,Rect region); }
     private final Map<String,Mat> templates=new HashMap<>();
+    private final Map<String,Mat> mapColors=new HashMap<>();
     private final Numbers numbers;
     private final FeedbackVision feedback;
     private final HuntGlyphs glyphs;
@@ -29,6 +30,9 @@ final class HuntVision implements AutoCloseable {
             Bitmap b=BitmapFactory.decodeStream(in);Mat rgba=new Mat(),gray=new Mat();
             try{
                 Utils.bitmapToMat(b,rgba);Imgproc.cvtColor(rgba,gray,Imgproc.COLOR_RGBA2GRAY);
+                if(name.equals("map_city")||name.equals("map_search")){
+                    Mat rgb=new Mat();Imgproc.cvtColor(rgba,rgb,Imgproc.COLOR_RGBA2RGB);mapColors.put(name,rgb);
+                }
                 // The preset's editable name overlaps the bottom of the old sample.
                 // Match only the white flag; names and selected-border colors may vary.
                 if(name.startsWith("flag")){Mat symbol=gray.rowRange(0,15).clone();gray.release();gray=symbol;}
@@ -98,6 +102,14 @@ final class HuntVision implements AutoCloseable {
         Mat rgba=new Mat(),small=new Mat(),gray=new Mat();
         try{
             Utils.bitmapToMat(image,rgba);Imgproc.resize(rgba,small,new Size(540,rows),0,0,Imgproc.INTER_AREA);Imgproc.cvtColor(small,gray,Imgproc.COLOR_RGBA2GRAY);
+            // Most loop frames are the map. Identify its two independent controls
+            // before searching every modal/page pyramid. The opaque bottom bar's
+            // color rejects dimmed dialog backdrops. The translucent search icon
+            // uses shape, since the moving terrain changes its background color.
+            Point mapEntry=clearMapEntry(gray,small,rows);
+            if(mapEntry!=null){
+                f.page=Page.MAP;point(f,Kind.OPEN,mapEntry,s);observeMarchPanel(image,s,gray,f);return f;
+            }
             Point title=unique(gray,"energy_title",50,60,510,rows-250);
             Point label=title==null?null:near(gray,"energy_label",title,-160,30,-25,105,false);
             if(title!=null&&label!=null&&label.y-title.y>35*VisualAnchor.scale(title)&&label.y-title.y<100*VisualAnchor.scale(title)){
@@ -115,7 +127,7 @@ final class HuntVision implements AutoCloseable {
                 java.util.regex.Matcher m=Pattern.compile("^([0-9]{1,4})[/／]200$").matcher(energy);if(m.matches())f.energy=Integer.parseInt(m.group(1));
                 point(f,Kind.CLOSE,close,s);return f;
             }
-            BearFlow.Frame error=new BearFlow.Frame();feedback.observe(gray,error,w,h);
+            BearFlow.Frame error=new BearFlow.Frame();feedback.observeErrors(gray,error,w,h);
             if(error.troopOverflow||error.rallyTooLate){f.page=Page.ERROR;f.point(Kind.DISMISS,error.rallyTooLate?error.cancelX:error.dialogOkX,error.rallyTooLate?error.cancelY:error.dialogOkY);return f;}
             // The title and blue button both say 发起集结. Resolve the pair by
             // their relationship instead of requiring the title text to be unique.
@@ -188,13 +200,23 @@ final class HuntVision implements AutoCloseable {
                 }
                 f.point(Kind.BACK,(int)(search.x*s),(int)(Math.max(30,beast.y-200*q)*s));return f;
             }
-            Point city=unique(gray,"map_city",390,rows*2/3,540,rows),entry=unique(gray,"map_search",0,rows/2,120,rows-100);
-            if(city!=null&&entry!=null&&city.x-entry.x>300&&city.y-entry.y>150&&city.y-entry.y<450){
-                f.page=Page.MAP;point(f,Kind.OPEN,entry,s);
-                observeMarchPanel(image,s,gray,f);
-            }
             return f;
         }finally{rgba.release();small.release();gray.release();}
+    }
+    private Point clearMapEntry(Mat gray,Mat rgba,int rows){
+        Mat rgb=new Mat();
+        try{
+            Imgproc.cvtColor(rgba,rgb,Imgproc.COLOR_RGBA2RGB);
+            Point city=mapControl(gray,rgb,"map_city",new org.opencv.core.Rect(390,rows*2/3,150,rows-rows*2/3));
+            if(city==null)return null;
+            Point entry=unique(gray,"map_search",0,rows/2,120,rows-100);
+            return entry!=null&&city.x-entry.x>300&&city.y-entry.y>150&&city.y-entry.y<450?entry:null;
+        }finally{rgb.release();}
+    }
+    private Point mapControl(Mat gray,Mat rgb,String name,org.opencv.core.Rect area){
+        java.util.List<VisualLocator.Match> found=VisualLocator.findAdaptive(gray,templates.get(name),area,.88,2,true,
+                m->VisualLocator.sameColor(rgb,mapColors.get(name),m,25));
+        return found.size()==1?VisualAnchor.from(found.get(0),templates.get(name)):null;
     }
     /** Called after map identification; the list has its own movable header anchor. */
     void observeMarchPanel(Bitmap image,double scale,Mat gray,Frame f){
@@ -209,7 +231,7 @@ final class HuntVision implements AutoCloseable {
             Mat canonical=gray;
             try{
                 if(Math.abs(q-1)>.001){canonical=new Mat();Imgproc.resize(gray,canonical,new Size(),1/q,1/q,Imgproc.INTER_AREA);}
-                f.marches=glyphs.marches(image,scale*q,(int)Math.round(march.y/q),f.used,(int)Math.round(march.x/q-52),canonical);
+                f.marches=glyphs.marches(image,scale*q,(int)Math.round(march.y/q),f.used,(int)Math.round(march.x/q-52),canonical,numbers);
             }finally{if(canonical!=gray)canonical.release();}
         }
         else{
@@ -217,5 +239,5 @@ final class HuntVision implements AutoCloseable {
             f.marchPanelAbsent=true;
         }
     }
-    public void close(){for(Mat m:templates.values())m.release();feedback.close();glyphs.close();}
+    public void close(){for(Mat m:templates.values())m.release();for(Mat m:mapColors.values())m.release();feedback.close();glyphs.close();}
 }

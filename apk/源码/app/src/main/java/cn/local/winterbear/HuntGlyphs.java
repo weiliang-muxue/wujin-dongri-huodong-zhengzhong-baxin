@@ -65,7 +65,7 @@ final class HuntGlyphs implements AutoCloseable {
             return HuntVision.number(ocr.text(crop,number));
         }finally{crop.recycle();}
     }
-    HuntMarches.Row[] marches(Bitmap image,double scale,int header,int count,int dx,org.opencv.core.Mat grayImage){
+    HuntMarches.Row[] marches(Bitmap image,double scale,int header,int count,int dx,org.opencv.core.Mat grayImage,HuntVision.Numbers numbers){
         if(count==0)return new HuntMarches.Row[0];
         if(count<0||count>6)return null;
         List<MarchRowVision.Marker> markers=icons.find(grayImage,header,dx);
@@ -79,6 +79,8 @@ final class HuntGlyphs implements AutoCloseable {
             }
             return result;
         }
+        HuntMarches.Row[] aligned=alignedRows(image,scale,header,count,dx,markers,numbers);
+        if(aligned!=null)return aligned;
         // Unknown icon styles retain the previous timer reader. Known resource
         // anchors still prevent those rows from inheriting a returned hunt slot.
         int top=header+25,height=Math.min(345,(int)(image.getHeight()/scale)-top);
@@ -104,10 +106,78 @@ final class HuntGlyphs implements AutoCloseable {
             return null; // A partially read list never releases an owned slot.
         }finally{strip.recycle();}
     }
+    /** Recover a missing icon only from a consistent visible row grid AND its clock. */
+    private HuntMarches.Row[] alignedRows(Bitmap image,double scale,int header,int count,int dx,List<MarchRowVision.Marker> markers,HuntVision.Numbers numbers){
+        if(markers.size()<2||markers.size()>=count)return null;
+        int pitch=Integer.MAX_VALUE;
+        for(int i=1;i<markers.size();i++)pitch=Math.min(pitch,markers.get(i).y-markers.get(i-1).y);
+        if(pitch<35||pitch>65)return null;
+        HuntMarches.Row[] accepted=null;boolean ocrUsed=false;
+        for(int firstSlot=0;firstSlot<count;firstSlot++){
+            int first=markers.get(0).y-firstSlot*pitch;
+            if(first-header<28||first-header>65)continue;
+            MarchRowVision.Marker[] grid=new MarchRowVision.Marker[count];boolean valid=true;
+            for(MarchRowVision.Marker marker:markers){
+                int slot=Math.round((marker.y-first)/(float)pitch);
+                if(slot<0||slot>=count||grid[slot]!=null||Math.abs(marker.y-(first+slot*pitch))>pitch*.15){valid=false;break;}
+                grid[slot]=marker;
+            }
+            if(!valid)continue;
+            HuntMarches.Row[] rows=new HuntMarches.Row[count];
+            for(int i=0;i<count;i++){
+                int center=grid[i]==null?first+i*pitch:grid[i].y;
+                int seconds;
+                if(grid[i]!=null)seconds=timer(image,scale,center,dx);
+                else{
+                    // Rasterization can move a timer stroke by a couple of pixels.
+                    // Require two independently cropped readings to agree; a blank,
+                    // hidden or conflicting row cannot manufacture an empty slot.
+                    seconds=-1;int agreement=0;
+                    int radius=Math.max(1,(int)Math.ceil(pitch*.08));
+                    for(int dy=-radius;dy<=radius;dy++){
+                        int read=timer(image,scale,center+dy,dx);if(read<0)continue;
+                        if(seconds>=0&&seconds!=read){valid=false;break;}
+                        seconds=read;agreement++;
+                    }
+                    if(!valid)break;
+                    if(agreement<2){
+                        // One bounded numeric-only OCR fallback per frame. Never
+                        // queue OCR for every row: count + one clock fits the same
+                        // capture budget. A conflicting glyph reading still waits.
+                        if(ocrUsed){valid=false;break;}
+                        ocrUsed=true;
+                        int read=-1;
+                        for(int dy=-radius;dy<=radius;dy++){
+                            Bitmap strip=region(image,scale,55+dx,center+dy+1,145+dx,center+dy+20,180,38);
+                            if(strip==null)continue;
+                            boolean visible;
+                            try{
+                                visible=hasTextContrast(timerGray(strip));
+                                if(visible)read=CountdownDigits.clockText(numbers.text(strip,new Rect(0,0,strip.getWidth(),strip.getHeight())));
+                            }finally{strip.recycle();}
+                            if(visible)break; // At most one OCR clock request.
+                        }
+                        if(read<0||(seconds>=0&&read!=seconds)){valid=false;break;}
+                        seconds=read;
+                    }
+                }
+                rows[i]=new HuntMarches.Row(icon(image,scale,center,dx),seconds,grid[i]==null?HuntMarches.Type.UNKNOWN:grid[i].type);
+            }
+            if(valid){if(accepted!=null)return null;accepted=rows;}
+        }
+        return accepted;
+    }
     private int timer(Bitmap image,double scale,int center,int dx){
         Bitmap strip=region(image,scale,55+dx,center+1,145+dx,center+20,180,38);
         if(strip==null)return -1;
         try{return adaptiveTimer(strip);}finally{strip.recycle();}
+    }
+    private static boolean hasTextContrast(byte[] gray){
+        int light=0,dark=0;
+        for(byte sample:gray){int value=sample&255;if(value>160)light++;if(value<80)dark++;}
+        // Only avoid wasting OCR on blank/covered crops. Text recognition and
+        // strict HH:MM:SS parsing decide validity; no pixel-perfect colon gate.
+        return light>=gray.length*.01&&light<=gray.length*.45&&dark>=gray.length*.20;
     }
     private int adaptiveTimer(Bitmap strip){
         int originalWidth=strip.getWidth(),originalHeight=strip.getHeight();byte[] gray=timerGray(strip);

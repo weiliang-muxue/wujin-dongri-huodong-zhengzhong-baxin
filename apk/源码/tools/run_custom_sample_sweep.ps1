@@ -7,7 +7,7 @@ $env:TEMP="$OutputDir\temp";$env:TMP=$env:TEMP
 $jar=(Get-ChildItem -LiteralPath $OpenCvJavaDir -Filter 'opencv-*.jar' -File).FullName
 $dll=(Get-ChildItem -LiteralPath "$OpenCvJavaDir\x64" -Filter 'opencv_java*.dll' -File).FullName
 $source=Join-Path $project 'app\src\main\java'
-$files=@('VisualLocator','VisualAnchor','ReferenceAnchors','LayoutTransform') | ForEach-Object {"$source\cn\local\automation\$_.java"}
+$files=@('RecognitionWorker','VisualLocator','VisualAnchor','ReferenceAnchors','LayoutTransform') | ForEach-Object {"$source\cn\local\automation\$_.java"}
 $files+=@('HuntVision','HuntGlyphs','FeedbackVision','MarchRowVision','HuntFlow','HuntMarches','PresetOrder','BearFlow','MarchFlow','MarchCount','ReferenceLayout','RallyOrder','CountdownDigits','CountdownVision','Matcher') | ForEach-Object {"$source\cn\local\winterbear\$_.java"}
 $layout=Get-Content -LiteralPath "$project\app\src\main\assets\reference\layout.json" -Raw | ConvertFrom-Json
 $values=@()

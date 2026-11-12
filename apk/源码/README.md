@@ -4,9 +4,19 @@ JDK 17、Gradle 8.9、Android SDK 35 extension 15、Build Tools 35.0.0。设置 
 
 构建：`gradlew.bat :app:testEngine :app:assembleRelease :app:lintRelease`。
 
-将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.1.13.apk。
+将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.1.14.apk。
 
-检查成品使用 `python tools/verify_android_package.py ../无尽冬日助手-2.1.13.apk --version 2.1.13`。
+检查成品使用 `python tools/verify_android_package.py ../无尽冬日助手-2.1.14.apk --version 2.1.14`。
+
+### 地图循环与取消识别（2.1.14）
+
+`HuntVision` 先以地图的两个独立控件和底部不透明文字颜色确认无遮挡地图，再读取整条行军列表，省去每帧搜索所有弹窗和编队。其他页面继续原有识别顺序。部分图标漏读时，行距由已识别图标推导，缺失位置必须读到完整计时；每帧最多增加一次数字 OCR。未知行仍保留 UNKNOWN 类型，遮挡或冲突不会凭空释放任务额度。
+
+`RecognitionWorker` 共用取消与帧所有权逻辑。巨兽、野兽暂停会中断旧识别，在模板扫描边界和 OCR 等待中响应取消；排队帧立即释放，正在运行的帧在结束后释放一次。关闭原生图像资源排在运行任务之后，避免提前释放。继续任务仍保留罐头计数与已派队伍。4 秒截图时效、6 秒识别看门狗和数字 OCR 的 1600 毫秒等待限制保持不变。
+
+`HuntLoopReplayCheck` 使用完整生产 `HuntVision` 回放录屏地图帧、98%／102% 缩放连续帧、缺失行及暗化弹窗背景，并接入两种狩猎流程检查启动与暂停恢复。总队数及备用时钟 OCR 为标注输入，不能当作 OCR 准确率或手机性能实测。导出的六张图可交给 `run_feedback_regression.py --suite loop --loop-fixtures <输出目录> ...` 使用实际 APK DEX／Android Bitmap 回放。
+
+`run_loop_ocr.py --adb <adb> --serial emulator-5580 --fixtures <上述输出目录> --output <E盘日志目录>` 安装模拟器 Debug／AndroidTest 包，单独测试导出的真实计时裁片。它使用同一捆绑 OCR 模型与缩放方式，软件模拟器准确率检查最多等待 60 秒，同时另报正式 1600 毫秒调用的返回情况；不能将测试用等待时间冒充正式版响应时间。该脚本仅允许专用模拟器，不开无障碍、不发送游戏操作，私人裁片不提交 Git。
 
 ### 整页缩放回归
 

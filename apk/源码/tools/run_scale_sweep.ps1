@@ -19,7 +19,7 @@ $dlls=@(Get-ChildItem -LiteralPath "$OpenCvJavaDir\x64" -Filter 'opencv_java*.dl
 if($jars.Count -ne 1 -or $dlls.Count -ne 1){throw 'Expected one OpenCV Java jar and matching x64 native library'}
 $source=Join-Path $project 'app\src\main\java\cn\local\automation'
 & "$JavaHome\bin\javac.exe" -encoding UTF-8 -cp $jars[0].FullName -d "$OutputDir\classes" `
-    "$source\VisualLocator.java" "$source\ReferenceAnchors.java" "$source\LayoutTransform.java" `
+    "$source\RecognitionWorker.java" "$source\VisualLocator.java" "$source\ReferenceAnchors.java" "$source\LayoutTransform.java" `
     "$PSScriptRoot\java\cn\local\automation\ScaleSweepCheck.java"
 if($LASTEXITCODE -ne 0){throw 'Scale checker compilation failed'}
 & "$JavaHome\bin\java.exe" "-Djava.io.tmpdir=$OutputDir\temp" -cp "$OutputDir\classes;$($jars[0].FullName)" `

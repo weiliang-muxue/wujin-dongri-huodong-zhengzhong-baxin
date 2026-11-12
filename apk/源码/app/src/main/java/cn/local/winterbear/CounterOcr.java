@@ -18,6 +18,7 @@ final class CounterOcr implements AutoCloseable,Matcher.Numbers {
         return MarchCount.used(text(screenshot,region));
     }
     String text(Bitmap screenshot,Rect region){
+        cn.local.automation.RecognitionWorker.checkCancelled();
         if(region.width()<12||region.height()<12||region.left<0||region.top<0||region.right>screenshot.getWidth()||region.bottom>screenshot.getHeight())return "";
         Bitmap crop=Bitmap.createBitmap(screenshot,region.left,region.top,region.width(),region.height());
         int w=Math.max(240,crop.getWidth());
@@ -29,7 +30,8 @@ final class CounterOcr implements AutoCloseable,Matcher.Numbers {
             task.addOnCompleteListener(Runnable::run,t->{if(scaled!=screenshot)scaled.recycle();});
             submitted=true;
             return Tasks.await(task,1600,TimeUnit.MILLISECONDS).getText();
-        }catch(Exception e){return "";}
+        }catch(InterruptedException e){Thread.currentThread().interrupt();throw new java.util.concurrent.CancellationException("OCR cancelled");}
+        catch(Exception e){return "";}
         finally{if(!submitted&&scaled!=screenshot&&!scaled.isRecycled())scaled.recycle();}
     }
     @Override public void close(){reader.close();}
