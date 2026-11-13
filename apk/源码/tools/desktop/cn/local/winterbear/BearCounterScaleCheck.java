@@ -46,7 +46,15 @@ public final class BearCounterScaleCheck {
                             +" expected="+expectedInk.left+","+expectedInk.top+","+expectedInk.right+","+expectedInk.bottom);
                     if(!ok)for(String key:new String[]{"march_anchor","march_anchor_core"})for(Matcher.Hit hit:matcher.find(key,new Rect(0,0,image.getWidth()*45/100,image.getHeight()/2),1))
                         System.out.println("  "+key+" x="+hit.x+" y="+hit.y+" width="+hit.width+" height="+hit.height+" confidence="+hit.confidence);
-                }finally{image.recycle();}
+                }
+                if(zoom==1.1){
+                    var g=image.image.createGraphics();g.setColor(new java.awt.Color(0,0,0,150));g.fillRect(0,0,image.getWidth(),image.getHeight());g.dispose();
+                    try(Matcher matcher=new Matcher(new Config(assets,layout,image.getWidth(),image.getHeight()),annotated)){
+                        matcher.frame(image);boolean ok=!matcher.observe().map;checks++;if(!ok)failures++;
+                        System.out.println((ok?"PASS ":"FAIL ")+names[i]+" cropped-city dim map must not accept background");
+                    }
+                }
+                image.recycle();
             }
             base.recycle();
         }

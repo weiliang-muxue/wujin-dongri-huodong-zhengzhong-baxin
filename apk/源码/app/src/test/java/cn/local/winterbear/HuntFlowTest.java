@@ -4,6 +4,26 @@ import static org.junit.Assert.*;
 import static cn.local.winterbear.HuntFlow.*;
 
 public class HuntFlowTest {
+    @Test public void switchingFromBearReturnsFromAllianceBeforeStartingHunt(){
+        for(Mode mode:Mode.values()){
+            HuntFlow flow=new HuntFlow(new Options(mode,8,1,100));flow.start(0);
+            Frame f=new Frame();f.page=Page.ALLIANCE;
+            assertEquals(Kind.BACK,flow.next(f,1000).kind);flow.complete(true,1000);
+            assertEquals(Phase.MAP,flow.phase);assertEquals(0,flow.submitted);assertEquals(0,flow.cansUsed);
+        }
+    }
+    @Test public void switchingClosesOldEnergyWindowWithoutSpendingNewBudget(){
+        HuntFlow flow=new HuntFlow(new Options(Mode.GIANT,8,1,100));flow.start(0);
+        Frame f=new Frame();f.page=Page.ENERGY;f.point(Kind.CLOSE,900,500);f.stock=100;f.energy=0;
+        assertEquals(Kind.BACK,flow.next(f,1000).kind);flow.complete(true,1000);
+        assertEquals(Phase.MAP,flow.phase);assertEquals(0,flow.cansUsed);assertEquals(900,f.points[Kind.BACK.ordinal()][0]);
+    }
+    @Test public void switchingDoesNotKeepClickingAnUnresponsiveBackButton(){
+        HuntFlow flow=new HuntFlow(new Options(Mode.GIANT,8,1,0));flow.start(0);
+        Frame f=new Frame();f.page=Page.ALLIANCE;
+        for(int i=1;i<=6;i++){assertEquals(Kind.BACK,flow.next(f,i*2000).kind);flow.complete(true,i*2000);}
+        assertEquals(Kind.STOP,flow.next(f,14000).kind);
+    }
     @Test public void huntTargetsUseTheirCapturedDisplayBounds(){
         Frame frame=new Frame();frame.width=1152;frame.height=2376;
         // A bottom search button remains on the captured display even when the
@@ -239,7 +259,11 @@ public class HuntFlowTest {
     @Test public void noRepeatedUseWhenResultUnchanged(){HuntFlow f=create(Mode.GIANT,1,100);toFormation(f);click(f,form(),Kind.DEPLOY);click(f,energy(232,15),Kind.USE);assertEquals(Kind.WAIT,see(f,energy(232,15)).kind);now+=11000;assertEquals(Kind.STOP,see(f,energy(232,15)).kind);assertEquals(1,f.cansUsed);}
     @Test public void pauseResumePreservesCanBudgetAndPendingResult(){HuntFlow f=create(Mode.GIANT,1,100);toFormation(f);click(f,form(),Kind.DEPLOY);click(f,energy(232,15),Kind.USE);f.stop();f.resume(now);assertEquals(Kind.WAIT,see(f,energy(232,15)).kind);assertEquals(1,f.cansUsed);click(f,energy(231,25),Kind.USE);assertEquals(2,f.cansUsed);}
     @Test public void newSessionResetsBudget(){HuntFlow f=create(Mode.GIANT,1,100);f.cansUsed=98;f.stop();assertEquals(0,create(Mode.GIANT,1,100).cansUsed);}
-    @Test public void unexpectedEnergyPopupCannotConsume(){HuntFlow f=create(Mode.GIANT,1,100);assertEquals(Kind.STOP,see(f,energy(232,15)).kind);}
+    @Test public void unexpectedEnergyPopupCannotConsume(){
+        HuntFlow f=create(Mode.GIANT,1,100);assertEquals(Kind.BACK,see(f,energy(232,15)).kind);assertEquals(0,f.cansUsed);
+        HuntFlow selecting=create(Mode.GIANT,1,100);enter(selecting,0);
+        assertEquals(Kind.STOP,see(selecting,energy(232,15)).kind);assertEquals(0,selecting.cansUsed);
+    }
     @Test public void knownErrorReturnsMapWithoutClaimingSuccess(){HuntFlow f=create(Mode.GIANT,1,100);toFormation(f);click(f,form(),Kind.DEPLOY);click(f,page(Page.ERROR,-1),Kind.DISMISS);click(f,form(),Kind.BACK);see(f,map(0));assertEquals(0,f.submitted);assertEquals(0,f.nextPreset);}
     @Test public void bothModesContinueBeyondPreviousDurationLimits(){
         for(Mode mode:Mode.values())for(int minutes:new int[]{61,241,2880})for(int cans:new int[]{0,100}){

@@ -1,5 +1,5 @@
 <resources>
     <string name="app_name">无尽冬日助手</string>
-    <string name="app_version_label">无尽冬日助手 2.1.15 · 正中靶心</string>
+    <string name="app_version_label">无尽冬日助手 2.1.16 · 正中靶心</string>
     <string name="service_description">按你选择的活动，本地识别并操作打熊、正中靶心、巨兽集结或野兽集结。每次只运行一个任务，切换活动会停止当前操作。狩猎按所选等级、队列数与罐头额度执行。截图不上传，可随时暂停或停止。</string>
 </resources>

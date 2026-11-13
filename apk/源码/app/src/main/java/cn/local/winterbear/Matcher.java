@@ -31,6 +31,9 @@ final class Matcher implements AutoCloseable {
     String stage(){return stage;}
     private final FeedbackVision feedback;
     private final CountdownVision countdown;
+    private HuntVision navigation;
+    private boolean recoverToMap;
+    void recoverToMap(boolean value){recoverToMap=value;}
     Matcher(Config config) {
         this(config,new CounterOcr());
     }
@@ -87,8 +90,12 @@ final class Matcher implements AutoCloseable {
         }
         if(right<=left || bottom<=top) return hits;
         Mat expected=colorTemplates.get(key);
-        for(VisualLocator.Match m:VisualLocator.findAdaptive(gray,tpl,new org.opencv.core.Rect(left,top,right-left,bottom-top),config.threshold(),limit,false,
-                expected==null?null:candidate->VisualLocator.sameColor(color,expected,candidate,35)))
+        org.opencv.core.Rect area=new org.opencv.core.Rect(left,top,right-left,bottom-top);
+        java.util.function.Predicate<VisualLocator.Match> accepted=expected==null?null:candidate->VisualLocator.sameColor(color,expected,candidate,35);
+        List<VisualLocator.Match> matches=key.equals("join_reference")&&limit>2
+                ?VisualLocator.findRepeated(gray,tpl,area,config.threshold(),limit,false,accepted)
+                :VisualLocator.findAdaptive(gray,tpl,area,config.threshold(),limit,false,accepted);
+        for(VisualLocator.Match m:matches)
             hits.add(new Hit((int)Math.round(m.x/scale),(int)Math.round(m.y/scale),(int)Math.ceil(m.width/scale),(int)Math.ceil(m.height/scale),m.confidence));
         return hits;
     }
@@ -103,50 +110,57 @@ final class Matcher implements AutoCloseable {
     BearFlow.Frame observe() {
         stage="识别页面";
         BearFlow.Frame f=new BearFlow.Frame();
-        feedback.observe(gray,f,config.width(),config.height());
-        if(f.troopOverflow||f.rallyTooLate)return f;
+        if(recoverToMap){
+            if(navigation==null)navigation=new HuntVision(config::openAsset,(b,r)->"");
+            HuntFlow.Frame page=navigation.navigation(currentBitmap);
+            if(page.page==HuntFlow.Page.MAP)recoverToMap=false;
+            else if(page.page!=HuntFlow.Page.UNKNOWN){
+                HuntFlow.Kind action=page.page==HuntFlow.Page.ENERGY?HuntFlow.Kind.CLOSE:page.page==HuntFlow.Page.ERROR?HuntFlow.Kind.DISMISS:HuntFlow.Kind.BACK;
+                int[] point=page.points[action.ordinal()];
+                // Never enter a new activity through the previous activity's modal.
+                f.navigationBack=true;f.backX=point[0];f.backY=point[1];return f;
+            }
+        }
         int w=config.width(),height=config.height();
-        Hit header=locate("header",new Rect(0,0,w*3/4,height/2));
+        Hit header=locate("header",new Rect(0,0,w*3/4,height/2)),formation=null;
         f.header=header!=null;
-        Hit deploy=locate("deploy",new Rect(w/2,height/2,w,height));
-        f.deploy=deploy!=null;
-        if(deploy!=null) { f.deployX=deploy.x; f.deployY=deploy.y; }
-        Hit formation=locateFormation(new Rect(0,height/12,w*2/3,height*2/3));
-        f.formation=f.formation||formation!=null;
-        f.autoJoin=near("auto_join",config.p.getInt("auto_joinX",0),config.p.getInt("auto_joinY",0))!=null;
-        Hit march=nearConfigured("march_anchor");String marchKey="march_anchor";
-        // The march header moves with in-game scaling and top/bottom insets.
-        // Search the left upper half rather than cutting through its old row.
-        Rect marchArea=new Rect(0,0,(int)(w*.45),height/2);
-        if(march==null){
-            List<Hit> moved=find("march_anchor",marchArea,1);
-            if(!moved.isEmpty())march=moved.get(0);
+        // A recognised rally page has no map counters or preset flags. Avoid
+        // searching every absent template over this large screenshot.
+        if(f.header){
+            Hit tab=locate("rally_tab",new Rect(0,header.y,w/2,Math.min(height,header.y+w/3)));
+            if(tab!=null){f.rallyX=tab.x;f.rallyY=tab.y;f.rallyList=true;}
+            Hit back=locate("back",new Rect(0,0,w/3,height/2));
+            if(back!=null){f.backX=back.x;f.backY=back.y;}
+        }else{
+            if(navigation==null)navigation=new HuntVision(config::openAsset,(b,r)->"");
+            f.map=navigation.mapVisible(currentBitmap);
+            if(!f.map){
+                feedback.observe(gray,f,w,height);
+                if(f.troopOverflow||f.rallyTooLate)return f;
+                Hit deploy=locate("deploy",new Rect(w/2,height/2,w,height));
+                f.deploy=deploy!=null;
+                if(deploy!=null){f.deployX=deploy.x;f.deployY=deploy.y;}
+                formation=locateFormation(new Rect(0,height/12,w*2/3,height*2/3));
+                f.formation|=formation!=null;
+                Hit back=locate("back",new Rect(0,0,w/3,height/2));
+                if(back!=null){f.backX=back.x;f.backY=back.y;}
+                Hit world=locate("world",new Rect(w*2/3,height*2/3,w,height));
+                if(world!=null){f.worldX=world.x;f.worldY=world.y;}
+                Hit war=nearConfigured("war");if(war!=null){f.warX=war.x;f.warY=war.y;}
+            }
         }
-        if(march==null){
-            // Transparent map backgrounds vary by phone; retain the text and threshold,
-            // discarding only the surrounding background. Unreadable visible numbers must wait.
-            List<Hit> core=find("march_anchor_core",marchArea,1);
-            if(!core.isEmpty()){march=core.get(0);marchKey="march_anchor_core";}
-        }
-        boolean mapChrome=f.worldMapChrome||(locate("map_city",new Rect(w*2/3,height*2/3,w,height))!=null&&locate("alliance",new Rect(w/2,height*2/3,w,height))!=null);
-        f.map=!f.header&&!f.formation&&!f.deploy&&(march!=null||mapChrome);
-        if(f.map&&config.marchReady()){
-            stage="读取行军数量";
-            // Read the number even if the word anchor missed: a clear 6/6 always means full.
-            Rect count=marchCounter(march,marchKey);
-            f.marchUsed=counter.read(currentBitmap,count);
-        }
-        f.marchHidden=f.map&&march==null&&mapChrome&&!MarchCount.valid(f.marchUsed);
-        stage="识别页面入口";
-        Hit h=locate("back",new Rect(0,0,w/3,height/2));if(h!=null){f.backX=h.x;f.backY=h.y;}
-        h=locate("world",new Rect(w*2/3,height*2/3,w,height));if(h!=null){f.worldX=h.x;f.worldY=h.y;}
-        h=nearConfigured("war");if(h!=null){f.warX=h.x;f.warY=h.y;}
-        h=header==null?nearConfigured("rally_tab"):locate("rally_tab",new Rect(0,header.y,w/2,Math.min(height,header.y+w/3)));if(h!=null){f.rallyX=h.x;f.rallyY=h.y;}
-        f.rallyList=f.header&&h!=null;
         if(f.map){
-            List<Hit> shortcuts=find("shortcut",new Rect((int)(config.width()*.8),(int)(config.height()*.15),config.width(),(int)(config.height()*.8)),1);
+            Hit march=nearConfigured("march_anchor");String marchKey="march_anchor";
+            Rect area=new Rect(0,0,(int)(w*.45),height/2);
+            if(march==null){List<Hit> hits=find("march_anchor",area,1);if(!hits.isEmpty())march=hits.get(0);}
+            if(march==null){List<Hit> hits=find("march_anchor_core",area,1);if(!hits.isEmpty()){march=hits.get(0);marchKey="march_anchor_core";}}
+            if(config.marchReady()){stage="读取行军数量";f.marchUsed=counter.read(currentBitmap,marchCounter(march,marchKey));}
+            f.worldMapChrome=true;f.marchHidden=march==null&&!MarchCount.valid(f.marchUsed);
+            stage="识别地图入口";
+            List<Hit> shortcuts=find("shortcut",new Rect((int)(w*.8),(int)(height*.15),w,(int)(height*.8)),1);
             if(!shortcuts.isEmpty()){f.shortcutX=shortcuts.get(0).x;f.shortcutY=shortcuts.get(0).y;}
-            h=nearConfigured("alliance");if(h!=null&&config.has("war")&&config.has("rally_tab")){f.allianceX=h.x;f.allianceY=h.y;}
+            Hit alliance=nearConfigured("alliance");if(alliance!=null&&config.has("war")&&config.has("rally_tab")){f.allianceX=alliance.x;f.allianceY=alliance.y;}
+            return f;
         }
         if(f.formation||f.deploy){
             stage="识别预设编队";
@@ -160,18 +174,21 @@ final class Matcher implements AutoCloseable {
         if(f.rallyList && !f.deploy && config.rallyReady() && !config.customRallyReady()) {
             stage="识别巨熊集结";
             List<RallyOrder.Detection> detections=new ArrayList<>();
-            Rect targetColumn=new Rect(0,(int)(config.height()*.16),(int)(config.width()*.45),(int)(config.height()*.94));
-            List<Hit> targets=new ArrayList<>(find("bear_label",targetColumn,8));
-            // The level caption may be covered or clipped while the fixed bear
-            // portrait is still fully visible. Both are activity-specific assets;
-            // the paired join button must independently pass its color check.
-            targets.addAll(find("bear_reference",targetColumn,8));
-            for(Hit target:targets){
-                int halfWidth=(int)Math.ceil(target.width/2.0),halfHeight=(int)Math.ceil(target.height/2.0);
-                Hit join=joinBeside(new Rect(target.x-halfWidth,target.y-halfHeight,target.x+halfWidth,target.y+halfHeight));
-                detections.add(new RallyOrder.Detection(target.x,target.y,join==null?0:join.x,join==null?0:join.y,join!=null,target.confidence));
+            // Start from available green buttons, then verify the bear beside
+            // each one. Do not run two full-column bear pyramids plus another
+            // duplicate scan for every frame of the same list.
+            List<RallyOrder.Detection> recorded=feedback.rallies(gray,color,w,height);
+            for(Hit join:find("join_reference",new Rect((int)(w*.70),height/6,w,(int)(height*.94)),8)){
+                if(recorded.stream().anyMatch(r->Math.hypot(r.joinX-join.x,r.joinY-join.y)<w*.04))continue;
+                int band=(int)(w*.23);
+                Rect targetArea=new Rect(0,Math.max(0,join.y-band),(int)(w*.45),Math.min(height,join.y+band));
+                List<Hit> targets=find("bear_label",targetArea,1);
+                if(targets.isEmpty())targets=find("bear_reference",targetArea,1);
+                if(!targets.isEmpty()){
+                    Hit target=targets.get(0);
+                    detections.add(new RallyOrder.Detection(target.x,target.y,join.x,join.y,true,target.confidence));
+                }
             }
-            List<RallyOrder.Detection> recorded=feedback.rallies(gray,color,config.width(),config.height());
             int distance=Math.max(24,config.height()/12);
             detections.removeIf(d->!d.available&&recorded.stream().anyMatch(r->Math.abs(d.x-r.x)<=distance&&Math.abs(d.y-r.y)<=distance));
             detections.addAll(recorded);
@@ -277,6 +294,7 @@ final class Matcher implements AutoCloseable {
         return result;
     }
     @Override public void close() {
+        if(navigation!=null)navigation.close();
         counter.close();currentBitmap=null;
         feedback.close();
         if(gray!=null) { gray.release();gray=null; }

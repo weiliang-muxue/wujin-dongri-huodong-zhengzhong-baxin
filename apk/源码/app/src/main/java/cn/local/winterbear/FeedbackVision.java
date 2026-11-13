@@ -55,8 +55,11 @@ final class FeedbackVision implements AutoCloseable {
         Mat small=new Mat();
         try{
             Imgproc.resize(fullGray,small,new Size(324,rows),0,0,Imgproc.INTER_AREA);
-            Point warning=hit(small,lateBody,new Rect(0,rows/4,324,rows/2));
-            Point cancelButton=warning==null?null:near(small,cancel,warning,-140,35,10,135);
+            // Find the short button first. Exhaustively matching long error
+            // sentences on every normal map frame consumed most of the scan.
+            Point cancelButton=hit(small,cancel,new Rect(0,rows/4,324,rows*3/4));
+            Point warning=cancelButton==null?null:near(small,lateBody,cancelButton,
+                    -10-lateBody.cols()/2.,-135-lateBody.rows()/2.,140+lateBody.cols()/2.,-35+lateBody.rows()/2.);
             double warningScale=VisualAnchor.scale(warning);
             if(warning!=null&&cancelButton!=null&&warning.x-cancelButton.x>20*warningScale&&warning.x-cancelButton.x<110*warningScale&&cancelButton.y-warning.y>40*warningScale&&cancelButton.y-warning.y<125*warningScale){
                 frame.rallyTooLate=true;frame.cancelX=(int)Math.round(cancelButton.x*width/324);frame.cancelY=(int)Math.round(cancelButton.y*height/rows);return;
@@ -67,8 +70,8 @@ final class FeedbackVision implements AutoCloseable {
             }
             Mat[] bodies={body,bodyV2},buttons={button,buttonV2};
             for(int i=0;i<bodies.length;i++){
-                Point text=hit(small,bodies[i],new Rect(0,rows/4,324,rows/2));
-                Point ok=text==null?null:near(small,buttons[i],text,-82,35,83,135);
+                Point ok=hit(small,buttons[i],new Rect(0,rows/4,324,rows*3/4));
+                Point text=ok==null?null:near(small,bodies[i],ok,-35-bodies[i].cols()/2.,-130-bodies[i].rows()/2.,35+bodies[i].cols()/2.,-35+bodies[i].rows()/2.);
                 // Specific error + aligned button; the title may be covered by a floating control.
                 double q=VisualAnchor.scale(text);
                 if(text!=null&&ok!=null&&Math.abs(text.x-ok.x)<30*q&&ok.y-text.y>40*q&&ok.y-text.y<125*q){
@@ -96,8 +99,8 @@ final class FeedbackVision implements AutoCloseable {
         try{
             Imgproc.resize(fullGray,gray,new Size(324,rows),0,0,Imgproc.INTER_AREA);
             Imgproc.resize(fullColor,color,new Size(324,rows),0,0,Imgproc.INTER_AREA);
-            List<Point> targets=hits(gray,bear,new Rect(0,144,120,rows-209));
-            targets.addAll(hits(gray,bearTop,new Rect(0,144,120,rows-209)));
+            List<Point> targets=repeated(gray,bear,new Rect(0,144,120,rows-209));
+            targets.addAll(repeated(gray,bearTop,new Rect(0,144,120,rows-209)));
             for(Point target:targets){
                 int top=Math.max(0,(int)target.y-94),bottom=Math.min(rows,(int)target.y+94);
                 Rect band=new Rect(227,top,97,bottom-top);
@@ -114,6 +117,11 @@ final class FeedbackVision implements AutoCloseable {
         List<Point> result=new ArrayList<>();if(expected.empty())return result;
         for(VisualLocator.Match match:VisualLocator.findAdaptive(gray,shape,region,.88,8,true,
                 candidate->VisualLocator.sameColor(color,expected,candidate,35)))result.add(new Point(match.x,match.y));
+        return result;
+    }
+    private List<Point> repeated(Mat screen,Mat template,Rect region){
+        List<Point> result=new ArrayList<>();
+        for(VisualLocator.Match m:VisualLocator.findRepeated(screen,template,region,.88,8,true,null))result.add(VisualAnchor.from(m,template));
         return result;
     }
     private Point formationAnchor(Mat gray,int rows){

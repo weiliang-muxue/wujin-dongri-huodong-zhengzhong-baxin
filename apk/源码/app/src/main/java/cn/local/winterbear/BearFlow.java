@@ -17,7 +17,7 @@ public final class BearFlow {
     }
     public static final class Frame {
         public boolean header, deploy;
-        public boolean map, formation, autoJoin;
+        public boolean map, formation, autoJoin, navigationBack;
         public boolean marchHidden, rallyList, troopOverflow, worldMapChrome;
         public int dialogOkX,dialogOkY;
         public boolean rallyTooLate;

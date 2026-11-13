@@ -94,6 +94,12 @@ final class MarchFlow {
             return waitFor("等待游戏地图或集结列表 · 只识别");
         }
         // Native auto-join is not a stop condition: it handles other activities.
+        if(f.navigationBack&&(phase==Phase.MAP||phase==Phase.RETURN_MAP)){
+            if(phase==Phase.MAP)returnToMap(now);
+            if(now-returnSince>20000||backAttempts>=6)return pause("切换任务未能返回地图，请检查当前页面");
+            if(f.backX<=0||f.backY<=0)return waitFor("正在寻找当前页面的返回按钮");
+            backAttempts++;return act(Kind.BACK,f.backX,f.backY,Phase.RETURN_MAP,"返回地图，切换打熊");
+        }
         if(phase==Phase.DISMISS_OVERFLOW||phase==Phase.DISMISS_LATE){
             boolean late=phase==Phase.DISMISS_LATE;
             if(late?f.rallyTooLate:f.troopOverflow){

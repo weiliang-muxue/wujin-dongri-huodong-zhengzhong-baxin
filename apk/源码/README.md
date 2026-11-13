@@ -4,9 +4,17 @@ JDK 17、Gradle 8.9、Android SDK 35 extension 15、Build Tools 35.0.0。设置 
 
 构建：`gradlew.bat :app:testEngine :app:assembleRelease :app:lintRelease`。
 
-将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.1.15.apk。
+将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.1.16.apk。
 
-检查成品使用 `python tools/verify_android_package.py ../无尽冬日助手-2.1.15.apk --version 2.1.15`。
+检查成品使用 `python tools/verify_android_package.py ../无尽冬日助手-2.1.16.apk --version 2.1.16`。
+
+### 任务切换与识别负载（2.1.16）
+
+打熊使用公共 `RecognitionWorker`：暂停取消旧任务和截图回调，图片只释放一次，Matcher 的原生资源在运行中的任务退出后再关闭。新任务辨认上一个活动的列表、搜索、详情、集结设置、编队及体力窗口，使用该画面实际识别出的返回按钮退回地图；有重试上限，不消费旧窗口的罐头。截图时效和最终匹配置信度保持不变。
+
+集结列表先检测可用按钮，再验证同行巨熊与倒计时；重复控件先从当前图确定比例，再查同尺度候选。巨兽、野兽目标卡先按橙色按钮表面定位候选区域，再验证文字与等级标记。地图被放大裁掉城镇按钮时，使用可见搜索图标的形状／颜色和行军标题互相确认；暗化背景仍拒绝。
+
+`TaskSwitchReplayCheck` 接入生产识别器和流程检查双向切换，以及最新录屏 41／55 秒的绿色加入按钮；地图数字使用标注。Android 构建测试 APK 后可运行 `tools/run_feedback_regression.py --suite core --suite session --suite switch --switch-recording <该录屏帧> --adb <adb> --serial <专用模拟器> --output <E盘输出目录>`。`TaskSwitchRuntimeCheck` 检查真实服务暂停取消，以及 Android Bitmap/OpenCV 的录屏识别，绝不发送游戏触控。私人测试图不提交仓库。
 
 ### 动态搜索分类（2.1.15）
 

@@ -4,6 +4,13 @@ import static org.junit.Assert.*;
 import static cn.local.winterbear.BearFlow.Kind;
 
 public class MarchFlowTest {
+    @Test public void switchingFromHuntDismissesOldPageBeforeCountingMapSlots(){
+        MarchFlow flow=flow();BearFlow.Frame page=new BearFlow.Frame();page.navigationBack=true;page.backX=30;page.backY=400;
+        assertEquals(Kind.BACK,flow.next(page,1000).kind);flow.complete(true,1100);
+        assertEquals(MarchFlow.Phase.RETURN_MAP,flow.phase);assertEquals(0,flow.submitted);
+        assertEquals(Kind.WAIT,flow.next(map(1),2200).kind);
+        assertEquals(MarchFlow.Phase.MAP,flow.phase);
+    }
     @Test public void interruptedNavigationRetriesFromTheObservedMap(){
         MarchFlow flow=flow();flow.next(map(3),1000);
         assertEquals(Kind.NAVIGATE,flow.next(map(3),1600).kind);

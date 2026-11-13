@@ -3,7 +3,7 @@ package cn.local.winterbear;
 /** Search/launch loop. Counts are observations; a click alone never confirms a dispatch. */
 final class HuntFlow {
     enum Mode { GIANT, BEAST }
-    enum Page { UNKNOWN, MAP, SEARCH, GIANT, BEAST, RALLY, FORMATION, ENERGY, ERROR }
+    enum Page { UNKNOWN, MAP, SEARCH, GIANT, BEAST, RALLY, FORMATION, ENERGY, ERROR, ALLIANCE }
     enum Kind { WAIT, STOP, OPEN, CATEGORY, LESS, MORE, SEARCH, TARGET, LAUNCH, PRESET, DEPLOY, BACK, DISMISS, USE, CLOSE }
     enum Phase { MAP, SEARCH, RESULT, RALLY, FORMATION, SEND, VERIFY, RECOVER }
     static final class Options {
@@ -37,13 +37,13 @@ final class HuntFlow {
     }
     final Options options; Phase phase=Phase.MAP; boolean running;
     final HuntMarches marches=new HuntMarches();
-    int nextPreset,submitted,cansUsed; private int selected,stableUsed=-2,stableCount;
+    int nextPreset,submitted,cansUsed; private int selected,stableUsed=-2,stableCount,navigationAttempts;
     private int lastLevel=-1,levelFailures,categoryAttempts,batchLeft,stockBefore=-1,energyBefore=-1;
     private boolean awaitingCan,closingEnergy;private Kind pending,interrupted;private long waitUntil,since,unknownSince=-1;
     private long absentSince=-1,absentLast=-1;
     HuntFlow(Options options){this.options=options;nextPreset=PresetOrder.next(options.presetSelection,0);}
     // The session ends on stamina/can allowance or a manual stop, not elapsed time.
-    void start(long now){running=true;phase=Phase.MAP;since=now;waitUntil=now;stableCount=0;pending=null;interrupted=null;}
+    void start(long now){running=true;phase=Phase.MAP;since=now;waitUntil=now;stableCount=0;navigationAttempts=0;pending=null;interrupted=null;}
     // Pausing invalidates callbacks in the controller. Resume preserves the session's limits.
     void stop(){running=false;pending=null;}
     void suspend(long now,boolean dispatched){
@@ -98,6 +98,13 @@ final class HuntFlow {
         if(f.page!=Page.MAP||!f.marchPanelAbsent)absentSince=absentLast=-1;
         if(now<waitUntil)return waitFor("等待游戏响应");
         if(interrupted!=null){Action recovery=reconcileInterrupted(f,now);if(recovery!=null)return recovery;}
+        if(f.page==Page.MAP)navigationAttempts=0;
+        if((phase==Phase.MAP||phase==Phase.RECOVER)&&f.page!=Page.MAP&&f.page!=Page.UNKNOWN&&++navigationAttempts>6)return halt("未能返回地图，请检查当前页面");
+        if((phase==Phase.MAP||phase==Phase.RECOVER)&&(f.page==Page.ENERGY||f.page==Page.ERROR)){
+            int[] point=f.points[(f.page==Page.ENERGY?Kind.CLOSE:Kind.DISMISS).ordinal()];
+            f.point(Kind.BACK,point[0],point[1]);
+            return act(Kind.BACK,"关闭上个任务的提示，返回地图");
+        }
         if(f.page==Page.ENERGY){
             if(closingEnergy)return now-since>10000?halt("体力窗口未关闭，已暂停"):waitFor("等待体力窗口关闭");
             if(phase!=Phase.VERIFY&&phase!=Phase.SEND)return halt("请先关闭体力窗口，回地图开始");
@@ -127,7 +134,7 @@ final class HuntFlow {
         if(f.page==Page.ERROR&&(phase==Phase.VERIFY||phase==Phase.SEND||phase==Phase.FORMATION))return act(Kind.DISMISS,"关闭提示，返回地图重新搜索");
         if(phase==Phase.RECOVER){
             if(f.page==Page.MAP){phase(Phase.MAP,now);stableCount=0;waitUntil=now+2500;return waitFor("重新检查队列");}
-            if(f.page==Page.FORMATION||f.page==Page.SEARCH||f.page==Page.GIANT||f.page==Page.BEAST||f.page==Page.RALLY)return act(Kind.BACK,"返回地图");
+            if(f.page==Page.FORMATION||f.page==Page.SEARCH||f.page==Page.GIANT||f.page==Page.BEAST||f.page==Page.RALLY||f.page==Page.ALLIANCE)return act(Kind.BACK,"返回地图");
             return unknown(now,"等待返回地图");
         }
         if(phase==Phase.VERIFY){
@@ -138,7 +145,7 @@ final class HuntFlow {
             return unknown(now,"等待出征结果");
         }
         if(phase==Phase.MAP){
-            if(f.page==Page.SEARCH||f.page==Page.GIANT||f.page==Page.BEAST||f.page==Page.RALLY||f.page==Page.FORMATION)
+            if(f.page==Page.SEARCH||f.page==Page.GIANT||f.page==Page.BEAST||f.page==Page.RALLY||f.page==Page.FORMATION||f.page==Page.ALLIANCE)
                 return act(Kind.BACK,"返回地图开始本次任务");
             if(f.page!=Page.MAP)return unknown(now,"请停在野外地图");
             if(f.marchPanelAbsent){

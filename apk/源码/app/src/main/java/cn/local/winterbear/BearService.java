@@ -39,8 +39,8 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayDeque;
 import java.util.Date;
 import java.util.Locale;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import cn.local.automation.RecognitionWorker;
+import java.util.concurrent.CancellationException;
 import java.util.function.Consumer;
 import java.util.function.BooleanSupplier;
 import java.lang.ref.WeakReference;
@@ -49,7 +49,7 @@ public final class BearService extends AccessibilityService {
     private static WeakReference<BearService> reference=new WeakReference<>(null);
     public static BearService current(){return reference.get();}
     private final Handler main=new Handler(Looper.getMainLooper());
-    private final ExecutorService worker=Executors.newSingleThreadExecutor();
+    private final RecognitionWorker worker=new RecognitionWorker();
     private final MarchFlow flow=new MarchFlow();
     private final GestureGate gestureGate=new GestureGate();
     private final ForegroundGate foregroundGate=new ForegroundGate();
@@ -76,6 +76,7 @@ public final class BearService extends AccessibilityService {
     private int captureSlot,generation,captureId;
     private boolean capturing,destroyed,checkingMap,manualMapFallback;
     private boolean startAfterMapCheck;
+    private int mapNavigationSteps;
     private final LiveMapCheck previewCheck=new LiveMapCheck();
     private Bitmap selectionBitmap;
 
@@ -121,10 +122,10 @@ public final class BearService extends AccessibilityService {
     }
     void pause(String reason) {
         flow.suspend(SystemClock.elapsedRealtime(),gestureGate.inFlight());
-        generation++;checkingMap=false;previewCheck.reset();gestureGate.cancel();main.removeCallbacks(tick);setStatus(reason);
+        generation++;captureId++;capturing=false;checkingMap=false;previewCheck.reset();gestureGate.cancel();worker.cancel();main.removeCallbacks(tick);setStatus(reason);
         if(bubble!=null&&picker==null&&!destroyed)bubble.setVisibility(View.VISIBLE);
         Matcher previous=matcher;matcher=null;
-        if(previous!=null&&!worker.isShutdown())worker.execute(previous::close);
+        if(previous!=null)worker.dispose(previous::close);
     }
     private boolean interactive() { return getSystemService(PowerManager.class).isInteractive(); }
     public String foregroundPackage(){return activePackage();}
@@ -210,6 +211,7 @@ public final class BearService extends AccessibilityService {
         }
         long now=SystemClock.elapsedRealtime();
         boolean resuming=flow.canResume(now);
+        matcher.recoverToMap(!resuming);
         if(resuming)flow.resume(now);else flow.start(now);
         bearRunStarted=true;
         foregroundGate.reset();
@@ -344,7 +346,7 @@ public final class BearService extends AccessibilityService {
         if(config.target().isEmpty()&&!captureMode.equals("header")&&!captureMode.equals("march")&&!captureMode.equals("auto_map")){setStatus("请先连接游戏地图");return;}
         if(!config.target().isEmpty()&&!app.equals(config.target())){setStatus("当前不是已绑定的游戏；可在设置清除后重新绑定");return;}
         if(captureMode.equals("auto_map")){
-            checkingMap=true;manualMapFallback=false;setStatus("正在读取真实地图 1/2…");
+            checkingMap=true;mapNavigationSteps=0;manualMapFallback=false;setStatus("正在读取真实地图 1/2…");
             readMapFrame(generation,app,new LiveMapCheck(),0);return;
         }
         int token=generation;String mode=captureMode;int slot=captureSlot;
@@ -362,10 +364,11 @@ public final class BearService extends AccessibilityService {
         if(!prepareAnalysisOverlay()){if(checkingMap)main.postDelayed(()->readMapFrame(token,app,check,attempt),250);return;}
         final long frameRevision=overlayRevision;
         final long capturedAt=SystemClock.elapsedRealtime();
+        final boolean returnToMap=startAfterMapCheck;
         screenshot(bitmap->{
             if(token!=generation||!checkingMap||destroyed){bitmap.recycle();return;}
             final int w=bitmap.getWidth(),h=bitmap.getHeight();
-            worker.execute(()->{
+            worker.submit(()->{
                 BearFlow.Frame frame=null;String failure=null;boolean reference=false;
                 try{
                     boolean changed=config.width()!=0&&(config.width()!=w||config.height()!=h);
@@ -374,15 +377,18 @@ public final class BearService extends AccessibilityService {
                     if(!config.marchReady()||changed){
                         detection=Config.referenceProbe(this,w,h);reference=true;
                     }
-                    try(Matcher reader=new Matcher(detection)){reader.frame(bitmap);frame=reader.observe();}
-                }catch(Exception e){failure=e.getMessage()==null?"地图识别失败，请重试或手动框选行军":e.getMessage();}
-                finally{bitmap.recycle();}
+                    try(Matcher reader=new Matcher(detection)){reader.recoverToMap(returnToMap);reader.frame(bitmap);frame=reader.observe();}
+                }catch(CancellationException e){return;}
+                catch(Exception e){failure=e.getMessage()==null?"地图识别失败，请重试或手动框选行军":e.getMessage();}
                 final BearFlow.Frame result=frame;final String error=failure;final boolean referenceUsed=reference;
                 main.post(()->{
                     if(token!=generation||!checkingMap||destroyed)return;
                     if(!BearOverlayGuard.current(frameRevision,overlayRevision,dragging)){main.postDelayed(()->readMapFrame(token,app,check,attempt),250);return;}
                     if(!interactive()||!activePackage().equals(app)){finishMapCheck("游戏已切到后台，请回地图后重试",false);return;}
                     if(error!=null){finishMapCheck(error,true);return;}
+                    if(result.navigationBack){
+                        returnForMapCheck(result,w,h,token,app,check,attempt,capturedAt);return;
+                    }
                     if(check.accept(app,w,h,result.map,result.marchUsed,result.marchHidden,capturedAt,SystemClock.elapsedRealtime())){
                         try{
                             // Merge only after real screenshots match; keep existing manual samples and switches.
@@ -403,10 +409,35 @@ public final class BearService extends AccessibilityService {
                     setStatus(result.marchHidden?"已识别地图，无行军栏，正在再次确认…":result.map&&result.marchUsed>=0?"实际读到 "+result.marchUsed+"/6，正在再次确认…":"正在识别真实游戏地图…");
                     main.postDelayed(()->readMapFrame(token,app,check,attempt+1),900);
                 });
-            });
+            },bitmap::recycle);
         },false,()->main.postDelayed(()->readMapFrame(token,app,check,attempt),250));
     }
     private void finishMapCheck(String message,boolean manual){checkingMap=false;startAfterMapCheck=false;manualMapFallback=manual;setStatus(message);}
+    private void returnForMapCheck(BearFlow.Frame frame,int w,int h,int token,String app,LiveMapCheck check,int attempt,long capturedAt){
+        if(SystemClock.elapsedRealtime()-capturedAt>4000){
+            if(attempt>=3){finishMapCheck("返回页面识别超时，请回野外后点连接",false);return;}
+            main.postDelayed(()->readMapFrame(token,app,check,attempt+1),250);return;
+        }
+        if(frame.backX<=0||frame.backY<=0||frame.backX>=w||frame.backY>=h||mapNavigationSteps>=6){finishMapCheck("未能返回地图，请回野外后点连接",false);return;}
+        if(!BearOverlayGuard.inputClear(bubbleBounds,frame.backX,frame.backY,frame.backX,frame.backY,overlayDp(8))){
+            if(bubbleFold!=null&&!bubbleFold.isCollapsed())bubbleFold.setCollapsed(true);
+            else if(attempt>=3){finishMapCheck("请将浮窗移开返回按钮后重试",false);return;}
+            main.postDelayed(()->readMapFrame(token,app,check,attempt+1),250);return;
+        }
+        mapNavigationSteps++;setStatus("返回地图，连接打熊");
+        Path path=new Path();path.moveTo(frame.backX,frame.backY);long ticket=gestureGate.begin();
+        try{
+            boolean accepted=dispatchGesture(new GestureDescription.Builder().addStroke(new GestureDescription.StrokeDescription(path,0,70)).build(),new GestureResultCallback(){
+                @Override public void onCompleted(GestureDescription g){
+                    if(token!=generation||!checkingMap||!gestureGate.isActive(ticket))return;
+                    gestureGate.finish(ticket);main.postDelayed(()->readMapFrame(token,app,check,attempt),850);
+                }
+                @Override public void onCancelled(GestureDescription g){if(token==generation&&gestureGate.isActive(ticket)){gestureGate.cancel();finishMapCheck("返回触控被打断，请重新连接",false);}}
+            },main);
+            if(!accepted){gestureGate.cancel();finishMapCheck("系统未接受返回操作，请重新连接",false);}
+            main.postDelayed(()->{if(token==generation&&checkingMap&&gestureGate.isActive(ticket)){gestureGate.cancel();finishMapCheck("返回响应超时，请重新连接",false);}},3000);
+        }catch(Exception e){gestureGate.cancel();finishMapCheck("返回操作未完成，请重新连接",false);}
+    }
     private void screenshot(Consumer<Bitmap> success,boolean sample,Runnable retry){
         if(capturing||destroyed)return;
         capturing=true;int id=++captureId;final int requestGeneration=generation;
@@ -463,16 +494,15 @@ public final class BearService extends AccessibilityService {
             if(bitmap.getWidth()!=config.width()||bitmap.getHeight()!=config.height()){
                 bitmap.recycle();pause("画面尺寸改变，请恢复取样时的方向与分辨率");return;
             }
-            worker.execute(()->{
+            worker.submit(()->{
                 BearFlow.Frame observed=null;String error=null;
-                try{current.frame(bitmap);observed=current.observe();}catch(Exception e){
+                try{current.frame(bitmap);observed=current.observe();RecognitionWorker.checkCancelled();}catch(CancellationException e){return;}catch(Exception e){
                     String stage=current==null?"初始化":current.stage();
                     android.util.Log.e("WinterBear",stage+"失败",e);
                     String detail=e.getMessage();
                     if(detail!=null&&detail.length()>160)detail=detail.substring(0,160);
                     error=stage+"："+e.getClass().getSimpleName()+(detail==null?"":" · "+detail);
                 }
-                finally{bitmap.recycle();}
                 final BearFlow.Frame result=observed;final String failure=error;
                 main.post(()->{
                     if(token!=generation||!flow.running||destroyed)return;
@@ -490,7 +520,7 @@ public final class BearService extends AccessibilityService {
                     if(decision.kind==BearFlow.Kind.WAIT){main.postDelayed(tick,800);return;}
                     gesture(decision,token);
                 });
-            });
+            },bitmap::recycle);
         },false,()->main.postDelayed(tick,250));
     }
     private void gesture(BearFlow.Decision decision,int token){
@@ -628,10 +658,9 @@ public final class BearService extends AccessibilityService {
         if(copy==null)return;
         LinearLayout currentPicker=picker;int token=generation;
         save.setEnabled(false);selection.setEnabled(false);instruction.setText("正在自动寻找同行绿色＋…");
-        worker.execute(()->{
+        worker.submit(()->{
             Matcher.Hit found=null;
-            try(Matcher reader=new Matcher(config)){reader.frame(copy);found=reader.joinBeside(bear);}catch(Exception ignored){}
-            finally{copy.recycle();}
+            try(Matcher reader=new Matcher(config)){reader.frame(copy);found=reader.joinBeside(bear);}catch(CancellationException e){return;}catch(Exception ignored){}
             final Matcher.Hit hit=found;
             main.post(()->{
                 if(token!=generation||picker!=currentPicker||destroyed)return;
@@ -639,7 +668,7 @@ public final class BearService extends AccessibilityService {
                 if(hit!=null){selection.suggestPoint(hit.x,hit.y);instruction.setText("2 / 2  已标出同行绿色＋，位置正确就保存；也可点选修正");}
                 else instruction.setText("2 / 2  没有确认唯一的绿色＋，请点选这个巨熊同一行的加入按钮");
             });
-        });
+        },copy::recycle);
     }
     private void validateCrop(Bitmap bitmap,Rect r){
         if(r.width()>bitmap.getWidth()*.85||r.height()>bitmap.getHeight()*.4)throw new IllegalArgumentException("选区过大，请只框选固定文字或图标");

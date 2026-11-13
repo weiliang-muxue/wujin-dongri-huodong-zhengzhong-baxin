@@ -42,6 +42,11 @@ final class HuntVision implements AutoCloseable {
                 templates.put(name,gray);
             }finally{b.recycle();rgba.release();}
         }catch(Exception e){throw new IllegalStateException("狩猎识别素材不完整："+name,e);}
+        for(String key:new String[]{"header"})try(InputStream in=assets.open("reference/"+key+".png")){
+            Bitmap b=BitmapFactory.decodeStream(in);Mat rgba=new Mat(),gray=new Mat(),half=new Mat();
+            try{Utils.bitmapToMat(b,rgba);Imgproc.cvtColor(rgba,gray,Imgproc.COLOR_RGBA2GRAY);Imgproc.resize(gray,half,new Size(),.5,.5,Imgproc.INTER_AREA);templates.put(key,half);}
+            finally{b.recycle();rgba.release();gray.release();}
+        }catch(Exception e){throw new IllegalStateException("页面返回素材不完整："+key,e);}
         Mat right=new Mat();Core.flip(templates.get("selection"),right,1);templates.put("selection_right",right);
         tabLabels.put("beast",templates.get("tab_beast"));tabLabels.put("giant",templates.get("tab_giant"));
     }
@@ -99,7 +104,16 @@ final class HuntVision implements AutoCloseable {
         }
         return total==12&&orange>=9;
     }
-    Frame observe(Bitmap image,Mode mode){
+    Frame navigation(Bitmap image){return observe(image,Mode.GIANT,true);}
+    boolean mapVisible(Bitmap image){
+        if(!ReferenceLayout.supported(image.getWidth(),image.getHeight()))return false;
+        int rows=(int)Math.round(image.getHeight()*540.0/image.getWidth());
+        Mat rgba=new Mat(),small=new Mat(),gray=new Mat();
+        try{Utils.bitmapToMat(image,rgba);Imgproc.resize(rgba,small,new Size(540,rows),0,0,Imgproc.INTER_AREA);Imgproc.cvtColor(small,gray,Imgproc.COLOR_RGBA2GRAY);return clearMapEntry(gray,small,rows)!=null;}
+        finally{rgba.release();small.release();gray.release();}
+    }
+    Frame observe(Bitmap image,Mode mode){return observe(image,mode,false);}
+    private Frame observe(Bitmap image,Mode mode,boolean navigation){
         Frame f=new Frame();int w=image.getWidth(),h=image.getHeight();f.width=w;f.height=h;if(!ReferenceLayout.supported(w,h))return f;
         double s=w/540.;int rows=(int)Math.round(h/s),delta=rows-1200;
         Mat rgba=new Mat(),small=new Mat(),gray=new Mat();
@@ -111,11 +125,16 @@ final class HuntVision implements AutoCloseable {
             // uses shape, since the moving terrain changes its background color.
             Point mapEntry=clearMapEntry(gray,small,rows);
             if(mapEntry!=null){
-                f.page=Page.MAP;point(f,Kind.OPEN,mapEntry,s);observeMarchPanel(image,s,gray,f);return f;
+                f.page=Page.MAP;point(f,Kind.OPEN,mapEntry,s);if(!navigation)observeMarchPanel(image,s,gray,f);return f;
+            }
+            Point back=hit(gray,"back",0,0,150,rows/2);
+            if(back!=null&&hit(gray,"header",0,0,420,rows/2)!=null){
+                f.page=Page.ALLIANCE;point(f,Kind.BACK,back,s);return f;
             }
             // A clear search drawer has three independent, unobscured controls.
             // Check it before unrelated modal pyramids, without treating the
             // dimmed/covered drawer behind a target card as the foreground page.
+            if(observeTarget(image,s,gray,small,f))return f;
             if(observeSearch(image,s,gray,small,f,mode))return f;
             Point title=unique(gray,"energy_title",50,60,510,rows-250);
             Point label=title==null?null:near(gray,"energy_label",title,-160,30,-25,105,false);
@@ -165,14 +184,22 @@ final class HuntVision implements AutoCloseable {
                     double[] red=redY>=0&&redX>=0&&redY<rows&&redX<540?small.get(redY,redX):null;f.lowEnergy=red!=null&&red[0]>red[1]*1.4;return f;
                 }
             }
-            observeTarget(image,s,gray,small,f);
             return f;
         }finally{rgba.release();small.release();gray.release();}
     }
     private boolean observeTarget(Bitmap image,double scale,Mat gray,Mat rgba,Frame f){
         // Target cards can leave all search controls visible behind them.
         // Their own action + level pair always takes precedence over the drawer.
-        Point rally=unique(gray,"rally_action",80,250,470,gray.rows()-30),attack=unique(gray,"attack_action",80,250,470,gray.rows()-30);
+        Point rally=null,attack=null;
+        // Locate candidate button surfaces from this frame, then read their
+        // labels. No full-screen multi-scale search for two absent words on
+        // every search-drawer or formation frame.
+        for(org.opencv.core.Rect area:orangeButtons(rgba)){
+            Point r=unique(gray,"rally_action",area.x,area.y,area.x+area.width,area.y+area.height);
+            Point a=unique(gray,"attack_action",area.x,area.y,area.x+area.width,area.y+area.height);
+            if(r!=null){if(rally!=null)return false;rally=r;}
+            if(a!=null){if(attack!=null)return false;attack=a;}
+        }
         Point action=rally!=null&&attack==null?rally:attack!=null&&rally==null?attack:null;
         Point prefix=action==null?null:near(gray,"level_label",action,-105,-205,30,-125,false);
         if(prefix==null||!orangeAction(rgba,action))return false;
@@ -196,7 +223,6 @@ final class HuntVision implements AutoCloseable {
             Point more=near(gray,"level_plus",search,35,-165,145,-75,false);
             double q=VisualAnchor.scale(search);
             if(less==null||more==null||Math.abs(less.y-more.y)>12*q)return false;
-            if(observeTarget(image,scale,gray,rgba,f))return true;
             org.opencv.core.Rect band=VisualAnchor.near(search,0,-255,1,-150);
             // The row's vertical relationship is retained, but its entire visible
             // width is searched. Seasonal entries may appear/disappear/reorder.
@@ -233,12 +259,35 @@ final class HuntVision implements AutoCloseable {
         }
         return clear>=10;
     }
+    private java.util.List<org.opencv.core.Rect> orangeButtons(Mat rgba){
+        java.util.List<org.opencv.core.Rect> result=new java.util.ArrayList<>();
+        java.util.List<MatOfPoint> contours=new java.util.ArrayList<>();Mat mask=new Mat(),hierarchy=new Mat();
+        try{
+            Core.inRange(rgba,new Scalar(180,40,0,0),new Scalar(255,180,80,255),mask);
+            Imgproc.findContours(mask,contours,hierarchy,Imgproc.RETR_EXTERNAL,Imgproc.CHAIN_APPROX_SIMPLE);
+            for(MatOfPoint contour:contours){
+                org.opencv.core.Rect r=Imgproc.boundingRect(contour);
+                double aspect=r.width/(double)Math.max(1,r.height);
+                if(r.width<rgba.cols()*.12||r.height<rgba.cols()*.02||aspect<1.8||aspect>12||Imgproc.contourArea(contour)<r.area()*.65)continue;
+                int pad=Math.max(3,r.height/6),l=Math.max(0,r.x-pad),t=Math.max(0,r.y-pad);
+                result.add(new org.opencv.core.Rect(l,t,Math.min(rgba.cols(),r.x+r.width+pad)-l,Math.min(rgba.rows(),r.y+r.height+pad)-t));
+            }
+            return result;
+        }finally{for(MatOfPoint c:contours)c.release();mask.release();hierarchy.release();}
+    }
     private Point clearMapEntry(Mat gray,Mat rgba,int rows){
         Mat rgb=new Mat();
         try{
             Imgproc.cvtColor(rgba,rgb,Imgproc.COLOR_RGBA2RGB);
             Point city=mapControl(gray,rgb,"map_city",new org.opencv.core.Rect(390,rows*2/3,150,rows-rows*2/3));
-            if(city==null)return null;
+            if(city==null){
+                // Zoom may crop the far-right city button. An exposed search
+                // icon plus the march heading is independent map evidence;
+                // a search drawer replaces that icon. Colour validation also
+                // rejects the dim map behind a modal.
+                Point entry=mapControl(gray,rgb,"map_search",new org.opencv.core.Rect(0,rows/2,120,rows/2-100));
+                return entry!=null&&hit(gray,"march",0,100,180,rows/2,.88)!=null?entry:null;
+            }
             Point entry=unique(gray,"map_search",0,rows/2,120,rows-100);
             return entry!=null&&city.x-entry.x>300&&city.y-entry.y>150&&city.y-entry.y<450?entry:null;
         }finally{rgb.release();}

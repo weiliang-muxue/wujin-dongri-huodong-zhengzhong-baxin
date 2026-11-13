@@ -184,6 +184,27 @@ public final class VisualLocator {
         List<Match> found=findAdaptive(image,template,area,threshold,2,soften);
         return found.size()==1?found.get(0):null;
     }
+    /** Repeated controls in a single game list share the observed visual scale.
+     * Discover it adaptively, then collect rows at that scale instead of trying
+     * every possible phone scale again after every already-confirmed row. */
+    public static List<Match> findRepeated(Mat image,Mat template,Rect area,double threshold,int limit,boolean soften,Predicate<Match> accepted){
+        List<Match> seed=findAdaptive(image,template,area,threshold,1,soften,accepted);
+        if(seed.isEmpty())return seed;
+        Match first=seed.get(0);List<Match> result=new ArrayList<>();
+        // Independent raster rounding can change an otherwise identical row
+        // by one pixel. Validate all neighbours at the original threshold.
+        for(int width=Math.max(8,first.width-1);width<=first.width+1;width++)
+            for(int height=Math.max(8,first.height-1);height<=first.height+1;height++){
+                Mat scaled=new Mat();
+                try{
+                    Imgproc.resize(template,scaled,new Size(width,height),0,0,width<template.cols()?Imgproc.INTER_AREA:Imgproc.INTER_CUBIC);
+                    for(Match m:find(image,scaled,area,threshold,accepted==null?limit:Math.max(8,limit*2),soften))
+                        if(accepted==null||accepted.test(m))merge(result,m,false);
+                }finally{scaled.release();}
+            }
+        result.sort(Comparator.comparingDouble((Match m)->m.confidence).reversed());
+        return new ArrayList<>(result.subList(0,Math.min(limit,result.size())));
+    }
     /** Color validation follows the detected template size, including resized buttons. */
     public static boolean sameColor(Mat image,Mat reference,Match match,double maximumDifference){
         if(image.empty()||reference.empty()||image.channels()!=3||reference.channels()!=3)return false;

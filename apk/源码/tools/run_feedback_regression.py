@@ -23,11 +23,12 @@ p.add_argument('--return-fixtures',type=Path,help='Private Xiaomi rally / return
 p.add_argument('--timer-fixtures',type=Path,help='39 exported march timer strips and timers.tsv from MarchTrackingScaleCheck')
 p.add_argument('--loop-fixtures',type=Path,help='Full map pipeline recording fixtures exported by HuntLoopReplayCheck')
 p.add_argument('--search-fixtures',type=Path,help='Private search row variants and independent .properties annotations')
+p.add_argument('--switch-recording',type=Path,help='Private latest rally screenshot with manually inspected 41/55 second timers')
 p.add_argument('--paging-fixtures',type=Path,help='Private short-countdown recording frames')
 p.add_argument('--restart-fixtures',type=Path,help='Private end/reopen recording frames')
 p.add_argument('--restart-start-index',type=int,choices=range(5),default=0,help='Resume at a size group after a recorded partial run')
 p.add_argument('--opencv-threads',type=int,choices=range(9),default=0,help='OpenCV test process thread count; 0 uses its default')
-p.add_argument('--suite',action='append',choices=['core','session','presets','scale','restart','bullseye','manual-navigation','march-presence','adaptive','huawei','huawei-bear','direct','reported','marches','return','march-timers','loop','search','paging','overlay','hunt','feedback','countdown','compat'],help='Run selected suites; default runs every supplied suite')
+p.add_argument('--suite',action='append',choices=['core','session','switch','presets','scale','restart','bullseye','manual-navigation','march-presence','adaptive','huawei','huawei-bear','direct','reported','marches','return','march-timers','loop','search','paging','overlay','hunt','feedback','countdown','compat'],help='Run selected suites; default runs every supplied suite')
 p.add_argument('--adaptive-bear-only',action='store_true')
 p.add_argument('--adaptive-start-index',type=int,choices=range(11),default=0,help='First hunt page, or first of three bear pages with --adaptive-bear-only')
 p.add_argument('--adaptive-end-index',type=int,choices=range(1,12),default=11,help='Exclusive final adaptive page; bear-only default includes all three pages')
@@ -46,6 +47,7 @@ if a.suite and 'manual-navigation' in a.suite and not a.manual_navigation_fixtur
 if a.suite and 'march-presence' in a.suite and not a.return_fixtures:p.error('March presence checks require --return-fixtures')
 if a.suite and 'loop' in a.suite and not a.loop_fixtures:p.error('Full map checks require --loop-fixtures')
 if a.suite and 'search' in a.suite and not a.search_fixtures:p.error('Search checks require --search-fixtures')
+if a.suite and 'switch' in a.suite and not a.switch_recording:p.error('Switch checks require --switch-recording')
 if a.bullseye_zoom_only and a.bullseye_button_only:p.error('Select either bullseye zoom or button checks')
 if a.adaptive_layouts and not (a.hunt_fixtures and a.huawei_fixtures):p.error('Adaptive layouts require hunt and Huawei fixtures')
 root=Path(__file__).resolve().parents[1];a.output.mkdir(parents=True,exist_ok=True)
@@ -64,6 +66,7 @@ if a.fixtures:
     for name in ['reported-overflow.png','huawei-map.png','xiaomi-list.png','countdown-list.png','too-late.png']+[f'video-{s}.png' for s in (170,250,270,315,358,411,691,718,751,771,780,816,820)]:
         (bundle/'fixtures'/name).write_bytes((a.fixtures/name).read_bytes())
 (bundle/'app.apk').write_bytes(main.read_bytes());(bundle/'tests.apk').write_bytes(tests.read_bytes())
+if a.switch_recording:(bundle/'fixtures/switch-list.jpg').write_bytes(a.switch_recording.read_bytes())
 if a.hunt_fixtures:
     for name in ['map','giant_search','giant_detail','rally','giant_formation','map_one','beast_search','beast_detail','beast_formation','low_energy','energy']:
         (bundle/'fixtures'/f'{name}.png').write_bytes((a.hunt_fixtures/f'{name}.png').read_bytes())
@@ -139,6 +142,10 @@ with (a.output/'android-feedback-runtime.txt').open('w',encoding='utf-8') as log
         if 'ANDROID HUNT RESTART CONTROLLER PASS: 24' not in restart:raise RuntimeError('Hunt restart state regression missing')
         bullseye=run('BullseyeSessionRuntimeCheck','')
         if 'ANDROID BULLSEYE SESSION PASS: 14' not in bullseye:raise RuntimeError('Bullseye session regression missing')
+    if a.switch_recording and wanted('switch'):
+        result=run('TaskSwitchRuntimeCheck',f'{remote}/lib {remote}/assets {remote}/fixtures/switch-list.jpg {remote}/switch-config')
+        for marker in ('ANDROID SWITCH CANCELLATION PASS','ANDROID LATEST RECORDING PASS','ANDROID SWITCH PIXELS PASS'):
+            if marker not in result:raise RuntimeError('Task switch regression incomplete: '+marker)
     if wanted('presets'):
         result=run('PresetSettingsRuntimeCheck',f'{remote}/assets {remote}/preset-config')
         if 'ANDROID PRESET SETTINGS PASS: 68' not in result:raise RuntimeError('Preset settings regression result missing')
