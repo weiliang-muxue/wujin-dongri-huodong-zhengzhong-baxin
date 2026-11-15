@@ -81,6 +81,9 @@ final class Matcher implements AutoCloseable {
         } finally { bitmap.recycle(); rgba.release(); original.release();rgb.release(); }
     }
     List<Hit> find(String key,Rect region,int limit) {
+        return find(key,region,limit,true);
+    }
+    private List<Hit> find(String key,Rect region,int limit,boolean adaptive) {
         List<Hit> hits=new ArrayList<>(); Mat tpl=template(key);
         if(tpl==null || gray==null) return hits;
         int left=0,top=0,right=gray.cols(),bottom=gray.rows();
@@ -92,7 +95,7 @@ final class Matcher implements AutoCloseable {
         Mat expected=colorTemplates.get(key);
         org.opencv.core.Rect area=new org.opencv.core.Rect(left,top,right-left,bottom-top);
         java.util.function.Predicate<VisualLocator.Match> accepted=expected==null?null:candidate->VisualLocator.sameColor(color,expected,candidate,35);
-        List<VisualLocator.Match> matches=key.equals("join_reference")&&limit>2
+        List<VisualLocator.Match> matches=!adaptive?VisualLocator.find(gray,tpl,area,config.threshold(),limit,false):key.equals("join_reference")&&limit>2
                 ?VisualLocator.findRepeated(gray,tpl,area,config.threshold(),limit,false,accepted)
                 :VisualLocator.findAdaptive(gray,tpl,area,config.threshold(),limit,false,accepted);
         for(VisualLocator.Match m:matches)
@@ -122,7 +125,14 @@ final class Matcher implements AutoCloseable {
             }
         }
         int w=config.width(),height=config.height();
-        Hit header=locate("header",new Rect(0,0,w*3/4,height/2)),formation=null;
+        // Prove the map using its independent controls before searching for a
+        // missing alliance title over half of a full-resolution map.
+        Hit header=nearConfigured("header"),formation=null;
+        if(header==null){
+            if(navigation==null)navigation=new HuntVision(config::openAsset,(b,r)->"");
+            f.map=navigation.mapVisible(currentBitmap);
+            if(!f.map)header=locate("header",new Rect(0,0,w*3/4,height/2));
+        }
         f.header=header!=null;
         // A recognised rally page has no map counters or preset flags. Avoid
         // searching every absent template over this large screenshot.
@@ -132,8 +142,6 @@ final class Matcher implements AutoCloseable {
             Hit back=locate("back",new Rect(0,0,w/3,height/2));
             if(back!=null){f.backX=back.x;f.backY=back.y;}
         }else{
-            if(navigation==null)navigation=new HuntVision(config::openAsset,(b,r)->"");
-            f.map=navigation.mapVisible(currentBitmap);
             if(!f.map){
                 feedback.observe(gray,f,w,height);
                 if(f.troopOverflow||f.rallyTooLate)return f;
@@ -154,7 +162,9 @@ final class Matcher implements AutoCloseable {
             Rect area=new Rect(0,0,(int)(w*.45),height/2);
             if(march==null){List<Hit> hits=find("march_anchor",area,1);if(!hits.isEmpty())march=hits.get(0);}
             if(march==null){List<Hit> hits=find("march_anchor_core",area,1);if(!hits.isEmpty()){march=hits.get(0);marchKey="march_anchor_core";}}
-            if(config.marchReady()){stage="读取行军数量";f.marchUsed=counter.read(currentBitmap,marchCounter(march,marchKey));}
+            // No heading means there is no anchored numeric field. Reading
+            // the saved rectangle can wait for OCR on scenery or overlay text.
+            if(march!=null&&config.marchReady()){stage="读取行军数量";f.marchUsed=counter.read(currentBitmap,marchCounter(march,marchKey));}
             f.worldMapChrome=true;f.marchHidden=march==null&&!MarchCount.valid(f.marchUsed);
             stage="识别地图入口";
             List<Hit> shortcuts=find("shortcut",new Rect((int)(w*.8),(int)(height*.15),w,(int)(height*.8)),1);
@@ -177,18 +187,22 @@ final class Matcher implements AutoCloseable {
             // Start from available green buttons, then verify the bear beside
             // each one. Do not run two full-column bear pyramids plus another
             // duplicate scan for every frame of the same list.
-            List<RallyOrder.Detection> recorded=feedback.rallies(gray,color,w,height);
-            for(Hit join:find("join_reference",new Rect((int)(w*.70),height/6,w,(int)(height*.94)),8)){
-                if(recorded.stream().anyMatch(r->Math.hypot(r.joinX-join.x,r.joinY-join.y)<w*.04))continue;
+            List<Hit> joins=find("join_reference",new Rect((int)(w*.70),height/6,w,(int)(height*.94)),8);
+            for(Hit join:joins){
                 int band=(int)(w*.23);
                 Rect targetArea=new Rect(0,Math.max(0,join.y-band),(int)(w*.45),Math.min(height,join.y+band));
-                List<Hit> targets=find("bear_label",targetArea,1);
+                List<Hit> targets=find("bear_label",targetArea,1,false);
                 if(targets.isEmpty())targets=find("bear_reference",targetArea,1);
+                if(targets.isEmpty())targets=find("bear_label",targetArea,1);
                 if(!targets.isEmpty()){
                     Hit target=targets.get(0);
                     detections.add(new RallyOrder.Detection(target.x,target.y,join.x,join.y,true,target.confidence));
                 }
             }
+            // Alternate button artwork can expose another row even when the
+            // primary template already found one. Check those candidates too,
+            // without reading the targets that are already confirmed above.
+            List<RallyOrder.Detection> recorded=feedback.rallies(gray,color,w,height,detections);
             int distance=Math.max(24,config.height()/12);
             detections.removeIf(d->!d.available&&recorded.stream().anyMatch(r->Math.abs(d.x-r.x)<=distance&&Math.abs(d.y-r.y)<=distance));
             detections.addAll(recorded);

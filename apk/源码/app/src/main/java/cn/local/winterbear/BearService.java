@@ -284,6 +284,9 @@ public final class BearService extends AccessibilityService {
         // The start button has just collapsed the settings. Wait for the smaller layout.
         if(bubble.isLayoutRequested()){recoverAnalysisOverlay();return false;}
         publishBubbleBounds();if(bubbleBounds==null)return false;
+        // A manual expansion is an explicit request to read status. Keep its
+        // position; screenshots mask it and gesture checks still avoid it.
+        if(bubbleFold!=null&&bubbleFold.isUserExpanded()){overlayRecovery.reset();return true;}
         Rect screen=windows.getCurrentWindowMetrics().getBounds();
         Insets inset=windows.getCurrentWindowMetrics().getWindowInsets().getInsetsIgnoringVisibility(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());
         List<Box> areas=BearOverlayGuard.areas(screen.width(),screen.height());
@@ -296,7 +299,7 @@ public final class BearService extends AccessibilityService {
         for(int i=0;i<6;i++){int x=config.p.getInt("presetX"+i,0),y=config.p.getInt("presetY"+i,0);if(x>0&&y>0)areas.add(new Box(x-20,y-20,x+20,y+20));}
         Box clear=FloatingGuard.place(bubbleBounds,new Box(screen.left+inset.left,screen.top+inset.top,screen.right-inset.right,screen.bottom-inset.bottom),areas,overlayDp(8));
         if(clear==null){
-            if(bubbleFold!=null&&!bubbleFold.isCollapsed()){bubbleFold.setCollapsed(true);return false;}
+            if(bubbleFold!=null&&bubbleFold.collapseAutomatically())return false;
             pause("当前屏幕没有可用浮窗位置，请退出分屏后继续");return false;
         }
         if(!clear.same(bubbleBounds)){
@@ -314,8 +317,8 @@ public final class BearService extends AccessibilityService {
     private boolean recoverAnalysisOverlay(){
         OverlayRecovery.Action action=overlayRecovery.blocked(SystemClock.elapsedRealtime(),bubbleFold!=null&&bubbleFold.isCollapsed());
         if(action==OverlayRecovery.Action.STOP){pause("浮窗位置未稳定，请拖开后继续");return true;}
-        if(action==OverlayRecovery.Action.COLLAPSE&&bubbleFold!=null){
-            overlayMoving=false;bubbleFold.setCollapsed(true);setStatus("浮窗已收起，继续查找");return true;
+        if(action==OverlayRecovery.Action.COLLAPSE&&bubbleFold!=null&&bubbleFold.collapseAutomatically()){
+            overlayMoving=false;setStatus("浮窗已收起，继续查找");return true;
         }
         return false;
     }
@@ -420,7 +423,7 @@ public final class BearService extends AccessibilityService {
         }
         if(frame.backX<=0||frame.backY<=0||frame.backX>=w||frame.backY>=h||mapNavigationSteps>=6){finishMapCheck("未能返回地图，请回野外后点连接",false);return;}
         if(!BearOverlayGuard.inputClear(bubbleBounds,frame.backX,frame.backY,frame.backX,frame.backY,overlayDp(8))){
-            if(bubbleFold!=null&&!bubbleFold.isCollapsed())bubbleFold.setCollapsed(true);
+            if(bubbleFold!=null&&bubbleFold.collapseAutomatically())setStatus("浮窗已收起，准备返回地图");
             else if(attempt>=3){finishMapCheck("请将浮窗移开返回按钮后重试",false);return;}
             main.postDelayed(()->readMapFrame(token,app,check,attempt+1),250);return;
         }
@@ -565,8 +568,8 @@ public final class BearService extends AccessibilityService {
     }
     private void deferObstructedGesture(){
         flow.deferPending();
-        if(!dragging&&bubbleFold!=null&&!bubbleFold.isCollapsed())bubbleFold.setCollapsed(true);
-        setStatus("调整浮窗后继续查找");
+        if(!dragging&&bubbleFold!=null)bubbleFold.collapseAutomatically();
+        setStatus("浮窗挡住操作位置，请拖开浮窗后继续");
         main.postDelayed(tick,250);
     }
     private boolean gameAvailable(){

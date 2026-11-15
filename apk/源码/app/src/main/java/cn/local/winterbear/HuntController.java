@@ -104,11 +104,12 @@ final class HuntController {
         if(dragging){overlayRecovery.reset();return false;}
         if(panel.isLayoutRequested()){recoverOverlay();return false;}
         publish();if(bounds==null){recoverOverlay();return false;}
+        if(folding!=null&&folding.isUserExpanded()){overlayRecovery.reset();return true;}
         WindowMetrics metrics=wm.getCurrentWindowMetrics();Rect r=metrics.getBounds();
         Insets i=metrics.getWindowInsets().getInsetsIgnoringVisibility(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());
         Box clear=HuntOverlayGuard.place(bounds,r.width(),r.height(),i.left,i.top,i.right,i.bottom);
         if(clear==null){
-            if(folding!=null&&!folding.isCollapsed()){folding.setCollapsed(true);return false;}
+            if(folding!=null&&folding.collapseAutomatically())return false;
             pause("当前屏幕没有可用浮窗位置，请退出分屏后继续");return false;
         }
         if(clear.same(bounds))return true;
@@ -120,7 +121,7 @@ final class HuntController {
     private boolean recoverOverlay(){
         OverlayRecovery.Action action=overlayRecovery.blocked(SystemClock.elapsedRealtime(),folding!=null&&folding.isCollapsed());
         if(action==OverlayRecovery.Action.STOP){pause("浮窗位置未稳定，请拖到顶部空白处后继续");return true;}
-        if(action==OverlayRecovery.Action.COLLAPSE&&folding!=null){folding.setCollapsed(true);update("浮窗已收起，继续识别");return true;}
+        if(action==OverlayRecovery.Action.COLLAPSE&&folding!=null&&folding.collapseAutomatically()){update("浮窗已收起，继续识别");return true;}
         update("正在调整浮窗位置");return false;
     }
     private void later(long delay){main.postDelayed(this::tick,delay);}

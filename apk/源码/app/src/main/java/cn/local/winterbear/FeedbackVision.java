@@ -86,28 +86,35 @@ final class FeedbackVision implements AutoCloseable {
         return result;
     }
     List<RallyOrder.Detection> rallies(Mat fullGray,Mat fullColor,int width,int height){
+        return rallies(fullGray,fullColor,width,height,java.util.Collections.emptyList());
+    }
+    List<RallyOrder.Detection> rallies(Mat fullGray,Mat fullColor,int width,int height,List<RallyOrder.Detection> known){
         if(!ReferenceLayout.supported(width,height))return new ArrayList<>();
         int rows=Math.round(height*324f/width);
-        List<RallyOrder.Detection> found=ralliesAt(fullGray,fullColor,width,height,rows);
+        List<RallyOrder.Detection> found=ralliesAt(fullGray,fullColor,width,height,rows,known);
         int legacy=new ReferenceLayout(width,height).feedbackHeight();
-        return found.isEmpty()&&legacy!=rows?ralliesAt(fullGray,fullColor,width,height,legacy):found;
+        return found.isEmpty()&&legacy!=rows?ralliesAt(fullGray,fullColor,width,height,legacy,known):found;
     }
-    private List<RallyOrder.Detection> ralliesAt(Mat fullGray,Mat fullColor,int width,int height,int rows){
+    private List<RallyOrder.Detection> ralliesAt(Mat fullGray,Mat fullColor,int width,int height,int rows,List<RallyOrder.Detection> known){
         List<RallyOrder.Detection> result=new ArrayList<>();
         if(!ReferenceLayout.supported(width,height)||plusColor.empty())return result;
         Mat gray=new Mat(),color=new Mat();
         try{
             Imgproc.resize(fullGray,gray,new Size(324,rows),0,0,Imgproc.INTER_AREA);
             Imgproc.resize(fullColor,color,new Size(324,rows),0,0,Imgproc.INTER_AREA);
-            List<Point> targets=repeated(gray,bear,new Rect(0,144,120,rows-209));
-            targets.addAll(repeated(gray,bearTop,new Rect(0,144,120,rows-209)));
-            for(Point target:targets){
-                int top=Math.max(0,(int)target.y-94),bottom=Math.min(rows,(int)target.y+94);
-                Rect band=new Rect(227,top,97,bottom-top);
-                List<Point> green=greenHits(gray,color,plus,plusColor,band);
-                for(Point p:greenHits(gray,color,plusTop,plusTopColor,band))if(green.stream().noneMatch(q->Math.abs(p.x-q.x)<=6&&Math.abs(p.y-q.y)<=6))green.add(p);
-                if(green.size()!=1)continue;
-                Point join=green.get(0);
+            Rect buttons=new Rect(227,144,97,rows-170);
+            List<Point> green=greenHits(gray,color,plus,plusColor,buttons);
+            for(Point p:greenHits(gray,color,plusTop,plusTopColor,buttons))if(green.stream().noneMatch(q->Math.abs(p.x-q.x)<=6&&Math.abs(p.y-q.y)<=6))green.add(p);
+            for(Point join:green){
+                if(known.stream().anyMatch(r->Math.hypot(r.joinX-join.x*width/324,r.joinY-join.y*height/rows)<width*.04))continue;
+                int top=Math.max(144,(int)join.y-94),bottom=Math.min(rows-26,(int)join.y+94);
+                if(bottom<=top)continue;
+                Rect band=new Rect(0,top,120,bottom-top);
+                Point target=hit(gray,bear,band);
+                if(target==null)target=hit(gray,bearTop,band);
+                if(target==null)continue;
+                // A target between two buttons is not enough evidence for a row.
+                if(green.stream().filter(p->Math.abs(p.y-join.y)<94).count()!=1)continue;
                 result.add(new RallyOrder.Detection((int)Math.round(target.x*width/324),(int)Math.round(target.y*height/rows),(int)Math.round(join.x*width/324),(int)Math.round(join.y*height/rows),true,.88));
             }
         }finally{gray.release();color.release();}
@@ -115,7 +122,7 @@ final class FeedbackVision implements AutoCloseable {
     }
     private List<Point> greenHits(Mat gray,Mat color,Mat shape,Mat expected,Rect region){
         List<Point> result=new ArrayList<>();if(expected.empty())return result;
-        for(VisualLocator.Match match:VisualLocator.findAdaptive(gray,shape,region,.88,8,true,
+        for(VisualLocator.Match match:VisualLocator.findRepeated(gray,shape,region,.88,8,true,
                 candidate->VisualLocator.sameColor(color,expected,candidate,35)))result.add(new Point(match.x,match.y));
         return result;
     }

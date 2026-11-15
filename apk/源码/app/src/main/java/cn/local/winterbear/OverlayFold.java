@@ -12,6 +12,7 @@ import java.util.function.IntConsumer;
 
 /** User-controlled folding; status changes never show/hide the window or expand it. */
 public final class OverlayFold {
+    private final OverlayPreference preference=new OverlayPreference();
     /** All activities use the giant-hunt control sizes and the same collapsed tab. */
     public static final class Controls {
         public final LinearLayout panel;
@@ -100,10 +101,15 @@ public final class OverlayFold {
         fold.setSingleLine(true);fitText(fold,touchHeight,12);
         heading.addView(fold,new LinearLayout.LayoutParams(touchHeight,touchHeight));
         root.addView(heading,new LinearLayout.LayoutParams(-1,touchHeight));root.addView(body);
-        fold.setOnClickListener(v->setCollapsed(true));
-        handle.setOnClickListener(v->{if(collapsed)setCollapsed(false);});
+        fold.setOnClickListener(v->{preference.choose(true);setCollapsed(true);});
+        handle.setOnClickListener(v->{if(collapsed){preference.choose(false);setCollapsed(false);}});
     }
     public boolean isCollapsed(){return collapsed;}
+    public boolean isUserExpanded(){return preference.keepExpanded();}
+    public boolean collapseAutomatically(){
+        if(collapsed||preference.keepExpanded())return false;
+        setCollapsed(true);return true;
+    }
     public void updateStatus(boolean running,String idleStatus,String message){
         String next=idleStatus;
         if(running){

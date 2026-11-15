@@ -4,9 +4,17 @@ JDK 17、Gradle 8.9、Android SDK 35 extension 15、Build Tools 35.0.0。设置 
 
 构建：`gradlew.bat :app:testEngine :app:assembleRelease :app:lintRelease`。
 
-将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.1.16.apk。
+将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.1.17.apk。
 
-检查成品使用 `python tools/verify_android_package.py ../无尽冬日助手-2.1.16.apk --version 2.1.16`。
+检查成品使用 `python tools/verify_android_package.py ../无尽冬日助手-2.1.17.apk --version 2.1.17`。
+
+### 识别耗时与手动展开（2.1.17）
+
+`Matcher` 先试当前位置的标题，然后用地图独立控件分类，避免每张地图都搜索不存在的联盟长标题。行军数字必须依附本帧找到的标题；无行军栏不再对旧位置发起 OCR。列表先找本帧绿色按钮、验证同行熊图，只有未读清才使用反馈布局补查。`VisualLocator.findRepeated` 仍自适应发现比例，在全列产生候选后，只在候选附近验证相邻栅格尺寸；最终匹配和颜色阈值不变。
+
+公共 `OverlayFold` 记录手动展开的选择。打熊、巨兽、野兽和靶心的自动避让不能覆盖该选择。截图屏蔽、版本失效和点击遮挡检查保留；用户可拖开面板或自行收起。`OverlayUiRuntimeCheck` 在六种宽度、两种字体比例、四个活动下，模拟手动展开后连续自动收起请求及状态更新，断言面板保持展开，然后检查手动收起仍生效。
+
+`FeedbackTimingCheck`（桌面）与 `FeedbackLatencyRuntimeCheck`（Android）读取私人 `cases.tsv`：每行依次为文件名、`map/list`、行军数（隐藏为 -1）、完整可读倒计时秒数列表、浮窗遮罩底边，字段用 Tab 分隔。两者在原始 1080×2400 截图上覆盖浮窗后调用生产识别器，检查页面、行军栏存在性、数字识别调用次数和倒计时。桌面数字识别不可用，Android 组使用标注数字；均不发送游戏触控，不能把耗时当作手机 OCR 响应时间。修复前后应顺序运行同一批图片，并保留原始耗时日志。
 
 ### 任务切换与识别负载（2.1.16）
 

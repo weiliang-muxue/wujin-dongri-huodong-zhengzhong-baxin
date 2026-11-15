@@ -156,7 +156,15 @@ public final class OverlayUiRuntimeCheck {
                     }
                     if(width==1080&&font==1f)save(ui.panel,new File(output,label+"-collapsed.png"));
                     ui.title.performClick();layout(ui.panel,currentWidth[0]);
-                    require(!fold.isCollapsed()&&ui.panel.getHeight()==height,"Cannot expand again");checks++;
+                    require(!fold.isCollapsed()&&ui.panel.getHeight()==height,"Cannot expand again");
+                    for(int attempt=0;attempt<20;attempt++){
+                        fold.updateStatus(true,"已暂停","继续识别集结列表");
+                        require(!fold.collapseAutomatically(),"Automatic avoidance overrode manual expansion");
+                        layout(ui.panel,currentWidth[0]);
+                        require(fold.isUserExpanded()&&!fold.isCollapsed()&&ui.panel.getHeight()==height,"Expanded status was hidden");
+                    }
+                    text(ui.panel,"收起").performClick();
+                    require(fold.isCollapsed()&&!fold.isUserExpanded(),"Explicit folding no longer works");checks++;
                 }
             }
             System.out.println("ANDROID OVERLAY UI PASS: "+checks+" actual View layouts; pause/start/end/switch/fold callbacks; no game gestures");

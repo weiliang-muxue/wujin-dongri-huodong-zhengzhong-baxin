@@ -191,6 +191,17 @@ public final class VisualLocator {
         List<Match> seed=findAdaptive(image,template,area,threshold,1,soften,accepted);
         if(seed.isEmpty())return seed;
         Match first=seed.get(0);List<Match> result=new ArrayList<>();
+        // Locate rows once at the observed scale. The permissive pass only
+        // proposes locations; each one still needs full confidence and colour.
+        // Running all nine raster neighbours over the entire column repeated
+        // almost the same expensive scan for every frame of the bear list.
+        List<Match> proposals;
+        Mat reference=new Mat();
+        try{
+            Imgproc.resize(template,reference,new Size(first.width,first.height),0,0,first.width<template.cols()?Imgproc.INTER_AREA:Imgproc.INTER_CUBIC);
+            proposals=find(image,reference,area,Math.min(.55,threshold-.20),Math.max(24,limit*4),false);
+        }finally{reference.release();}
+        if(proposals.isEmpty())proposals=seed;
         // Independent raster rounding can change an otherwise identical row
         // by one pixel. Validate all neighbours at the original threshold.
         for(int width=Math.max(8,first.width-1);width<=first.width+1;width++)
@@ -198,8 +209,15 @@ public final class VisualLocator {
                 Mat scaled=new Mat();
                 try{
                     Imgproc.resize(template,scaled,new Size(width,height),0,0,width<template.cols()?Imgproc.INTER_AREA:Imgproc.INTER_CUBIC);
-                    for(Match m:find(image,scaled,area,threshold,accepted==null?limit:Math.max(8,limit*2),soften))
-                        if(accepted==null||accepted.test(m))merge(result,m,false);
+                    for(Match proposal:proposals){
+                        int pad=Math.max(3,(int)Math.ceil(Math.max(width,height)*.10));
+                        int left=Math.max(area.x,(int)Math.floor(proposal.x-width/2.0)-pad);
+                        int top=Math.max(area.y,(int)Math.floor(proposal.y-height/2.0)-pad);
+                        int right=Math.min(area.x+area.width,(int)Math.ceil(proposal.x+width/2.0)+pad);
+                        int bottom=Math.min(area.y+area.height,(int)Math.ceil(proposal.y+height/2.0)+pad);
+                        for(Match m:find(image,scaled,new Rect(left,top,Math.max(0,right-left),Math.max(0,bottom-top)),threshold,1,soften))
+                            if(accepted==null||accepted.test(m))merge(result,m,false);
+                    }
                 }finally{scaled.release();}
             }
         result.sort(Comparator.comparingDouble((Match m)->m.confidence).reversed());
