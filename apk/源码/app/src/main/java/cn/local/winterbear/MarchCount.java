@@ -12,4 +12,11 @@ final class MarchCount {
         Matcher m=COUNTER.matcher(text.trim());
         return m.matches()?Integer.parseInt(m.group(1)):-1;
     }
+    /** Scenery may contribute another OCR line; only one complete counter is evidence. */
+    static int fromLines(String text){
+        if(text==null)return -1;
+        int value=-1,count=0;
+        for(String line:text.split("\\R")){int candidate=used(line);if(candidate>=0){value=candidate;count++;}}
+        return count==1?value:-1;
+    }
 }

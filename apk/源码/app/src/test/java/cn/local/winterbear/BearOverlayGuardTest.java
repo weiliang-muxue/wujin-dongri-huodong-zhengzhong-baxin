@@ -5,6 +5,19 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class BearOverlayGuardTest {
+    @Test public void expandedPanelMovesClearOfPresetWithoutFolding(){
+        for(int[] size:new int[][]{{720,1600},{1080,2400},{1152,2376},{1344,2772}}){
+            int w=size[0],h=size[1];double s=w/1080.0;
+            Box panel=new Box((int)(432*s),(int)(185*s),(int)(1050*s),(int)(416*s));
+            OverlayPreference preference=new OverlayPreference();preference.choose(false);
+            assertTrue(FloatingGuard.blocked(panel,BearOverlayGuard.areas(w,h),(int)(20*s)));
+            Box clear=FloatingGuard.place(panel,new Box(0,(int)(90*s),w,h-(int)(60*s)),BearOverlayGuard.areas(w,h),(int)(20*s));
+            assertNotNull(clear);assertFalse(FloatingGuard.blocked(clear,BearOverlayGuard.areas(w,h),(int)(20*s)));
+            assertEquals(panel.width(),clear.width());assertEquals(panel.height(),clear.height());assertTrue(preference.keepExpanded());
+            Box stable=FloatingGuard.place(clear,new Box(0,(int)(90*s),w,h-(int)(60*s)),BearOverlayGuard.areas(w,h),(int)(20*s));
+            assertTrue(clear.same(stable));
+        }
+    }
     @Test public void portraitRecognitionAcceptsWideAndTallLayouts(){
         for(int[] size:new int[][]{{480,960},{720,1600},{1152,2376},{1248,2004},{1440,2160},{1080,3000}})
             assertTrue(ReferenceLayout.supported(size[0],size[1]));

@@ -10,7 +10,7 @@ final class HuntGlyphs implements AutoCloseable {
     private final CountdownDigits levels,timers;
     private final MarchRowVision icons;
     HuntGlyphs(FeedbackVision.Assets assets){levels=load(assets,"level_digits");timers=load(assets,"march_digits");icons=new MarchRowVision(assets);}
-    private static CountdownDigits load(FeedbackVision.Assets assets,String name){
+    static CountdownDigits load(FeedbackVision.Assets assets,String name){
         CountdownDigits d=new CountdownDigits();
         try(InputStream in=assets.open("hunt/"+name+".png")){
             Bitmap b=BitmapFactory.decodeStream(in);

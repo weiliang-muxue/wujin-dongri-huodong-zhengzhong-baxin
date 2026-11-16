@@ -101,7 +101,6 @@ public class GameService extends ContextWrapper {
     void settleFloating(long token,long move){
         if(token!=generation||!FloatingGuard.current(move,moveId,false)||floating==null)return;
         publishFloatingBounds();if(floatingBounds==null){floating.postOnAnimation(()->settleFloating(token,move));return;}
-        if(floatingFold!=null&&floatingFold.isUserExpanded()){finishFloatingMove(token,move);return;}
         WindowMetrics metrics=wm.getCurrentWindowMetrics();Rect r=metrics.getBounds();
         Insets insets=metrics.getWindowInsets().getInsetsIgnoringVisibility(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());
         FloatingGuard.Box clear=FloatingGuard.place(floatingBounds,new FloatingGuard.Box(r.left+insets.left,r.top+insets.top,r.right-insets.right,r.bottom-insets.bottom),protectedAreas,dp(8));

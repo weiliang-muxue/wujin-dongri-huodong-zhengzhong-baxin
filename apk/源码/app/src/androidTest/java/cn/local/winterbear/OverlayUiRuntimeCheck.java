@@ -120,6 +120,12 @@ public final class OverlayUiRuntimeCheck {
                             value->currentWidth[0]=value,()->calls[2]++);
                     ui.status.setText("等待队伍回城后继续当前任务");layout(ui.panel,currentWidth[0]);
                     int height=ui.panel.getHeight();
+                    for(int screenHeight:new int[]{width*20/9,width*2376/1152}){
+                        int gap=Math.round(8*BearOverlayGuard.panelScale(width,screenHeight,context.getResources().getDisplayMetrics().density));
+                        cn.local.bullseye.FloatingGuard.Box panel=new cn.local.bullseye.FloatingGuard.Box(width*40/100,width/6,width*40/100+ui.width,width/6+height);
+                        cn.local.bullseye.FloatingGuard.Box clear=cn.local.bullseye.FloatingGuard.place(panel,new cn.local.bullseye.FloatingGuard.Box(0,width/12,width,screenHeight-width/12),BearOverlayGuard.areas(width,screenHeight),gap);
+                        require(clear!=null&&clear.height()==height&&clear.width()==ui.width,"Actual expanded controls cannot fit with recognition mask "+width+"x"+screenHeight);
+                    }
                     if(expectedHeight<0)expectedHeight=height;
                     require(height==expectedHeight,"Different activity control size");
                     for(String state:new String[]{"开始","暂停","继续"}){

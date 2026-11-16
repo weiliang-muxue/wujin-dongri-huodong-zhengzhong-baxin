@@ -8,7 +8,8 @@ $jar=(Get-ChildItem -LiteralPath $OpenCvJavaDir -Filter 'opencv-*.jar' -File).Fu
 $dll=(Get-ChildItem -LiteralPath "$OpenCvJavaDir\x64" -Filter 'opencv_java*.dll' -File).FullName
 $source=Join-Path $project 'app\src\main\java'
 $files=@('RecognitionWorker','VisualLocator','VisualAnchor','VisualTabStrip','ReferenceAnchors','LayoutTransform') | ForEach-Object {"$source\cn\local\automation\$_.java"}
-$files+=@('HuntVision','HuntGlyphs','FeedbackVision','MarchRowVision','HuntFlow','HuntMarches','PresetOrder','BearFlow','MarchFlow','MarchCount','ReferenceLayout','RallyOrder','CountdownDigits','CountdownVision','Matcher') | ForEach-Object {"$source\cn\local\winterbear\$_.java"}
+$files+=@('HuntVision','HuntGlyphs','FeedbackVision','MarchRowVision','HuntFlow','HuntMarches','PresetOrder','BearFlow','MarchFlow','MarchCount','MarchCounterVision','ReferenceLayout','RallyOrder','CountdownDigits','CountdownVision','Matcher','BearOverlayGuard','HuntOverlayGuard','OverlayPreference') | ForEach-Object {"$source\cn\local\winterbear\$_.java"}
+$files+="$source\cn\local\bullseye\FloatingGuard.java"
 $layout=Get-Content -LiteralPath "$project\app\src\main\assets\reference\layout.json" -Raw | ConvertFrom-Json
 $values=@()
 foreach($crop in $layout.crops.PSObject.Properties){$r=$crop.Value;$values+="$($crop.Name)X=$($r[0]+[int][Math]::Floor($r[2]/2))";$values+="$($crop.Name)Y=$($r[1]+[int][Math]::Floor($r[3]/2))"}

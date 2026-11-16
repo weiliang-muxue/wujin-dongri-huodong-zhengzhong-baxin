@@ -297,13 +297,26 @@ final class HuntVision implements AutoCloseable {
                 m->VisualLocator.sameColor(rgb,mapColors.get(name),m,25));
         return found.size()==1?VisualAnchor.from(found.get(0),templates.get(name)):null;
     }
+    /** Shared fallback for bear maps; coordinates come from the current heading. */
+    Rect marchCounterRegion(Bitmap image){
+        double scale=image.getWidth()/540.;int rows=(int)Math.round(image.getHeight()/scale);
+        Mat rgba=new Mat(),small=new Mat(),gray=new Mat();
+        try{
+            Utils.bitmapToMat(image,rgba);Imgproc.resize(rgba,small,new Size(540,rows),0,0,Imgproc.INTER_AREA);Imgproc.cvtColor(small,gray,Imgproc.COLOR_RGBA2GRAY);
+            Point march=hit(gray,"march",0,100,180,rows/2,.72);
+            return march==null?null:marchCounterRegion(image,scale,march);
+        }finally{rgba.release();small.release();gray.release();}
+    }
+    private Rect marchCounterRegion(Bitmap image,double scale,Point march){
+        org.opencv.core.Rect count=VisualAnchor.near(march,94,-16,138,16);
+        return new Rect(Math.max(0,(int)Math.floor(count.x*scale)),Math.max(0,(int)Math.floor(count.y*scale)),Math.min(image.getWidth(),(int)Math.ceil((count.x+count.width)*scale)),Math.min(image.getHeight(),(int)Math.ceil((count.y+count.height)*scale)));
+    }
     /** Called after map identification; the list has its own movable header anchor. */
     void observeMarchPanel(Bitmap image,double scale,Mat gray,Frame f){
         Point march=hit(gray,"march",0,100,180,gray.rows()/2,.72);
         if(march!=null){
             double q=VisualAnchor.scale(march);
-            org.opencv.core.Rect count=VisualAnchor.near(march,94,-16,138,16);
-            f.used=MarchCount.used(read(image,scale,count.x,count.y,count.x+count.width,count.y+count.height));
+            f.used=MarchCount.fromLines(numbers.text(image,marchCounterRegion(image,scale,march)));
             // Normalize the whole panel coordinate system, not just its title.
             // Row icons, spacing, timers and ownership hashes then share the
             // same scale when the UI is zoomed independently of screen width.

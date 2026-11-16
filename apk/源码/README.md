@@ -4,9 +4,19 @@ JDK 17、Gradle 8.9、Android SDK 35 extension 15、Build Tools 35.0.0。设置 
 
 构建：`gradlew.bat :app:testEngine :app:assembleRelease :app:lintRelease`。
 
-将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.1.17.apk。
+将 app/build/outputs/apk/release/app-release.apk 复制到上一级，命名为 无尽冬日助手-2.1.18.apk。
 
-检查成品使用 `python tools/verify_android_package.py ../无尽冬日助手-2.1.17.apk --version 2.1.17`。
+检查成品使用 `python tools/verify_android_package.py ../无尽冬日助手-2.1.18.apk --version 2.1.18`。
+
+### 完整行军数字与展开避让（2.1.18）
+
+`MarchCounterVision` 使用现有本地数字素材，先归一化小区域，再结合连通笔画、同一基线、斜杠、分母 6、数字置信度与多阈值一致性读取完整计数。多组数字、缺字符、裁断和超范围值保持未知；未命中继续使用 ML Kit。打熊原有标题模板未命中时，使用狩猎的本帧标题定位获取数字范围，不读取旧固定位置。正常命中保留原有路径。
+
+`OverlayFold` 的手动选择只控制展开／收起，不再阻止位置避让；公共尺寸计算包含截图遮罩的外围边距，华为短屏与狩猎共用顶部控件通道。`OverlayPresetReplayCheck` 对真实录屏帧加入合成浮窗遮罩，先复现第 4 个旗帜消失，再验证移动后识别及选择流程。`PixelCounterReplayCheck` 读取真实地图像素，不提供数字答案。两者可使用 `run_page_sweep.ps1` 生成的桌面类目录运行；私人输入不提交。
+
+`MarchCounterRuntimeCheck` 读取私人小图目录中的 `counts.tsv`（文件名、预期整数，Tab 分隔），每图七种比例，并验证遮掉斜杠、分子、分母、上半部及两组计数等拒绝条件。运行 `tools/run_feedback_regression.py --suite counter --suite overlay --counter-fixtures <私人小图目录> --adb <adb> --serial <专用模拟器> --output <E盘目录>`。测试使用真实 Android Bitmap，未执行游戏触控，也不等于整场运行或手机速度测试。
+
+开源方案调研：参考 [MaaFramework 的 Pipeline 协议](https://github.com/MaaXYZ/MaaFramework/blob/main/docs/en_us/3.1-PipelineProtocol.md) 的按步骤识别、失败路径和锚点关系，以及 [Airtest](https://airtest.readthedocs.io/en/latest/README_MORE.html) 的图像脚本与回放思路。本次没有引入上述框架或复制第三方源码；它们不能自动恢复被浮窗遮挡的像素，也不能代替本项目的真机验证。
 
 ### 识别耗时与手动展开（2.1.17）
 

@@ -139,7 +139,7 @@ final class MarchFlow {
                 return unrecognized(now,"未识别游戏地图");
             }
             int reading=marchHidden?-2:f.marchUsed;
-            if(!marchHidden&&!MarchCount.valid(reading)){resetEvidence();return unrecognized(now,"行军数字模糊，等待清晰画面");}
+            if(!marchHidden&&!MarchCount.valid(reading)){resetEvidence();return unrecognized(now,"未读到行军数量");}
             unknownSince=-1;
             if(reading!=stableUsed){stableUsed=reading;stableSince=now;stableReads=1;}
             else if(now-stableSince>=500)stableReads++;

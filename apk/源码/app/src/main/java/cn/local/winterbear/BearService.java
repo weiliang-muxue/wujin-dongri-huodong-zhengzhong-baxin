@@ -284,9 +284,8 @@ public final class BearService extends AccessibilityService {
         // The start button has just collapsed the settings. Wait for the smaller layout.
         if(bubble.isLayoutRequested()){recoverAnalysisOverlay();return false;}
         publishBubbleBounds();if(bubbleBounds==null)return false;
-        // A manual expansion is an explicit request to read status. Keep its
-        // position; screenshots mask it and gesture checks still avoid it.
-        if(bubbleFold!=null&&bubbleFold.isUserExpanded()){overlayRecovery.reset();return true;}
+        // Keep a manually expanded panel expanded, but still move it clear of
+        // recognition targets. Masking a covered flag cannot reveal that flag.
         Rect screen=windows.getCurrentWindowMetrics().getBounds();
         Insets inset=windows.getCurrentWindowMetrics().getWindowInsets().getInsetsIgnoringVisibility(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());
         List<Box> areas=BearOverlayGuard.areas(screen.width(),screen.height());

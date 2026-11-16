@@ -21,6 +21,7 @@ p.add_argument('--bullseye-button-only',action='store_true',help='Run upper-page
 p.add_argument('--manual-navigation-fixtures',type=Path,help='Private video-315.png rally list for manual calibration navigation checks')
 p.add_argument('--return-fixtures',type=Path,help='Private Xiaomi rally / returning / returned screenshots')
 p.add_argument('--timer-fixtures',type=Path,help='39 exported march timer strips and timers.tsv from MarchTrackingScaleCheck')
+p.add_argument('--counter-fixtures',type=Path,help='Private actual counter crops and counts.tsv; no supplied OCR answers')
 p.add_argument('--loop-fixtures',type=Path,help='Full map pipeline recording fixtures exported by HuntLoopReplayCheck')
 p.add_argument('--search-fixtures',type=Path,help='Private search row variants and independent .properties annotations')
 p.add_argument('--switch-recording',type=Path,help='Private latest rally screenshot with manually inspected 41/55 second timers')
@@ -28,7 +29,7 @@ p.add_argument('--paging-fixtures',type=Path,help='Private short-countdown recor
 p.add_argument('--restart-fixtures',type=Path,help='Private end/reopen recording frames')
 p.add_argument('--restart-start-index',type=int,choices=range(5),default=0,help='Resume at a size group after a recorded partial run')
 p.add_argument('--opencv-threads',type=int,choices=range(9),default=0,help='OpenCV test process thread count; 0 uses its default')
-p.add_argument('--suite',action='append',choices=['core','session','switch','presets','scale','restart','bullseye','manual-navigation','march-presence','adaptive','huawei','huawei-bear','direct','reported','marches','return','march-timers','loop','search','paging','overlay','hunt','feedback','countdown','compat'],help='Run selected suites; default runs every supplied suite')
+p.add_argument('--suite',action='append',choices=['core','session','switch','presets','scale','restart','bullseye','manual-navigation','march-presence','adaptive','huawei','huawei-bear','direct','reported','marches','return','march-timers','counter','loop','search','paging','overlay','hunt','feedback','countdown','compat'],help='Run selected suites; default runs every supplied suite')
 p.add_argument('--adaptive-bear-only',action='store_true')
 p.add_argument('--adaptive-start-index',type=int,choices=range(11),default=0,help='First hunt page, or first of three bear pages with --adaptive-bear-only')
 p.add_argument('--adaptive-end-index',type=int,choices=range(1,12),default=11,help='Exclusive final adaptive page; bear-only default includes all three pages')
@@ -67,6 +68,10 @@ if a.fixtures:
         (bundle/'fixtures'/name).write_bytes((a.fixtures/name).read_bytes())
 (bundle/'app.apk').write_bytes(main.read_bytes());(bundle/'tests.apk').write_bytes(tests.read_bytes())
 if a.switch_recording:(bundle/'fixtures/switch-list.jpg').write_bytes(a.switch_recording.read_bytes())
+if a.counter_fixtures:
+    target=bundle/'counter-fixtures';target.mkdir(exist_ok=True)
+    for source in a.counter_fixtures.iterdir():
+        if source.is_file() and (source.suffix=='.png' or source.name=='counts.tsv'):(target/source.name).write_bytes(source.read_bytes())
 if a.hunt_fixtures:
     for name in ['map','giant_search','giant_detail','rally','giant_formation','map_one','beast_search','beast_detail','beast_formation','low_energy','energy']:
         (bundle/'fixtures'/f'{name}.png').write_bytes((a.hunt_fixtures/f'{name}.png').read_bytes())
@@ -133,6 +138,9 @@ with (a.output/'android-feedback-runtime.txt').open('w',encoding='utf-8') as log
     if wanted('core'):
         core=run('RuntimeCoreCheck',remote+'/simulation')
         if '0 failures' not in core:raise RuntimeError('ART test result missing')
+    if a.counter_fixtures and wanted('counter'):
+        result=run('MarchCounterRuntimeCheck',f'{remote}/counter-fixtures {remote}/assets')
+        if 'ANDROID ACTUAL COUNTER PASS:' not in result:raise RuntimeError('Actual pixel counter checks missing')
     if wanted('session'):
         state=run('HuntStateRuntimeCheck','')
         if 'ANDROID HUNT STATE PASS: 4' not in state:raise RuntimeError('Hunt state regression missing')

@@ -35,7 +35,7 @@ final class Matcher implements AutoCloseable {
     private boolean recoverToMap;
     void recoverToMap(boolean value){recoverToMap=value;}
     Matcher(Config config) {
-        this(config,new CounterOcr());
+        this(config,new CounterOcr(config::openAsset));
     }
     Matcher(Config config,Numbers counter) {
         this.config=config;
@@ -164,8 +164,9 @@ final class Matcher implements AutoCloseable {
             if(march==null){List<Hit> hits=find("march_anchor_core",area,1);if(!hits.isEmpty()){march=hits.get(0);marchKey="march_anchor_core";}}
             // No heading means there is no anchored numeric field. Reading
             // the saved rectangle can wait for OCR on scenery or overlay text.
-            if(march!=null&&config.marchReady()){stage="读取行军数量";f.marchUsed=counter.read(currentBitmap,marchCounter(march,marchKey));}
-            f.worldMapChrome=true;f.marchHidden=march==null&&!MarchCount.valid(f.marchUsed);
+            Rect count=march!=null?marchCounter(march,marchKey):navigation.marchCounterRegion(currentBitmap);
+            if(count!=null&&config.marchReady()){stage="读取行军数量";f.marchUsed=counter.read(currentBitmap,count);}
+            f.worldMapChrome=true;f.marchHidden=count==null&&!MarchCount.valid(f.marchUsed);
             stage="识别地图入口";
             List<Hit> shortcuts=find("shortcut",new Rect((int)(w*.8),(int)(height*.15),w,(int)(height*.8)),1);
             if(!shortcuts.isEmpty()){f.shortcutX=shortcuts.get(0).x;f.shortcutY=shortcuts.get(0).y;}

@@ -23,7 +23,9 @@ final class BearOverlayGuard {
         a.add(FloatingGuard.normalized(w,h,0,0,.38f,.29f)); // back and page title
         a.add(new Box(0,(int)Math.ceil(w*.33f),w,(int)Math.ceil(h*.29f))); // flags and troop count
         a.add(FloatingGuard.normalized(w,h,0,.18f,.37f,.91f)); // march and bear targets
-        a.add(FloatingGuard.normalized(w,h,.80f,.15f,1,.91f)); // red entry and green +
+        // Share the width-scaled top control lane with the hunt modes. A fixed
+        // fraction of height truncates that lane on shorter Huawei displays.
+        a.add(new Box((int)Math.floor(w*.80f),Math.max((int)Math.floor(h*.15f),(int)Math.ceil(w*.33f)),w,(int)Math.ceil(h*.91f))); // red entry and green +
         a.add(FloatingGuard.normalized(w,h,0,.455f,1,.695f)); // overflow text and confirmation
         a.add(FloatingGuard.normalized(w,h,0,.91f,1,1)); // deploy, world and alliance
         a.add(FloatingGuard.normalized(w,h,.28f,.83f,.405f,.905f)); // map search anchor

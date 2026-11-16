@@ -7,7 +7,10 @@ import java.util.List;
 public final class FloatingGuard {
     /** Shared dimensions for the compact activity controls. */
     public static float controlScale(int width,int topInset,float density){
-        float available=Math.max(1,width*.33f-topInset-12);
+        // Include the screenshot mask halo as well as the panel's 8 px padding.
+        // Otherwise a panel that fits visually still masks the preset strip.
+        float halo=8*Math.min(density,width/360f);
+        float available=Math.max(1,width*.33f-topInset-12-halo);
         return Math.min(Math.min(density,width/440f),available/106f);
     }
     public static final class Box {

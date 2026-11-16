@@ -66,7 +66,7 @@ final class HuntController {
         target=app;
         if(vision==null)try{
             if(!OpenCVLoader.initLocal())throw new IllegalStateException("OpenCV");
-            ocr=new CounterOcr();vision=new HuntVision(host.getAssets()::open,ocr::text);
+            ocr=new CounterOcr(host.getAssets()::open);vision=new HuntVision(host.getAssets()::open,ocr::text);
         }catch(Exception e){update("识别组件未就绪，请重新打开助手");return;}
         generation++;overlayRecovery.reset();foregroundGate.reset();if(started)flow.resume(SystemClock.elapsedRealtime());else{flow.start(SystemClock.elapsedRealtime());started=true;}
         update("正在检查地图");tick();
@@ -104,7 +104,6 @@ final class HuntController {
         if(dragging){overlayRecovery.reset();return false;}
         if(panel.isLayoutRequested()){recoverOverlay();return false;}
         publish();if(bounds==null){recoverOverlay();return false;}
-        if(folding!=null&&folding.isUserExpanded()){overlayRecovery.reset();return true;}
         WindowMetrics metrics=wm.getCurrentWindowMetrics();Rect r=metrics.getBounds();
         Insets i=metrics.getWindowInsets().getInsetsIgnoringVisibility(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());
         Box clear=HuntOverlayGuard.place(bounds,r.width(),r.height(),i.left,i.top,i.right,i.bottom);
